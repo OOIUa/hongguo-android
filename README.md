@@ -1,8 +1,8 @@
 # 红果独立安卓端
 
-当前版本：**0.3.0**（versionCode 3），支持 Android 8.0（API 26）及以上，沿用既有测试签名。
+当前版本：**0.4.0**（versionCode 4），支持 Android 8.0（API 26）及以上，沿用既有测试签名。
 
-旧版没有在线更新入口，需先从 [GitHub Releases](https://github.com/OOIUa/hongguo-android/releases/latest) 手动安装一次 0.3.0；签名一致时可覆盖安装，保留设备身份、收藏、观看历史及续播位置。之后可在应用内检查并安装后续版本。
+0.1/0.2 版本需先手动覆盖安装新版；0.3.0 已支持在线更新。GitHub 无法访问时，可使用 [加速下载线路 1](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.4.0/hongguo-android-0.4.0.apk) 或 [线路 2](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.4.0/hongguo-android-0.4.0.apk) 安装 0.4.0。签名一致时可覆盖安装，保留设备身份、收藏、观看历史及续播位置。请勿先卸载。
 
 ## 运行方式
 
@@ -21,6 +21,8 @@
 下载完成后，应用检查文件大小、SHA-256、包名、versionCode、versionName、最低系统版本及签名证书；点击“安装更新”前还会重新校验。首次安装更新时，系统可能要求允许本应用安装来自此来源的应用，授权返回后继续打开系统安装界面，由用户确认。应用不会静默安装。
 
 更新来源为 [OOIUa/hongguo-android](https://github.com/OOIUa/hongguo-android)，清单固定地址为 [update.json](https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json)。只有更高的 `versionCode` 才视为新版，版本名称仅作显示。清单与更新包通过匿名 HTTPS 下载，APK 不包含 GitHub 凭据。
+
+0.4.0 起，更新清单和 APK 都支持加速。默认“自动切换”依次尝试 GitHub 直连、加速线路 1（gh-proxy.com）及加速线路 2（ghfast.top），连接失败或收到无效内容时切换下一条；取消下载会停止，不会自行重试其他线路。也可在更新窗口指定某条线路，选择会在本机保存。下载开始后暂停切换，取消后可重新选择。代理不改变清单中的 GitHub 原始地址；各条线路都必须通过相同的安装包完整性和签名检查。公共代理仅接收公开发布资源的匿名请求。
 
 当前仍使用既有测试密钥签名。发布者应保留本地同一密钥；公开证书指纹见 [release-signing.sha256](release-signing.sha256)，它不是私钥。若将来换成不同的正式签名，当前安装无法直接被该新签名覆盖，不能承诺保留数据的原位升级；迁移方式需另行说明。
 

@@ -28,13 +28,17 @@ data class UpdateUiState(
     val error: String? = null,
     val status: String = "",
     val installPermissionRequired: Boolean = false,
+    val source: UpdateSource = UpdateSource.AUTO,
+    val activeSource: UpdateSource? = null,
 )
 
 class UpdateViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = UpdateRepository()
     private val installer = UpdateInstaller(application)
     private val preferences = application.getSharedPreferences("app_updates", 0)
-    private val mutableState = MutableStateFlow(UpdateUiState())
+    private val mutableState = MutableStateFlow(UpdateUiState(source = runCatching {
+        UpdateSource.valueOf(preferences.getString("source", UpdateSource.AUTO.name).orEmpty())
+    }.getOrDefault(UpdateSource.AUTO)))
     val state = mutableState.asStateFlow()
     private var checkingJob: Job? = null
     private var downloadJob: Job? = null
@@ -56,15 +60,30 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         check(true)
     }
 
+    fun selectSource(source: UpdateSource) {
+        if (state.value.downloading || installJob?.isActive == true || source == state.value.source) return
+        val recheck = state.value.checking || state.value.update == null
+        ++checkVersion
+        checkingJob?.cancel()
+        preferences.edit().putString("source", source.name).apply()
+        mutableState.update { it.copy(source = source, activeSource = null, checking = false, error = null,
+            status = "已选择${source.label}") }
+        if (recheck) check(true)
+    }
+
     private fun check(manual: Boolean) {
         checkingJob?.cancel()
         val version = ++checkVersion
+        val source = state.value.source
         mutableState.update { it.copy(visible = manual, checking = true, update = null,
-            downloadedFile = null, error = null, status = "正在检查更新…", installPermissionRequired = false) }
+            downloadedFile = null, error = null, status = "正在检查更新…", installPermissionRequired = false, activeSource = null) }
         preferences.edit().putLong("last_attempt", System.currentTimeMillis()).apply()
         checkingJob = viewModelScope.launch {
             try {
-                val update = repository.check(BuildConfig.UPDATE_MANIFEST_URL, BuildConfig.UPDATE_REPOSITORY)
+                val update = repository.check(BuildConfig.UPDATE_MANIFEST_URL, BuildConfig.UPDATE_REPOSITORY, source) { active ->
+                    if (version == checkVersion) mutableState.update { it.copy(activeSource = active,
+                        status = "正在通过${active.label}检查更新…") }
+                }
                 if (version != checkVersion) return@launch
                 val newer = update.isNewerThan(BuildConfig.VERSION_CODE.toLong())
                 val supported = update.minSdk <= Build.VERSION.SDK_INT
@@ -95,12 +114,16 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         val update = state.value.update ?: return
         if (state.value.downloading || !update.isNewerThan(BuildConfig.VERSION_CODE.toLong())) return
         val version = ++downloadVersion
+        val source = state.value.source
         downloadJob?.cancel()
         mutableState.update { it.copy(downloading = true, downloadProgress = 0f, downloadedFile = null,
             error = null, status = "正在下载更新…", installPermissionRequired = false) }
         downloadJob = viewModelScope.launch {
             try {
-                val file = installer.download(update) { done, total ->
+                val file = installer.download(update, source, onSource = { active ->
+                    if (version == downloadVersion) mutableState.update { it.copy(activeSource = active,
+                        downloadProgress = 0f, status = "正在通过${active.label}下载更新…") }
+                }) { done, total ->
                     if (version == downloadVersion) mutableState.update { it.copy(downloadProgress =
                         if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else null) }
                 }
@@ -167,6 +190,10 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 private fun updateFailure(error: Throwable): String {
     val causes = generateSequence(error) { it.cause }.take(6).toList()
     return when {
+        causes.any { it.message == "UPDATE_CHECK_TIMEOUT" } -> "当前线路连接超时，可切换加速线路后重试。"
+        causes.any { it.message.orEmpty().startsWith("UPDATE_MANIFEST_") || it.message.orEmpty().startsWith("UPDATE_APK_") } ->
+            "更新信息校验失败，请切换线路或稍后重试。"
+        causes.any { it.message.orEmpty().startsWith("UPDATE_CHECK_") } -> "更新线路暂不可用，请切换其他线路或稍后重试。"
         causes.any { it is SocketTimeoutException } -> "连接超时，请检查网络后重试。"
         causes.any { it is UnknownHostException || it is SSLException } -> "无法连接更新服务，请检查网络或稍后重试。"
         else -> {

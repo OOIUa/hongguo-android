@@ -4,6 +4,7 @@
 
 - GitHub 仓库：[OOIUa/hongguo-android](https://github.com/OOIUa/hongguo-android)。
 - 首个支持在线更新的版本：`0.3.0`，`versionCode=3`，tag 为 `v0.3.0`。
+- 当前版本：`0.4.0`，`versionCode=4`，增加双加速线路及自动切换。
 - 应用 ID：`com.hongguo.android`；当前最低系统为 API 26。
 - 固定清单地址：`https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json`。
 - 应用启动时按 24 小时间隔静默检查，也提供按钮手动检查。下载与系统安装均需用户操作。
@@ -79,7 +80,9 @@ pwsh -File scripts/prepare-release.ps1
 5. 匿名访问固定的 `latest/download/update.json`，确认可经 HTTPS 重定向取得新清单；再校验清单指向的 tag、APK 文件名、真实文件大小及哈希。此过程不应需要 GitHub 账号或 token。
 6. 在已装旧版本且签名一致的测试设备上，手动检查更新，核对显示版本、下载进度、安装来源权限、系统安装交接与安装后的数据保留。
 
-清单和 APK 均走匿名 HTTPS。客户端只接受 GitHub 及其明确的 release asset 主机，支持必要的 HTTPS 重定向；任何 GitHub 认证都只用于发布机器上的上传操作，不能嵌入 APK 或 update.json。
+清单和 APK 均走匿名 HTTPS。客户端只接受 GitHub、其明确的 release asset 主机，以及 UpdateSources.kt 中固定的 gh-proxy.com / ghfast.top 加速主机。代理请求只包装公开 GitHub Release 地址；不接受任意转发目标或嵌套代理，支持必要的 HTTPS 重定向。任何 GitHub 认证都只用于发布机器上的上传操作，不能嵌入 APK 或 update.json。
+
+清单 `apkUrl` 仍必须填写本仓库的 GitHub 原始地址，不能换成代理 URL；客户端自行构造加速请求。发布说明中应同时提供两条 `https://代理域名/https://github.com/<仓库>/releases/download/<tag>/<APK>` 下载链接，供尚未安装支持加速版本的用户使用。更换代理服务时，应更新固定白名单并实测匿名清单、跳转和完整 APK 哈希，不能仅检查首页 HTTP 200。
 
 ## 发布后调整
 

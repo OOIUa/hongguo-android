@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = "新增 GitHub 在线更新：启动时检查新版本，也可点击检查更新。下载显示进度，支持取消和重试；校验完成后通过系统确认安装。保留首页推荐、分类筛选、搜索、选集播放、收藏与播放历史。"
+        notes = "新增 GitHub 加速更新：更新清单和 APK 均支持直连失败后自动切换两条加速线路，也可手动选择线路。保留下载进度、取消重试、安装包校验和本机收藏、播放历史。"
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

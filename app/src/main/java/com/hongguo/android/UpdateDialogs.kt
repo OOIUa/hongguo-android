@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -83,6 +84,23 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
 
                 Column(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = contentHeight).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                    Text("更新线路", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Ink)
+                    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                        listOf(listOf(UpdateSource.AUTO, UpdateSource.DIRECT),
+                            listOf(UpdateSource.PROXY_PRIMARY, UpdateSource.PROXY_BACKUP)).forEach { row ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                row.forEach { source ->
+                                    FilterChip(selected = state.source == source, enabled = !state.downloading,
+                                        onClick = { model.selectSource(source) },
+                                        label = { Text(source.label, fontSize = 12.sp) },
+                                        modifier = Modifier.weight(1f).testTag("update_source_${source.name.lowercase(Locale.ROOT)}"))
+                                }
+                            }
+                        }
+                    }
+                    Text(if (state.source == UpdateSource.AUTO) "直连失败时自动尝试两条加速线路。" else "连接不畅时，可切换其他线路后重试。",
+                        color = Muted, fontSize = 11.sp, lineHeight = 18.sp)
+                    state.activeSource?.let { Text("当前线路：${it.label}", color = Orange, fontSize = 11.sp) }
                     if (state.checking) {
                         Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(11.dp)) {

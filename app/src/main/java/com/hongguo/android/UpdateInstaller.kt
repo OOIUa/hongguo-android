@@ -18,6 +18,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URI
@@ -45,7 +46,12 @@ class UpdateFileProvider : FileProvider()
 class UpdateInstaller(context: Context) {
     private val app = context.applicationContext
 
-    suspend fun download(update: AppUpdate, onProgress: (Long, Long) -> Unit): File {
+    suspend fun download(
+        update: AppUpdate,
+        source: UpdateSource = UpdateSource.AUTO,
+        onSource: (UpdateSource) -> Unit = {},
+        onProgress: (Long, Long) -> Unit,
+    ): File {
         val coroutine = currentCoroutineContext()
         val checkCancelled = {
             coroutine.ensureActive()
@@ -59,7 +65,7 @@ class UpdateInstaller(context: Context) {
                     locked = FILE_LOCK.tryLock(200, TimeUnit.MILLISECONDS)
                     checkCancelled()
                 }
-                downloadBlocking(update, onProgress, checkCancelled)
+                downloadBlocking(update, source, onSource, onProgress, checkCancelled)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: InterruptedException) {
@@ -76,11 +82,14 @@ class UpdateInstaller(context: Context) {
 
     private fun downloadBlocking(
         update: AppUpdate,
+        source: UpdateSource,
+        onSource: (UpdateSource) -> Unit,
         onProgress: (Long, Long) -> Unit,
         checkCancelled: () -> Unit,
     ): File {
         UpdateArtifactChecks.validateMetadata(update.sizeBytes, update.sha256)
-        val start = UpdateArtifactChecks.checkedUrl(update.apkUrl)
+        val routes = try { UpdateSources.routes(update.apkUrl, source) }
+        catch (_: IllegalArgumentException) { throw UpdateInstallException("更新下载地址无效") }
         validateUpdateVersion(update)
         val directory = updatesDirectory()
         // Downloads are process-wide serialized; a previous process can leave only these intermediates.
@@ -89,8 +98,8 @@ class UpdateInstaller(context: Context) {
         val final = File(directory, "update-${update.versionCode}-${update.sha256.lowercase(Locale.ROOT)}.apk")
         if (final.canonicalFile.parentFile != directory) throw UpdateInstallException("更新缓存文件无效，请重新下载")
         VERIFIED.remove(final.canonicalPath)
-        onProgress(0, update.sizeBytes)
         if (final.isFile) {
+            onProgress(0, update.sizeBytes)
             try {
                 UpdateArtifactChecks.verify(final, update.sizeBytes, update.sha256, checkCancelled)
                 validateArchive(final, update)
@@ -107,36 +116,57 @@ class UpdateInstaller(context: Context) {
                 throw error
             }
         }
-        val temporary = File.createTempFile("update-", ".part.apk", directory)
-        try {
-            transfer(start, temporary, update.sizeBytes, onProgress, checkCancelled)
-            checkCancelled()
-            UpdateArtifactChecks.verify(temporary, update.sizeBytes, update.sha256, checkCancelled)
-            validateArchive(temporary, update)
-            checkCancelled()
-            // Same directory and filesystem. Unsupported atomic storage fails closed.
-            Files.move(temporary.toPath(), final.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            VERIFIED[final.canonicalPath] = update
-            onProgress(update.sizeBytes, update.sizeBytes)
-            return final
-        } finally {
-            temporary.delete()
+        return UpdateRouteExecutor.execute(routes, checkCancelled, onRoute = { route ->
+            onSource(route.source)
+            onProgress(0, update.sizeBytes)
+        }) { route ->
+            val temporary = File.createTempFile("update-", ".part.apk", directory)
+            try {
+                try {
+                    transfer(route, temporary, update.sizeBytes, onProgress, checkCancelled)
+                    checkCancelled()
+                    UpdateArtifactChecks.verify(temporary, update.sizeBytes, update.sha256, checkCancelled)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    checkCancelled()
+                    // Some stream implementations clear the interrupt flag while reporting cancellation.
+                    // SocketTimeoutException is retryable, but a plain interrupted IO must never switch routes.
+                    if (error is InterruptedIOException && error !is SocketTimeoutException) {
+                        throw CancellationException("更新下载已取消")
+                    }
+                    // Changing the network source cannot fix storage permissions or insufficient disk.
+                    val message = error.message.orEmpty()
+                    if (message.contains(Regex("ENOSPC|no space|EACCES|permission denied|EROFS|read-only file system", RegexOption.IGNORE_CASE))) throw error
+                    throw RetryUpdateRoute(error)
+                }
+                // A matching digest with a different identity/signature means the release itself is bad.
+                // Such failures and local commit errors stop; they never fall back to an unchecked APK.
+                validateArchive(temporary, update)
+                checkCancelled()
+                Files.move(temporary.toPath(), final.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                VERIFIED[final.canonicalPath] = update
+                onProgress(update.sizeBytes, update.sizeBytes)
+                final
+            } finally {
+                temporary.delete()
+            }
         }
     }
 
     private fun transfer(
-        initial: URI,
+        route: UpdateRoute,
         destination: File,
         expectedSize: Long,
         onProgress: (Long, Long) -> Unit,
         checkCancelled: () -> Unit,
     ) {
-        var current = initial
+        var current = UpdateArtifactChecks.checkedUrl(route.url)
         for (redirects in 0..MAX_REDIRECTS) {
             checkCancelled()
             val connection = current.toURL().openConnection() as HttpURLConnection
             connection.instanceFollowRedirects = false
-            connection.connectTimeout = 15_000
+            connection.connectTimeout = if (route.source == UpdateSource.DIRECT) 5_000 else 8_000
             connection.readTimeout = 5_000
             connection.requestMethod = "GET"
             // Fixed public-download headers only; API keys/cookies from the media core are never used.
@@ -150,7 +180,7 @@ class UpdateInstaller(context: Context) {
                     if (redirects == MAX_REDIRECTS) throw UpdateInstallException("更新下载重定向次数过多，请稍后重试")
                     val location = connection.getHeaderField("Location")
                         ?: throw UpdateInstallException("更新下载地址暂不可用")
-                    current = try { UpdateArtifactChecks.checkedUrl(current.resolve(location).toString()) }
+                    current = try { UpdateSources.resolveRedirect(current, location) }
                     catch (error: UpdateInstallException) { throw error }
                     catch (_: Exception) { throw UpdateInstallException("更新下载地址无效") }
                     continue
@@ -160,6 +190,7 @@ class UpdateInstaller(context: Context) {
                 if (declared >= 0 && declared != expectedSize) throw UpdateInstallException("更新包大小与发布信息不一致，请稍后重新检查更新")
                 var received = 0L
                 var lastProgress = 0L
+                val stall = UpdateDownloadStallGuard()
                 connection.inputStream.use { input ->
                     FileOutputStream(destination).use { output ->
                         val buffer = ByteArray(64 * 1024)
@@ -167,9 +198,10 @@ class UpdateInstaller(context: Context) {
                             checkCancelled()
                             val count = input.read(buffer)
                             if (count < 0) break
-                            if (count == 0) continue
                             checkCancelled()
                             received += count
+                            stall.received(received)
+                            if (count == 0) continue
                             if (received > expectedSize) throw UpdateInstallException("更新包大小与发布信息不一致，请重新检查更新")
                             output.write(buffer, 0, count)
                             val now = System.nanoTime()
@@ -295,15 +327,10 @@ class UpdateInstaller(context: Context) {
 /** Pure JVM-verifiable network/file boundary shared by fresh download and cached install checks. */
 internal object UpdateArtifactChecks {
     const val MAX_APK_BYTES = UpdateManifestCodec.MAX_APK_BYTES
-    private val HOSTS = setOf("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com")
 
     fun checkedUrl(raw: String): URI {
-        val uri = try { URI(raw) } catch (_: Exception) { throw UpdateInstallException("更新下载地址无效") }
-        if (!uri.scheme.equals("https", true) || uri.host?.lowercase(Locale.ROOT) !in HOSTS ||
-            uri.userInfo != null || uri.fragment != null || (uri.port != -1 && uri.port != 443)) {
-            throw UpdateInstallException("更新下载地址不受支持，已停止下载")
-        }
-        return uri
+        return try { UpdateSources.checkedTransportUri(raw) }
+        catch (_: IllegalArgumentException) { throw UpdateInstallException("更新下载地址不受支持，已停止下载") }
     }
 
     fun validateMetadata(size: Long, sha256: String) {
@@ -345,5 +372,56 @@ internal object UpdateArtifactChecks {
             val value = byte.toInt() and 0xff
             append(alphabet[value ushr 4]); append(alphabet[value and 15])
         } }
+    }
+}
+
+/** Only explicitly retryable network/content failures move to a different route. */
+internal class RetryUpdateRoute(val failure: Exception) : Exception("Update route failed")
+
+/** Pure blocking seam; the caller already runs inside cancellable Dispatchers.IO. */
+internal object UpdateRouteExecutor {
+    fun <T> execute(
+        routes: List<UpdateRoute>,
+        checkCancelled: () -> Unit = {},
+        onRoute: (UpdateRoute) -> Unit = {},
+        attempt: (UpdateRoute) -> T,
+    ): T {
+        var lastFailure: Exception? = null
+        for (route in routes) {
+            checkCancelled()
+            onRoute(route)
+            checkCancelled()
+            try {
+                val result = attempt(route)
+                checkCancelled()
+                return result
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (retry: RetryUpdateRoute) {
+                checkCancelled()
+                if (retry.failure is CancellationException) throw retry.failure
+                if (retry.failure is InterruptedIOException && retry.failure !is SocketTimeoutException) {
+                    throw CancellationException("更新下载已取消")
+                }
+                lastFailure = retry.failure
+            }
+        }
+        throw lastFailure ?: UpdateInstallException("没有可用的更新下载线路")
+    }
+}
+
+/** Allow slow downloads to finish, but reject connections that only drip a few bytes forever. */
+internal class UpdateDownloadStallGuard(private val nanoTime: () -> Long = System::nanoTime) {
+    private var progressAt = nanoTime()
+    private var progressBytes = 0L
+
+    fun received(totalBytes: Long) {
+        val now = nanoTime()
+        if (totalBytes - progressBytes >= 4 * 1024) {
+            progressBytes = totalBytes
+            progressAt = now
+        } else if (now - progressAt >= 30_000_000_000L) {
+            throw SocketTimeoutException("更新下载停滞，请稍后重试")
+        }
     }
 }
