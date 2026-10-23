@@ -10,7 +10,19 @@
 - 文件测试覆盖大小、ZIP 头和 SHA-256 校验、篡改、取消及异常下载地址。
 - UpdateInstallerFlowTest：7/7 通过。使用设备已安装 APK，验证错误版本、错误包名、同长度篡改、截断、错误头、未经登记的文件和目录边界均被拒绝。两项安装权限用例由宿主 adb 在测试前允许、测试后恢复；测试进程不修改安装 app-op。
 
-GitHub 发布后，另行记录真实在线下载、系统安装和数据保留验证。实体手机以及 Android 8–15 设备兼容性尚未验证。
+## GitHub 在线更新实测
+
+发布 tag：v0.3.0，对应应用源码提交 32c6b57446ec0719d435c59ef3ee085d7ab3103b。
+
+- 公开的 latest/download/update.json 可匿名取得；清单指向固定 v0.3.0 APK，匿名下载后的大小为 15,489,913 字节，SHA-256 为 a3d75d7d6c84e190dab68317638ca1be75d3f0c18b0ad7de95eb84d914c80bb6，与本地 APK 及 GitHub 上传资产 digest 一致。
+- APK、对应完整源码 ZIP、update.json、SHA256SUMS-0.3.0.txt 四个资产均核对大小与 GitHub sha256 digest 后发布，release 为 Latest、非草稿、非 prerelease。
+- 先保留旧版数据，以相同更新代码构建仅供 QA 的 versionCode=2 / versionName=0.2.0-update-qa；该包不作为发布资产。普通 0.2.0-test 本身没有更新器，需要先手动安装 0.3.0。
+- Android 16 模拟器内手动检查实际 GitHub 清单，显示 0.3.0、更新说明与包大小；实际下载显示进度。中途取消显示已取消，cache/updates 不残留临时包；随后重试并完成真实公开 APK 下载与校验。
+- 首次安装进入系统来源权限页面，授权返回后打开系统安装确认。经设备的 Play 保护机制扫描并继续安装，安装器显示“应用已更新”；PackageManager 实际版本为 code 3 / name 0.3.0。
+- 系统安装前后 installation.xml、hongguo_local.xml、hongguo_library.xml 的 SHA-256 完全一致，设备身份、续播和收藏历史数据保留。
+- 打开已安装的 0.3.0 再检查实际清单，显示“当前已是最新版本（0.3.0）”。
+
+实体手机以及 Android 8–15 设备兼容性尚未验证。GitHub 和上游片源的网络可达性取决于用户网络。
 
 # 0.2.0-test 验证记录
 
