@@ -1,0 +1,73 @@
+{
+  "_说明": "hongguo-web 启动配置。改完保存即可生效，无需设置任何环境变量。",
+  "_优先级": "命令行参数 > 环境变量 > 本文件 > 内置默认值。临时覆盖可用环境变量，如 PORT=9000。",
+  "_提示": "查看当前实际生效的配置：node server/src/main.js --config",
+
+  "api": {
+    "_说明": "API 服务（网页后端）监听设置",
+    "host": "127.0.0.1",
+    "_host提示": "改成 0.0.0.0 可让局域网内其他设备访问；仅在可信网络下这么做",
+    "port": 8000
+  },
+
+  "launcher": {
+    "_说明": "启动器自身行为",
+    "open_browser": true,
+    "_open_browser提示": "设为 false 启动后不自动打开浏览器"
+  },
+
+  "upstream": {
+    "_说明": "上游接口参数（原 content-config.json，固定值，一般不需要修改）",
+    "api_host": "api5-normal-sinfonlinea.fqnovel.com",
+    "_api_host提示": "上游 API 域名。可用环境变量 HONGGUO_HOST 临时覆盖",
+    "base_query": {
+      "_说明": "所有上游请求都会带上的基础 query 参数",
+      "aid": "8662",
+      "app_name": "novelread",
+      "version_code": "72232",
+      "version_name": "7.2.2.32",
+      "channel": "audit",
+      "device_platform": "android",
+      "device_type": "audit-windows",
+      "os_version": "12",
+      "update_version_code": "72232"
+    },
+    "session_headers": {
+      "_说明": "所有上游请求都会带上的请求头",
+      "user-agent": "hongguo-web/1.0",
+      "x-tt-store-region": "cn-sh",
+      "x-tt-store-region-src": "uid",
+      "passport-sdk-version": "5051452",
+      "sdk-version": "2"
+    }
+  },
+
+  "runtime": {
+    "_说明": "运行时调优参数，通常无需改动",
+    "transcode": false,
+    "_transcode提示": "HEVC 转 H.264。默认关闭；目标机器支持 HEVC 时直出更快，画质无损",
+    "data_dir": "",
+    "_data_dir提示": "留空使用默认 server（视频解密缓存落在 server/stream-cache）。设备身份与链路密钥均落在 server/config/apikeys.json，不随本项迁移",
+    "device_id": "",
+    "_device_id提示": "留空自动生成。多实例同时跑时给每个实例设不同值，可避免设备身份互撞",
+    "throttle_ms": 260,
+    "_throttle_ms提示": "同一接口两次请求的最小间隔（毫秒），防风控。调大更安全，调小更快",
+    "cache": {
+      "max_files": 30,
+      "_max_files提示": "视频缓存文件数上限，超出后按最后修改时间删除最旧的；设为 0 表示不限",
+      "mem_max": 4096,
+      "mem_max_mb": 128,
+      "img_max_mb": 64,
+      "img_max_kb": 4096
+    },
+    "rate_buckets_max": 4096,
+    "rate_bucket_idle_ms": 600,
+    "sweep_interval_ms": 60,
+    "download": {
+      "dir": "download",
+      "_dir提示": "剧集下载目录（相对项目根目录）。每部剧在其下建以剧名命名的文件夹，视频文件为「第N集.mp4」。可用环境变量 HONGGUO_DOWNLOAD_DIR 覆盖",
+      "concurrency": 2,
+      "_concurrency提示": "同时下载的集数上限（1-8）。解密较吃 CPU，调大可能拖慢播放；可用环境变量 HONGGUO_DOWNLOAD_CONCURRENCY 覆盖"
+    }
+  }
+}

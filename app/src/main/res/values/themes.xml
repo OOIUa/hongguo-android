@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.Hongguo" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#E44843</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">#FFF9F6</item>
+    </style>
+</resources>

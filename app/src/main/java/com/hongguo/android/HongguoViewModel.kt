@@ -1,0 +1,451 @@
+package com.hongguo.android
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
+
+enum class AppTab { HOME, CATEGORY, SEARCH, FAVORITES, HISTORY }
+
+data class FeedState(
+    val items: List<DramaCard> = emptyList(),
+    val loading: Boolean = false,
+    val loadingMore: Boolean = false,
+    val hasMore: Boolean = false,
+    val nextOffset: Int = 0,
+    val error: String? = null,
+    val loaded: Boolean = false,
+)
+
+data class HongguoUiState(
+    val tab: AppTab = AppTab.HOME,
+    val homeFeed: HomeFeed = HomeFeed.RECOMMEND,
+    val home: FeedState = FeedState(),
+    val category: FeedState = FeedState(),
+    val browseDraft: BrowseSelection = BrowseSelection(),
+    val browseApplied: BrowseSelection = BrowseSelection(),
+    val filterGroups: List<FilterGroup> = emptyList(),
+    val filtersLoading: Boolean = false,
+    val filtersError: String? = null,
+    val favorites: List<LibraryEntry> = emptyList(),
+    val history: List<LibraryEntry> = emptyList(),
+    val query: String = "",
+    val searchedQuery: String = "",
+    val results: List<DramaCard> = emptyList(),
+    val searching: Boolean = false,
+    val loadingMore: Boolean = false,
+    val hasMore: Boolean = false,
+    val nextOffset: Int = 0,
+    val searchError: String? = null,
+    val selectedCard: DramaCard? = null,
+    val detail: DramaDetail? = null,
+    val loadingDetail: Boolean = false,
+    val detailError: String? = null,
+    val episodePosition: Int = -1,
+    val preparing: Boolean = false,
+    val preparationStage: String = "",
+    val preparationDone: Long = 0,
+    val preparationTotal: Long = 0,
+    val video: PreparedVideo? = null,
+    val playbackError: String? = null,
+    val playbackStatus: String = "",
+    val firstFrameRendered: Boolean = false,
+    val resumePositionMs: Long = 0,
+)
+
+class HongguoViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository = DramaRepository()
+    private val library = LibraryStore(application)
+    private val preferences = application.getSharedPreferences("hongguo_local", 0)
+    private val mutableState = MutableStateFlow(HongguoUiState(query = preferences.getString("last_query", "").orEmpty()))
+    val state = mutableState.asStateFlow()
+    private var searchJob: Job? = null
+    private var detailJob: Job? = null
+    private var mediaJob: Job? = null
+    private var homeJob: Job? = null
+    private var categoryJob: Job? = null
+    private var filtersJob: Job? = null
+    private var pendingLibrary: LibraryEntry? = null
+    private data class ResumeTarget(val card: DramaCard, val index: Int)
+    private val resumeTargets = ConcurrentHashMap<String, ResumeTarget>()
+    @Volatile private var searchVersion = 0
+    @Volatile private var detailVersion = 0
+    @Volatile private var mediaVersion = 0
+    private var homeVersion = 0
+    private var categoryVersion = 0
+    private var filtersVersion = 0
+
+    init {
+        mutableState.update { it.copy(favorites = library.state.value.favorites, history = library.state.value.history) }
+        viewModelScope.launch {
+            library.state.collect { snapshot -> mutableState.update {
+                it.copy(favorites = snapshot.favorites, history = snapshot.history)
+            } }
+        }
+        selectTab(AppTab.HOME)
+    }
+
+    fun selectTab(tab: AppTab) {
+        if (state.value.selectedCard != null) backToSearch()
+        mutableState.update { it.copy(tab = tab) }
+        when (tab) {
+            AppTab.HOME -> if (!state.value.home.loaded && !state.value.home.loading) refreshHome()
+            AppTab.CATEGORY -> if (!state.value.category.loaded && !state.value.category.loading) {
+                reloadFilters()
+                applyBrowse()
+            }
+            else -> Unit
+        }
+    }
+
+    fun selectHomeFeed(feed: HomeFeed) {
+        if (state.value.homeFeed == feed && state.value.home.loaded) return
+        mutableState.update { it.copy(homeFeed = feed) }
+        refreshHome()
+    }
+
+    fun refreshHome() = requestHome(false)
+    fun loadMoreHome() = requestHome(true)
+
+    private fun requestHome(append: Boolean) {
+        val current = state.value
+        if (append && (current.home.loading || current.home.loadingMore || !current.home.hasMore)) return
+        val version = ++homeVersion
+        homeJob?.cancel()
+        val previous = if (append) current.home else FeedState()
+        mutableState.update { it.copy(home = previous.copy(loading = !append, loadingMore = append, error = null)) }
+        homeJob = viewModelScope.launch {
+            try {
+                val page = repository.discover(current.homeFeed, if (append) previous.nextOffset else 0, previous.items.map { it.id })
+                if (version != homeVersion || !currentCoroutineContext().isActive) return@launch
+                mutableState.update { it.copy(home = mergePage(previous, page, append)) }
+            } catch (error: CancellationException) { throw error }
+            catch (error: Exception) {
+                if (version == homeVersion) mutableState.update { it.copy(home = previous.copy(
+                    loading = false, loadingMore = false, loaded = true, error = readableFailure(error, "加载推荐"))) }
+            }
+        }
+    }
+
+    fun changeGenre(genre: String) {
+        if (genre !in setOf("short_play", "comic_series", "ai_series")) return
+        if (genre == state.value.browseDraft.genre) return
+        mutableState.update { it.copy(browseDraft = BrowseSelection(genre), filterGroups = emptyList(), filtersError = null) }
+        reloadFilters()
+        applyBrowse()
+    }
+
+    fun selectFilter(key: String, value: String) {
+        if (key !in setOf("theme", "setting", "background", "sort", "gender", "status", "days")) return
+        mutableState.update {
+            val options = it.browseDraft.options.toMutableMap()
+            if (value.isBlank() || options[key] == value) options.remove(key) else options[key] = value
+            it.copy(browseDraft = it.browseDraft.copy(options = options.toMap()))
+        }
+    }
+
+    fun reloadFilters() {
+        val genre = state.value.browseDraft.genre
+        val version = ++filtersVersion
+        filtersJob?.cancel()
+        mutableState.update { it.copy(filtersLoading = true, filtersError = null) }
+        filtersJob = viewModelScope.launch {
+            try {
+                val groups = repository.filters(genre)
+                if (version != filtersVersion || !currentCoroutineContext().isActive) return@launch
+                mutableState.update { it.copy(filterGroups = groups, filtersLoading = false) }
+            } catch (error: CancellationException) { throw error }
+            catch (error: Exception) {
+                if (version == filtersVersion) mutableState.update { it.copy(filtersLoading = false,
+                    filtersError = readableFailure(error, "获取筛选条件")) }
+            }
+        }
+    }
+
+    fun applyBrowse() {
+        mutableState.update { it.copy(browseApplied = it.browseDraft.copy(options = it.browseDraft.options.toMap())) }
+        requestBrowse(false)
+    }
+
+    fun resetBrowse() {
+        mutableState.update { it.copy(browseDraft = BrowseSelection(it.browseDraft.genre)) }
+        applyBrowse()
+    }
+
+    fun loadMoreBrowse() {
+        if (state.value.browseDraft != state.value.browseApplied) return
+        requestBrowse(true)
+    }
+
+    private fun requestBrowse(append: Boolean) {
+        val current = state.value
+        if (append && (current.category.loading || current.category.loadingMore || !current.category.hasMore)) return
+        val version = ++categoryVersion
+        categoryJob?.cancel()
+        val previous = if (append) current.category else FeedState()
+        val selection = current.browseApplied
+        mutableState.update { it.copy(category = previous.copy(loading = !append, loadingMore = append, error = null)) }
+        categoryJob = viewModelScope.launch {
+            try {
+                val page = repository.browse(selection, if (append) previous.nextOffset else 0, previous.items.map { it.id })
+                if (version != categoryVersion || !currentCoroutineContext().isActive) return@launch
+                mutableState.update { it.copy(category = mergePage(previous, page, append)) }
+            } catch (error: CancellationException) { throw error }
+            catch (error: Exception) {
+                if (version == categoryVersion) mutableState.update { it.copy(category = previous.copy(
+                    loading = false, loadingMore = false, loaded = true, error = readableFailure(error, "加载分类"))) }
+            }
+        }
+    }
+
+    private fun mergePage(previous: FeedState, page: DramaPage, append: Boolean): FeedState {
+        val items = ((if (append) previous.items else emptyList()) + page.items).distinctBy { it.id }
+        val advances = page.nextOffset > (if (append) previous.nextOffset else -1)
+        val added = !append || items.size > previous.items.size
+        return FeedState(items = items, hasMore = page.hasMore && advances && added,
+            nextOffset = page.nextOffset, loaded = true)
+    }
+
+    fun toggleFavorite(card: DramaCard) {
+        val detail = state.value.detail?.takeIf { it.id == card.id }
+        library.toggleFavorite(if (detail == null) card else cardFor(detail))
+    }
+    fun removeHistory(id: String) = library.deleteHistory(id)
+    fun clearFavorites() = library.clearFavorites()
+    fun clearHistory() = library.clearHistory()
+    fun openLibrary(entry: LibraryEntry) = openDramaInternal(entry.card, entry)
+
+    fun updateQuery(value: String) { mutableState.update { it.copy(query = value) } }
+
+    fun search() {
+        val query = state.value.query.trim()
+        if (query.isEmpty()) return
+        cancelSearch()
+        cancelDetailAndMedia()
+        preferences.edit().putString("last_query", query).apply()
+        val version = ++searchVersion
+        mutableState.update { it.copy(tab = AppTab.SEARCH, query = query, searchedQuery = query,
+            results = emptyList(), searching = true, loadingMore = false, hasMore = false, nextOffset = 0,
+            searchError = null, selectedCard = null, detail = null, video = null, preparing = false,
+            playbackError = null, firstFrameRendered = false) }
+        searchJob = viewModelScope.launch {
+            try {
+                val page = repository.search(query, 0)
+                if (version != searchVersion || !currentCoroutineContext().isActive) return@launch
+                mutableState.update {
+                    it.copy(results = page.items.distinctBy(DramaCard::id), searching = false,
+                        hasMore = page.hasMore, nextOffset = page.nextOffset)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (version == searchVersion) mutableState.update {
+                    it.copy(searching = false, searchError = readableFailure(error, "搜索"))
+                }
+            }
+        }
+    }
+
+    fun loadMore() {
+        val current = state.value
+        if (current.searching || current.loadingMore || !current.hasMore || current.selectedCard != null) return
+        val version = ++searchVersion
+        mutableState.update { it.copy(loadingMore = true, searchError = null) }
+        searchJob = viewModelScope.launch {
+            try {
+                val page = repository.search(current.searchedQuery, current.nextOffset)
+                if (version != searchVersion || !currentCoroutineContext().isActive) return@launch
+                mutableState.update {
+                    val merged = (it.results + page.items).distinctBy(DramaCard::id)
+                    it.copy(results = merged, loadingMore = false, nextOffset = page.nextOffset,
+                        hasMore = page.hasMore && page.nextOffset > current.nextOffset && merged.size > it.results.size)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (version == searchVersion) mutableState.update {
+                    it.copy(loadingMore = false, searchError = readableFailure(error, "加载更多"))
+                }
+            }
+        }
+    }
+
+    fun cancelSearch() {
+        ++searchVersion
+        searchJob?.cancel()
+        mutableState.update { it.copy(searching = false, loadingMore = false) }
+    }
+
+    fun openDrama(card: DramaCard) = openDramaInternal(card, null)
+
+    private fun openDramaInternal(card: DramaCard, resume: LibraryEntry?) {
+        pendingLibrary = resume
+        cancelSearch()
+        cancelDetailAndMedia()
+        val version = ++detailVersion
+        mutableState.update {
+            it.copy(selectedCard = card, detail = null, loadingDetail = true, detailError = null,
+                video = null, preparing = false, preparationStage = "", playbackError = null,
+                episodePosition = -1, playbackStatus = "", firstFrameRendered = false, resumePositionMs = 0)
+        }
+        detailJob = viewModelScope.launch {
+            try {
+                val detail = repository.details(card)
+                if (version != detailVersion || !currentCoroutineContext().isActive) return@launch
+                val lastId = resume?.episodeId?.takeIf { it.isNotBlank() } ?: preferences.getString("${card.id}.episode", "")
+                val lastIndex = resume?.episodeIndex?.takeIf { it > 0 } ?: preferences.getInt("${card.id}.index", -1)
+                val selected = detail.episodes.indexOfFirst { it.id == lastId }.takeIf { it >= 0 }
+                    ?: detail.episodes.indexOfFirst { it.index == lastIndex }.takeIf { it >= 0 } ?: 0
+                mutableState.update { it.copy(detail = detail, loadingDetail = false, episodePosition = selected) }
+                library.refreshCard(cardFor(detail))
+                if (resume != null && resume.episodeIndex > 0) {
+                    val target = detail.episodes[selected]
+                    val position = if (target.id == resume.episodeId || target.index == resume.episodeIndex) resume.positionMs else 0
+                    playEpisode(selected, resumeOverrideMs = position)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (version == detailVersion) mutableState.update {
+                    it.copy(loadingDetail = false, detailError = readableFailure(error, "获取剧集"))
+                }
+            }
+        }
+    }
+
+    fun retryDetails() { state.value.selectedCard?.let { openDramaInternal(it, pendingLibrary) } }
+
+    fun playEpisode(position: Int, restart: Boolean = false, resumeOverrideMs: Long? = null) {
+        val current = state.value
+        val detail = current.detail ?: return
+        val episode = detail.episodes.getOrNull(position) ?: return
+        ++mediaVersion
+        mediaJob?.cancel()
+        val version = mediaVersion
+        resumeTargets[episode.id] = ResumeTarget(cardFor(detail), episode.index)
+        val savedPosition = if (restart) 0 else resumeOverrideMs ?: preferences.getLong("${detail.id}.${episode.id}.position", 0)
+        mutableState.update {
+            it.copy(episodePosition = position, preparing = true, video = null,
+                preparationStage = "正在获取片源", preparationDone = 0, preparationTotal = 0,
+                playbackError = null, playbackStatus = "", firstFrameRendered = false, resumePositionMs = savedPosition)
+        }
+        mediaJob = viewModelScope.launch {
+            try {
+                val prepared = repository.prepare(episode) { stage, done, total ->
+                    if (version == mediaVersion) mutableState.update {
+                        it.copy(preparationStage = stage, preparationDone = done, preparationTotal = total)
+                    }
+                }
+                if (version != mediaVersion || !currentCoroutineContext().isActive) return@launch
+                mutableState.update { it.copy(video = prepared.copy(requestId = version.toLong()), preparing = false, playbackStatus = "正在载入播放器") }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (version == mediaVersion) mutableState.update {
+                    it.copy(preparing = false, playbackError = readableFailure(error, "准备播放"), playbackStatus = "")
+                }
+            }
+        }
+    }
+
+    fun cancelPreparation() {
+        ++mediaVersion
+        mediaJob?.cancel()
+        mutableState.update { it.copy(preparing = false, preparationStage = "", playbackStatus = "已取消，可重新选择剧集") }
+    }
+
+    fun retryPlayback() {
+        val position = state.value.episodePosition
+        if (position >= 0) playEpisode(position)
+    }
+
+    fun nextEpisode() {
+        val current = state.value
+        if (current.episodePosition < (current.detail?.episodes?.lastIndex ?: -1)) playEpisode(current.episodePosition + 1)
+    }
+
+    fun previousEpisode() {
+        if (state.value.episodePosition > 0) playEpisode(state.value.episodePosition - 1)
+    }
+
+    private fun isCurrentVideo(episodeId: String, requestId: Long): Boolean =
+        state.value.video?.let { it.episodeId == episodeId && it.requestId == requestId } == true
+
+    fun onPlaybackStatus(episodeId: String, requestId: Long, status: String) {
+        if (isCurrentVideo(episodeId, requestId)) mutableState.update { it.copy(playbackStatus = status) }
+    }
+
+    fun onFirstFrame(episodeId: String, requestId: Long) {
+        if (!isCurrentVideo(episodeId, requestId)) return
+        val alreadyRendered = state.value.firstFrameRendered
+        mutableState.update { it.copy(firstFrameRendered = true) }
+        if (!alreadyRendered) resumeTargets[episodeId]?.let { target ->
+            library.recordPlayback(target.card, episodeId, target.index, state.value.resumePositionMs)
+        }
+    }
+
+    fun onPlaybackError(episodeId: String, requestId: Long, unsupported: Boolean) {
+        if (isCurrentVideo(episodeId, requestId)) mutableState.update {
+            it.copy(playbackError = if (unsupported) "当前设备无法解码这集视频，可重试或选择其他集。" else "视频播放失败，可重试或选择其他集。",
+                playbackStatus = "播放失败")
+        }
+    }
+
+    fun onPlaybackEnded(episodeId: String, requestId: Long) {
+        val current = state.value
+        if (!isCurrentVideo(episodeId, requestId)) return
+        savePosition(episodeId, 0, requestId)
+        if (current.episodePosition < (current.detail?.episodes?.lastIndex ?: -1)) nextEpisode()
+        else onPlaybackStatus(episodeId, requestId, "已播完最后一集")
+    }
+
+    fun savePosition(episodeId: String, positionMs: Long, requestId: Long? = null) {
+        val current = state.value
+        if (requestId != null && current.video?.episodeId == episodeId && current.video.requestId != requestId) return
+        val target = resumeTargets[episodeId] ?: return
+        val editor = preferences.edit().putLong("${target.card.id}.$episodeId.position", positionMs.coerceAtLeast(0))
+        // The old player's disposal may follow a new selection; it must not replace that selection.
+        val selected = current.detail?.episodes?.getOrNull(current.episodePosition)
+        if (selected?.id == episodeId && current.detail?.id == target.card.id) {
+            editor.putString("${target.card.id}.episode", episodeId).putInt("${target.card.id}.index", target.index)
+        }
+        editor.apply()
+        library.updatePosition(target.card, episodeId, target.index, positionMs.coerceAtLeast(0))
+        if (current.video?.episodeId == episodeId && (requestId == null || current.video.requestId == requestId))
+            mutableState.update { it.copy(resumePositionMs = positionMs.coerceAtLeast(0)) }
+    }
+
+    fun backToSearch() {
+        pendingLibrary = null
+        cancelDetailAndMedia()
+        mutableState.update { it.copy(selectedCard = null, detail = null, loadingDetail = false, detailError = null,
+            preparing = false, video = null, playbackError = null, episodePosition = -1, playbackStatus = "", firstFrameRendered = false) }
+    }
+
+    private fun cancelDetailAndMedia() {
+        ++detailVersion
+        ++mediaVersion
+        detailJob?.cancel()
+        mediaJob?.cancel()
+    }
+
+    private fun cardFor(detail: DramaDetail) = DramaCard(detail.id, detail.title, detail.cover,
+        detail.episodes.size, detail.summary)
+
+    override fun onCleared() {
+        cancelSearch()
+        cancelDetailAndMedia()
+        homeJob?.cancel()
+        categoryJob?.cancel()
+        filtersJob?.cancel()
+        super.onCleared()
+    }
+}
