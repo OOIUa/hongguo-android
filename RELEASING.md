@@ -4,12 +4,12 @@
 
 - GitHub 仓库：[OOIUa/hongguo-android](https://github.com/OOIUa/hongguo-android)。
 - 首个支持在线更新的版本：`0.3.0`，`versionCode=3`，tag 为 `v0.3.0`。
-- 当前版本：`0.4.0`，`versionCode=4`，增加双加速线路及自动切换。
+- 当前源码版本：`0.5.0`，`versionCode=5`，增加全屏上下滑切集、渐进播放和“我的”与本地设置；实际发布状态以 `VALIDATION.md` 和 GitHub Releases 为准。
 - 应用 ID：`com.hongguo.android`；当前最低系统为 API 26。
 - 固定清单地址：`https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json`。
-- 应用启动时按 24 小时间隔静默检查，也提供按钮手动检查。下载与系统安装均需用户操作。
+- 自动检查开关开启时，应用启动按 24 小时间隔静默检查；“我的”提供手动检查入口。下载与系统安装均需用户操作，更新窗口保留直连、两条加速线路及自动切换。
 
-0.1.x / 0.2.x 用户需手动覆盖安装一次 0.3.0，才会获得后续在线更新入口。发布应使用既有相同签名，避免破坏现有安装与本机数据。
+0.1.x / 0.2.x 用户需手动覆盖安装一次支持在线更新的新版（0.3.0 及以后），才会获得后续在线更新入口。发布应使用既有相同签名，避免破坏现有安装与本机数据。
 
 ## 签名必须保持连续
 
@@ -23,17 +23,19 @@
 
 ## 构建与验证
 
-在保有原签名密钥的机器上构建。例如发布 0.3.0：
+在保有原签名密钥的机器上构建。例如准备 0.5.0：
 
 ```powershell
-.\gradlew.bat -PappVersionCode=3 -PappVersionName=0.3.0 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+.\gradlew.bat -PappVersionCode=5 -PappVersionName=0.5.0 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-当前待发布 APK 来自 `app/build/outputs/apk/debug/app-debug.apk`。后续版本应严格增加 `appVersionCode`，例如 0.3.1 使用 4；不要通过提高 `versionName`、修改 tag 或替换清单来绕过 versionCode 检查。
+当前待发布 APK 来自 `app/build/outputs/apk/debug/app-debug.apk`。后续版本应严格增加 `appVersionCode`，例如 0.5.1 使用 6；不要通过提高 `versionName`、修改 tag 或替换清单来绕过 versionCode 检查。
 
 发布前核对最终 APK 的真实包名、versionCode、versionName、minSdk 和签名证书。清单中的版本名称和最低系统版本必须与 APK 完全一致。若构建后又重新签名或改动 APK，必须重新计算文件大小及 SHA-256。
 
 设备可用时还应运行 `:app:connectedDebugAndroidTest`，并验证同签名旧版本覆盖安装后的收藏、历史和续播数据。每次发布的实际测试结果记录在 `VALIDATION.md`，不要将 JVM 校验通过等同于真实系统安装已完成。
+
+0.5.0 还需检查全屏上下滑切集、选集、首末集、暂停后的短拖动、进度拖动和前后台恢复，确认切集时只有当前页持有播放器。渐进播放应分别验证首帧早于整集下载、跳到未缓存位置后的继续解码，以及不支持布局的完整缓存回退；受控片源测试与真实上游回归分开记录。“我的”需检查历史返回、设置持久化和更新入口，关闭预加载或进入后台后不能继续预热下一集。尚未跑完的设备回归不得写成通过。
 
 ## 生成 update.json
 
@@ -76,7 +78,7 @@ pwsh -File scripts/prepare-release.ps1
 1. 将本次对应的应用源码、Gradle wrapper、构建配置、许可证和改动说明提交至仓库，再创建对应 tag。
 2. 在该 tag 创建 release，可先保留为草稿，上传脚本生成的 APK、源码 ZIP、`update.json` 和 `SHA256SUMS-<版本>.txt`。签名公开指纹与版本说明也可一并提供，私钥始终留在本地。
 3. 确认该 tag 可以取得对应完整源码。应用按 GPL-3.0-only 分发，不能只上传 APK 而遗漏该版本的对应源码；来源和通知见 `THIRD_PARTY_NOTICES.md`。
-4. 发布为**非草稿、非 prerelease** 的正式 release，并使其成为 Latest。首发使用 `v0.3.0`；prerelease 不用于本应用固定的 latest 清单入口。
+4. 发布为**非草稿、非 prerelease** 的正式 release，并使其成为 Latest。0.5.0 对应 tag 为 `v0.5.0`；prerelease 不用于本应用固定的 latest 清单入口。
 5. 匿名访问固定的 `latest/download/update.json`，确认可经 HTTPS 重定向取得新清单；再校验清单指向的 tag、APK 文件名、真实文件大小及哈希。此过程不应需要 GitHub 账号或 token。
 6. 在已装旧版本且签名一致的测试设备上，手动检查更新，核对显示版本、下载进度、安装来源权限、系统安装交接与安装后的数据保留。
 

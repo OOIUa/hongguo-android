@@ -2,11 +2,13 @@ package com.hongguo.android
 
 import com.hongguo.api.service.Client
 import com.hongguo.api.service.Stream
+import com.hongguo.api.service.ProgressiveMedia
 import com.hongguo.api.util.Json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -31,7 +33,12 @@ data class DramaDetail(
 )
 
 data class DramaPage(val items: List<DramaCard>, val hasMore: Boolean, val nextOffset: Int)
-data class PreparedVideo(val episodeId: String, val path: String, val requestId: Long = 0)
+data class PreparedVideo(
+    val episodeId: String,
+    val path: String,
+    val requestId: Long = 0,
+    val session: ProgressiveMedia.Session? = null,
+)
 
 /** UI uses the on-device Java core directly; no localhost service is involved. */
 class DramaRepository {
@@ -103,17 +110,58 @@ class DramaRepository {
         )
     }
 
-    suspend fun prepare(episode: Episode, progress: (String, Long, Long) -> Unit): PreparedVideo {
+    suspend fun prepare(episode: Episode, allowFallback: Boolean = true,
+                        progress: (String, Long, Long) -> Unit): PreparedVideo {
         val context = currentCoroutineContext()
-        return runInterruptible(Dispatchers.IO) {
-            val path = Stream.prepare(episode.id, "", object : Stream.Progress {
-                override fun update(stage: String, done: Long, total: Long) {
-                    if (context.isActive) progress(stage, done, total)
+        var allocated: ProgressiveMedia.Session? = null
+        var handedOff = false
+        try {
+            val result = runInterruptible(Dispatchers.IO) {
+                Stream.cachedPath(episode.id, "")?.let { return@runInterruptible PreparedVideo(episode.id, it) }
+                var opening = true
+                val listener = object : Stream.Progress {
+                    override fun update(stage: String, done: Long, total: Long) { progress(stage, done, total) }
+                    override fun isCancelled(): Boolean = Thread.currentThread().isInterrupted || (opening && !context.isActive)
                 }
+                try {
+                    allocated = ProgressiveMedia.open(episode.id, "", listener)
+                    opening = false
+                    PreparedVideo(episode.id, "", session = allocated)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (unsupported: ProgressiveMedia.UnsupportedException) {
+                    if (!allowFallback) throw unsupported
+                    progress("compatibility", 0, -1)
+                    val path = Stream.prepare(episode.id, "", object : Stream.Progress {
+                        override fun update(stage: String, done: Long, total: Long) { if (context.isActive) progress(stage, done, total) }
+                        override fun isCancelled(): Boolean = !context.isActive || Thread.currentThread().isInterrupted
+                    })
+                    PreparedVideo(episode.id, path)
+                }
+            }
+            handedOff = true
+            return result
+        } finally {
+            if (!handedOff) allocated?.close()
+        }
+    }
 
-                override fun isCancelled(): Boolean = !context.isActive || Thread.currentThread().isInterrupted
-            })
-            PreparedVideo(episode.id, path)
+    /** Warm only a bounded prefix; no player/decoder and no whole-episode speculative download. */
+    suspend fun warmNext(video: PreparedVideo, onReader: (ProgressiveMedia.Reader?) -> Unit = {}) {
+        val session = video.session ?: return
+        runInterruptible(Dispatchers.IO) {
+            session.newReader().use { reader ->
+                onReader(reader)
+                try {
+                    val buffer = ByteArray(64 * 1024)
+                    val limit = minOf(session.length(), 512L * 1024)
+                    var position = 0L
+                    while (position < limit && !Thread.currentThread().isInterrupted) {
+                        val count = reader.read(position, buffer, 0, minOf(buffer.size.toLong(), limit - position).toInt())
+                        if (count <= 0) break
+                        position += count
+                    }
+                } finally { onReader(null) }
+            }
         }
     }
 }

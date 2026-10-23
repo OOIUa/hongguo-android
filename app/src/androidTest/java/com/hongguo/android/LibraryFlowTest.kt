@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.*
@@ -48,7 +49,8 @@ class LibraryFlowTest {
             compose.onNodeWithTag("confirm_clear_favorites").performClick()
             compose.waitUntil(5_000) { model.state.value.favorites.isEmpty() }
             assertEquals(1, model.state.value.history.size)
-            compose.onNodeWithTag("nav_history").performClick()
+            compose.onNodeWithTag("nav_mine").performClick()
+            compose.onNodeWithTag("my_history").performScrollTo().performClick()
             compose.onNodeWithTag("history_item_0").assertExists()
             compose.onNodeWithTag("history_remove_0").performClick()
             compose.waitUntil(5_000) { model.state.value.history.isEmpty() }

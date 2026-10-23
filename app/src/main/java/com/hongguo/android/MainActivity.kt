@@ -23,10 +23,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,17 +32,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -54,21 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import com.hongguo.api.service.Stream
-import kotlinx.coroutines.delay
-import java.io.File
-import java.util.Locale
 
 internal val Orange = Color(0xFFE85A37)
 internal val Ink = Color(0xFF292421)
@@ -91,24 +70,34 @@ class MainActivity : ComponentActivity() {
                 val state by model.state.collectAsStateWithLifecycle()
                 val updateModel: UpdateViewModel = viewModel()
                 val updateState by updateModel.state.collectAsStateWithLifecycle()
-                BackHandler(enabled = state.selectedCard != null || state.tab != AppTab.HOME) {
-                    if (state.selectedCard != null) model.backToSearch() else model.selectTab(AppTab.HOME)
+                BackHandler(enabled = state.playerOpen || state.selectedCard != null || state.tab != AppTab.HOME) {
+                    if (state.playerOpen) model.closePlayer()
+                    else if (state.selectedCard != null) model.backToSearch()
+                    else if (state.tab == AppTab.HISTORY) model.selectTab(AppTab.MINE)
+                    else model.selectTab(AppTab.HOME)
                 }
-                Scaffold(containerColor = Canvas, bottomBar = {
-                    if (state.selectedCard == null) AppNavigation(state.tab, model::selectTab)
-                }) { insets ->
-                    Column(Modifier.fillMaxSize().padding(insets).semantics { testTagsAsResourceId = true }) {
-                        if (state.selectedCard == null) {
-                            BrandHeader(updateModel::checkForUpdates)
-                            when (state.tab) {
-                                AppTab.HOME -> HomeScreen(state, model)
-                                AppTab.CATEGORY -> CategoryScreen(state, model)
-                                AppTab.SEARCH -> SearchScreen(state, model)
-                                AppTab.FAVORITES -> LibraryScreen(state, model, history = false)
-                                AppTab.HISTORY -> LibraryScreen(state, model, history = true)
+                if (state.playerOpen && state.detail != null) EpisodePlayerScreen(state, model)
+                else {
+                    Scaffold(containerColor = Canvas, bottomBar = {
+                        if (state.selectedCard == null) AppNavigation(if (state.tab == AppTab.HISTORY) AppTab.MINE else state.tab, model::selectTab)
+                    }) { insets ->
+                        Column(Modifier.fillMaxSize().padding(insets).semantics { testTagsAsResourceId = true }) {
+                            if (state.selectedCard == null) {
+                                BrandHeader()
+                                when (state.tab) {
+                                    AppTab.HOME -> HomeScreen(state, model)
+                                    AppTab.CATEGORY -> CategoryScreen(state, model)
+                                    AppTab.SEARCH -> SearchScreen(state, model)
+                                    AppTab.FAVORITES -> LibraryScreen(state, model, history = false)
+                                    AppTab.MINE -> MyScreen(state, model, updateState, updateModel)
+                                    AppTab.HISTORY -> Column(Modifier.fillMaxSize()) {
+                                        TextButton(onClick = { model.selectTab(AppTab.MINE) }) { Text("‹ 我的") }
+                                        LibraryScreen(state, model, history = true)
+                                    }
+                                }
                             }
+                            else DetailScreen(state, model)
                         }
-                        else DetailScreen(state, model)
                     }
                 }
                 UpdateDialogs(updateState, updateModel, this@MainActivity)
@@ -118,7 +107,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun BrandHeader(onCheckUpdates: () -> Unit) {
+private fun BrandHeader() {
     val compact = LocalConfiguration.current.screenHeightDp < 500
     Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = if (compact) 7.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically) {
@@ -131,11 +120,8 @@ private fun BrandHeader(onCheckUpdates: () -> Unit) {
             if (!compact) Text("好故事，随时看", fontSize = 11.sp, color = Muted)
         }
         Spacer(Modifier.weight(1f))
-        Column(horizontalAlignment = Alignment.End) {
-            TextButton(onClick = onCheckUpdates, modifier = Modifier.height(32.dp).testTag("update_check")) {
-                Text("检查更新", fontSize = 12.sp)
-            }
-            if (!compact) Text("本机直连", fontSize = 9.sp, color = Muted, modifier = Modifier.padding(end = 12.dp))
+        Surface(color = Cream, shape = RoundedCornerShape(20.dp)) {
+            Text("本机直连", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 10.sp, color = Muted)
         }
     }
 }
@@ -170,18 +156,21 @@ private fun DetailScreen(state: HongguoUiState, model: HongguoViewModel) {
         }
         if (state.detailError != null) FailurePanel(state.detailError, model::retryDetails)
         state.detail?.let { detail ->
-            // Keep the player outside the lazy list: browsing far-away episodes must not release it.
-            PlaybackPanel(state, model)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = model::previousEpisode, enabled = state.episodePosition > 0,
-                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(13.dp)) { Text("上一集") }
-                Button(onClick = model::nextEpisode,
-                    enabled = state.episodePosition >= 0 && state.episodePosition < detail.episodes.lastIndex,
-                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(13.dp)) { Text("下一集") }
+            Box(Modifier.fillMaxWidth().height(if (LocalConfiguration.current.screenHeightDp < 500) 115.dp else 165.dp)
+                .clip(RoundedCornerShape(18.dp)).background(Color(0xFF181614)), Alignment.Center) {
+                Cover(detail.cover, detail.title, Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .55f)))
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("上下滑动，接着看好故事", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                    val episode = detail.episodes.getOrNull(state.episodePosition)?.index ?: detail.episodes.firstOrNull()?.index ?: 1
+                    Button(onClick = model::openPlayer, modifier = Modifier.testTag("open_player"), shape = RoundedCornerShape(13.dp)) {
+                        Text("▶  播放第 $episode 集")
+                    }
+                }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("选集", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text("${detail.episodes.size} 集 · 播完自动下一集", color = Muted, fontSize = 11.sp)
+                Text("${detail.episodes.size} 集 · ${if (state.autoPlayNext) "播完自动下一集" else "上下滑动切集"}", color = Muted, fontSize = 11.sp)
             }
             LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("episode_list"), state = listState,
                 verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -217,139 +206,3 @@ private fun DetailScreen(state: HongguoUiState, model: HongguoViewModel) {
         }
     }
 }
-
-@Composable
-private fun PlaybackPanel(state: HongguoUiState, model: HongguoViewModel) {
-    val screen = LocalConfiguration.current
-    val videoHeight = if (screen.screenHeightDp < 500) 140.dp else ((screen.screenWidthDp - 40) * 10f / 16f).coerceAtMost(270f).dp
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(Modifier.fillMaxWidth().height(videoHeight).clip(RoundedCornerShape(16.dp)).background(Color(0xFF181614)), Alignment.Center) {
-            when {
-                state.video != null -> LocalVideoPlayer(state.video, state.resumePositionMs, model)
-                state.preparing -> Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CircularProgressIndicator(Modifier.size(29.dp), color = Color(0xFFFFA17C), strokeWidth = 3.dp)
-                    Text(preparationLabel(state.preparationStage), color = Color.White, fontSize = 14.sp)
-                    if (state.preparationTotal > 0) {
-                        LinearProgressIndicator(progress = { (state.preparationDone.toFloat() / state.preparationTotal).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth(), color = Orange, trackColor = Color(0xFF51443C))
-                        Text(if (state.preparationStage == "processing") "正在整理音视频轨道" else "${byteLabel(state.preparationDone)} / ${byteLabel(state.preparationTotal)}",
-                            color = Color(0xFFD2C5BC), fontSize = 11.sp)
-                    }
-                    TextButton(onClick = model::cancelPreparation) { Text("取消载入", color = Color(0xFFFFA17C)) }
-                }
-                else -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                    Text("选一集，开始你的好故事", color = Color(0xFFD2C5BC), fontSize = 14.sp)
-                    Button(onClick = { model.playEpisode(state.episodePosition.coerceAtLeast(0)) }, shape = RoundedCornerShape(12.dp)) {
-                        val ep = state.detail?.episodes?.getOrNull(state.episodePosition)?.index ?: 1
-                        Text("播放第 $ep 集")
-                    }
-                }
-            }
-        }
-        val status = when {
-            state.preparing -> preparationLabel(state.preparationStage)
-            state.playbackError != null -> "播放失败"
-            state.playbackStatus.isNotBlank() -> state.playbackStatus
-            else -> "选择下方集数即可播放"
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(status, modifier = Modifier.weight(1f).testTag("media_status"), color = Muted, fontSize = 12.sp)
-            if (state.firstFrameRendered && state.playbackError == null) Text("画面已就绪", color = Orange, fontSize = 11.sp)
-        }
-        if (state.playbackError != null) FailurePanel(state.playbackError, model::retryPlayback, "retry_playback")
-    }
-}
-
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-@Composable
-private fun LocalVideoPlayer(video: PreparedVideo, initialPositionMs: Long, model: HongguoViewModel) {
-    val context = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var player by remember(video.requestId) { mutableStateOf<ExoPlayer?>(null) }
-    var lastPosition by remember(video.requestId) { mutableStateOf(initialPositionMs) }
-
-    DisposableEffect(video.requestId, lifecycle) {
-        fun createPlayer() {
-            if (player != null) return
-            Stream.pin(video.path)
-            val created = ExoPlayer.Builder(context.applicationContext).build()
-            created.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    when (playbackState) {
-                        Player.STATE_BUFFERING -> model.onPlaybackStatus(video.episodeId, video.requestId, "正在缓冲")
-                        Player.STATE_READY -> model.onPlaybackStatus(video.episodeId, video.requestId, if (created.isPlaying) "正在播放" else "已暂停")
-                        Player.STATE_ENDED -> model.onPlaybackEnded(video.episodeId, video.requestId)
-                    }
-                }
-
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    if (created.playbackState == Player.STATE_READY) model.onPlaybackStatus(video.episodeId, video.requestId,
-                        if (isPlaying) "正在播放" else "已暂停")
-                }
-
-                override fun onPlayerError(error: PlaybackException) {
-                    model.onPlaybackError(video.episodeId, video.requestId, error.errorCode in 4000..4999)
-                }
-
-                override fun onRenderedFirstFrame() { model.onFirstFrame(video.episodeId, video.requestId) }
-            })
-            created.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(File(video.path))))
-            created.seekTo(lastPosition.coerceAtLeast(0))
-            created.prepare()
-            created.playWhenReady = true
-            player = created
-        }
-
-        fun releasePlayer() {
-            player?.let { active ->
-                lastPosition = if (active.playbackState == Player.STATE_ENDED) 0 else active.currentPosition.coerceAtLeast(0)
-                model.savePosition(video.episodeId, lastPosition, video.requestId)
-                active.pause()
-                active.release()
-                player = null
-                Stream.unpin(video.path)
-            }
-        }
-
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> createPlayer()
-                Lifecycle.Event.ON_STOP -> releasePlayer()
-                else -> Unit
-            }
-        }
-        lifecycle.addObserver(observer)
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) createPlayer()
-        onDispose { lifecycle.removeObserver(observer); releasePlayer() }
-    }
-
-    LaunchedEffect(player, video.episodeId) {
-        val active = player ?: return@LaunchedEffect
-        while (true) {
-            delay(2_000)
-            if (active.playbackState != Player.STATE_ENDED) model.savePosition(video.episodeId, active.currentPosition, video.requestId)
-        }
-    }
-
-    AndroidView(factory = { viewContext ->
-        PlayerView(viewContext).apply {
-            useController = true
-            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-            setKeepContentOnPlayerReset(false)
-            this.player = player
-        }
-    }, update = { it.player = player }, modifier = Modifier.fillMaxSize().testTag("player_view"))
-}
-
-private fun preparationLabel(stage: String): String = when {
-    stage.contains("download", true) || stage.contains("下载") -> "正在下载本集视频"
-    stage.contains("decrypt", true) || stage.contains("解密") -> "正在处理视频"
-    stage == "processing" -> "正在处理本集视频"
-    stage.contains("remux", true) || stage.contains("strip", true) || stage.contains("封装") -> "正在整理媒体文件"
-    stage.contains("ready", true) || stage.contains("完成") || stage == "cached" -> "视频已就绪"
-    else -> "正在准备本集视频"
-}
-
-private fun byteLabel(value: Long): String = if (value >= 1024 * 1024)
-    String.format(Locale.ROOT, "%.1f MB", value / (1024.0 * 1024.0)) else "${value / 1024} KB"

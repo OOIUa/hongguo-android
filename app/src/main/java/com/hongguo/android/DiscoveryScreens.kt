@@ -67,14 +67,15 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val tabs = listOf(AppTab.HOME to "首页", AppTab.CATEGORY to "分类", AppTab.SEARCH to "搜索",
-        AppTab.FAVORITES to "收藏", AppTab.HISTORY to "历史")
+        AppTab.FAVORITES to "收藏", AppTab.MINE to "我的")
+    val activeTab = if (selected == AppTab.HISTORY) AppTab.MINE else selected
     NavigationBar(containerColor = Color.White, tonalElevation = 0.dp,
         modifier = Modifier.semantics { testTagsAsResourceId = true }) {
         tabs.forEach { (tab, label) ->
-            NavigationBarItem(selected = selected == tab,
+            NavigationBarItem(selected = activeTab == tab,
                 onClick = { keyboard?.hide(); focus.clearFocus(); onSelect(tab) },
                 modifier = Modifier.testTag("nav_${tab.name.lowercase(Locale.ROOT)}"),
-                icon = { NavigationGlyph(tab, selected == tab) },
+                icon = { NavigationGlyph(tab, activeTab == tab) },
                 label = { Text(label, fontSize = 11.sp) },
                 colors = NavigationBarItemDefaults.colors(selectedIconColor = Orange,
                     selectedTextColor = Orange, indicatorColor = Color(0xFFFFEEE5),
@@ -120,6 +121,10 @@ private fun NavigationGlyph(tab: AppTab, selected: Boolean) {
                 }
                 star.close()
                 drawPath(star, color, style = stroke)
+            }
+            AppTab.MINE -> {
+                drawCircle(color, w * .17f, Offset(w * .5f, h * .29f), style = stroke)
+                drawArc(color, 180f, 180f, false, Offset(w * .16f, h * .52f), Size(w * .68f, h * .64f), style = stroke)
             }
             AppTab.HISTORY -> {
                 drawCircle(color, w * .37f, Offset(w * .5f, h * .5f), style = stroke)

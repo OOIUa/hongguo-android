@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = "新增 GitHub 加速更新：更新清单和 APK 均支持直连失败后自动切换两条加速线路，也可手动选择线路。保留下载进度、取消重试、安装包校验和本机收藏、播放历史。"
+        notes = '新增全屏上下滑切集，支持暂停、选集、进度拖动与收藏。常见片源支持边播边缓存，不支持时使用完整缓存兼容播放；可按需预加载下一集。底部改为“我的”，集中查看历史、系统设置和检查更新，支持开关自动连播、下一集预加载与自动检查更新。保留加速更新及本机观看数据。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

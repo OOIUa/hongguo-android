@@ -30,6 +30,7 @@ data class UpdateUiState(
     val installPermissionRequired: Boolean = false,
     val source: UpdateSource = UpdateSource.AUTO,
     val activeSource: UpdateSource? = null,
+    val automaticChecksEnabled: Boolean = true,
 )
 
 class UpdateViewModel(application: Application) : AndroidViewModel(application) {
@@ -38,7 +39,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     private val preferences = application.getSharedPreferences("app_updates", 0)
     private val mutableState = MutableStateFlow(UpdateUiState(source = runCatching {
         UpdateSource.valueOf(preferences.getString("source", UpdateSource.AUTO.name).orEmpty())
-    }.getOrDefault(UpdateSource.AUTO)))
+    }.getOrDefault(UpdateSource.AUTO), automaticChecksEnabled = preferences.getBoolean("automatic_checks", true)))
     val state = mutableState.asStateFlow()
     private var checkingJob: Job? = null
     private var downloadJob: Job? = null
@@ -49,7 +50,17 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         val elapsed = System.currentTimeMillis() - preferences.getLong("last_attempt", 0)
-        if (elapsed < 0 || elapsed >= 24 * 60 * 60 * 1000L) check(false)
+        if (state.value.automaticChecksEnabled && (elapsed < 0 || elapsed >= 24 * 60 * 60 * 1000L)) check(false)
+    }
+
+    fun setAutomaticChecksEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean("automatic_checks", enabled).apply()
+        if (!enabled && !state.value.visible && state.value.checking) {
+            ++checkVersion
+            checkingJob?.cancel()
+            mutableState.update { it.copy(checking = false) }
+        }
+        mutableState.update { it.copy(automaticChecksEnabled = enabled) }
     }
 
     fun checkForUpdates() {

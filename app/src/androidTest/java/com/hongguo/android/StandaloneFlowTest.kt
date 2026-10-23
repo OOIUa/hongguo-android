@@ -18,6 +18,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import com.hongguo.api.core.Sm3
+import com.hongguo.api.service.Stream
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -50,10 +51,12 @@ class StandaloneFlowTest {
         compose.onNodeWithTag("favorite_toggle").performClick()
         compose.waitUntil(5_000) { model.state.value.favorites.any { it.card.id == selectedId } }
         assertTrue("Opening details must not create history", model.state.value.history.isEmpty())
+        // Force the live first episode through the new progressive path, not a prior full-file cache.
+        Stream.cachedPath(model.state.value.detail!!.episodes[0].id, "")?.let { File(it).delete() }
         compose.onNodeWithTag("episode_0").performScrollTo().performClick()
         compose.waitUntil(240_000) { !model.state.value.preparing }
         assertNull("Preparation error: ${model.state.value.playbackError}", model.state.value.playbackError)
-        assertTrue("No prepared local file", File(model.state.value.video?.path.orEmpty()).length() > 1024)
+        assertNotNull("The real upstream episode must use progressive playback", model.state.value.video?.session)
         compose.waitUntil(60_000) { model.state.value.firstFrameRendered || model.state.value.playbackError != null }
         assertNull("Playback error: ${model.state.value.playbackError}", model.state.value.playbackError)
         assertTrue("A video frame must actually render", model.state.value.firstFrameRendered)
@@ -68,6 +71,7 @@ class StandaloneFlowTest {
             rendered
         }
         if (model.state.value.detail!!.episodes.size > 1) {
+            compose.onNodeWithTag("player_back").performClick()
             compose.onNodeWithTag("episode_1").performScrollTo().performClick()
             compose.waitUntil(240_000) { !model.state.value.preparing }
             assertEquals("Selecting another episode must change selection", 1, model.state.value.episodePosition)
@@ -105,11 +109,11 @@ class StandaloneFlowTest {
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
         resolver.openOutputStream(uri)!!.use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
         screenshot.recycle()
-        // Reopening a prepared episode must use a completed local artifact.
+        // Reopening an episode must continue to render with either a session or a complete legacy cache.
         compose.runOnIdle { model.playEpisode(0, restart = true) }
         compose.waitUntil(30_000) { !model.state.value.preparing }
         assertNull(model.state.value.playbackError)
-        assertTrue(File(model.state.value.video?.path.orEmpty()).isFile)
+        assertTrue(model.state.value.video?.let { it.session != null || File(it.path).isFile } == true)
         compose.waitUntil(30_000) { model.state.value.firstFrameRendered || model.state.value.playbackError != null }
         assertTrue("Cached retry must render a new frame", model.state.value.firstFrameRendered)
         compose.runOnIdle { findPlayer(compose.activity.window.decorView)!!.seekTo(4_000) }

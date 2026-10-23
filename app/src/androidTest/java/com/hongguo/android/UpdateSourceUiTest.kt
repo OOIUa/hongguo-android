@@ -62,7 +62,8 @@ class UpdateSourceUiTest {
         lateinit var model: UpdateViewModel
         compose.runOnIdle { model = ViewModelProvider(compose.activity)[UpdateViewModel::class.java] }
         try {
-            compose.onNodeWithTag("update_check").performClick()
+            compose.onNodeWithTag("nav_mine").performClick()
+            compose.onNodeWithTag("update_check").performScrollTo().performClick()
             compose.onNodeWithTag("update_dialog").assertExists()
 
             selectAndVerify(model, UpdateSource.PROXY_PRIMARY, checkLiveManifest = true)
