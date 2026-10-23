@@ -57,6 +57,6 @@ try {
         "$hash  $name"
     }
     [IO.File]::WriteAllText((Join-Path $output "SHA256SUMS-$version.txt"), ($sums -join "`n") + "`n", $utf8)
-    $manifest | Select-Object versionCode, versionName, sizeBytes, sha256
+    [pscustomobject]$manifest | Select-Object versionCode, versionName, sizeBytes, sha256
     Write-Output "Release assets prepared in $output"
 } finally { Pop-Location }
