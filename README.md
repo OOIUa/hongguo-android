@@ -1,6 +1,6 @@
 # 红果独立安卓端
 
-当前源码版本：**0.5.0**（versionCode 5），支持 Android 8.0（API 26）及以上，沿用既有测试签名。安装包与对应源码见 [GitHub Releases](https://github.com/OOIUa/hongguo-android/releases)，本轮验证和发布进度见 [VALIDATION.md](VALIDATION.md)。
+当前版本：**0.5.0**（versionCode 5），支持 Android 8.0（API 26）及以上，沿用既有测试签名。[下载 APK（加速 1）](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.5.0/hongguo-android-0.5.0.apk)、[备用加速](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.5.0/hongguo-android-0.5.0.apk)，或访问 [GitHub 发布页与对应源码](https://github.com/OOIUa/hongguo-android/releases/tag/v0.5.0)。实际验证结果见 [VALIDATION.md](VALIDATION.md)。
 
 0.1/0.2 版本需先手动覆盖安装支持在线更新的新版；0.3.0 起支持在线更新，0.4.0 起支持两条加速线路。GitHub 无法访问时，可使用发布说明中的加速 APK 链接；已支持加速的应用也可在更新窗口选择线路。签名一致时可覆盖安装，保留设备身份、收藏、观看历史及续播位置。请勿先卸载。
 
