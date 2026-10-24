@@ -1,3 +1,24 @@
+# 0.5.1 验证记录
+
+验证日期：2026-10-24（Asia/Shanghai）。versionName 0.5.1、versionCode 6，包名 `com.hongguo.android`、minSdk 26，沿用既有签名证书。
+
+- 最终升版后 assembleDebug、assembleDebugAndroidTest、107 项 JVM 测试通过；Lint 为 0 errors、30 warnings、1 hint。
+- 最终 APK 在 Android 16 独立模拟器通过 12 项设备测试：5 项进度条控件交互、7 项更新安装包拒绝边界。倍速、暂停、拖动、Activity 重建、跨集和连播的真实上游回归在本次功能开发阶段通过，见下方记录。
+- APK 元数据与签名已核对：versionCode 6 / versionName 0.5.1 / API 26，证书 SHA-256 与 `release-signing.sha256` 完全相同。
+- 公开发布资产、三路匿名下载及旧版在线覆盖升级结果将在实际完成后补记。未将本地构建与模拟器测试写成公开发布或实体手机验证。
+
+# 播放页优化验证（升版前本地测试）
+
+验证日期：2026-10-24（Asia/Shanghai）。保留 0.5.0 / versionCode 5，仅生成本地测试包，未更新 GitHub Release 或在线更新清单。
+
+- 进度条改为统一绘制细轨道、缓冲进度、已播放进度和圆形滑块，触摸高度 48 dp；拖动时显示目标时间，松手立即同步播放器位置。倍速提供 0.5×、0.75×、1×、1.25×、1.5×、2×，在本机保存并跨剧集与播放器重建生效。
+- assembleDebug、assembleDebugAndroidTest、107 项 JVM 测试通过；Lint 为 0 errors、30 warnings、1 hint，未增加警告。
+- Android 16 独立模拟器的 5 项 PlayerControlsTest 全部通过：真实轨道首尾点击、无障碍 SetProgress、禁用控件、取消拖动后释放交互及再次拖动。端点测试使用实际布局坐标，避免误点 Material3 向两侧各扩出的 10 dp 无障碍语义边界。
+- VerticalPlayerFlowTest 在同一独立模拟器复测通过：暂停时从 UI 选择 1.5×，实际 ExoPlayer 保持同一实例、位置、暂停状态与原始音调；拖动进度不误切集；Activity 重建恢复位置、暂停及倍率；新 ViewModel 读取已保存倍率；上下滑、自动连播、选集均继承倍率，始终至多一个播放器，离开播放页后释放。
+- 测试中发生过上游准备失败，完整流程单独复测通过，不据此保证上游持续可用。旧模拟器仅剩约 387 MiB 时系统删除了活动媒体缓存，导致另一次跳转失败；最终验证使用新建 12 GiB 数据分区、约 10 GiB 可用空间的独立模拟器，未为此更改媒体缓存代码。
+- 截图人工检查进度轨道、滑块及倍速面板正常，文件位于项目上级 `qa/hongguo-player-controls.png`、`qa/hongguo-player-speed-sheet.png`。本轮仅验证模拟器，未验证实体手机。
+- 本地测试包：`../dist/hongguo-android-player-controls-test.apk`，15,716,754 字节，SHA-256 为 `25ef01f3a24a390c41c10d50807d67d1f44b069c2cb1643b340942275ceb3055`。签名证书与 `release-signing.sha256` 一致，可用于同签名本地覆盖测试。
+
 # 0.5.0 验证记录
 
 验证日期：2026-10-23（Asia/Shanghai）。versionName 0.5.0、versionCode 5，包名及签名沿用此前测试版。

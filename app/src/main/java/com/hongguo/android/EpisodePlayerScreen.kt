@@ -30,10 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,6 +58,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -127,6 +125,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     val latestSelected = rememberUpdatedState(selected)
     var synchronizing by remember { mutableStateOf<Int?>(null) }
     var showEpisodes by rememberSaveable(detail.id) { mutableStateOf(false) }
+    var showSpeed by rememberSaveable(detail.id) { mutableStateOf(false) }
     var seeking by remember(state.video?.requestId) { mutableStateOf(false) }
     var seekFraction by remember(state.video?.requestId) { mutableStateOf<Float?>(null) }
 
@@ -154,7 +153,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         !pager.isScrollInProgress && pager.currentPage == selected && it.episodeId == detail.episodes[selected].id
     }
     // A temporary drag disables the owner without discarding this request's pause/resume intent.
-    val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null)
+    val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null,
+        playbackSpeed = state.playbackSpeed)
     val visibleIndex = pager.currentPage.coerceIn(detail.episodes.indices)
     val visibleEpisode = detail.episodes[visibleIndex]
     val favorite = state.favorites.any { it.card.id == detail.id }
@@ -170,7 +170,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     Box(Modifier.fillMaxSize().background(Color.Black).semantics { testTagsAsResourceId = true }) {
         VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("episode_pager"),
             key = { detail.episodes[it].id }, beyondViewportPageCount = 1,
-            userScrollEnabled = !showEpisodes && !seeking) { page ->
+            userScrollEnabled = !showEpisodes && !showSpeed && !seeking) { page ->
             Box(Modifier.fillMaxSize().testTag("episode_page_$page"), Alignment.Center) {
                 AsyncImage(model = detail.cover, contentDescription = null, modifier = Modifier.fillMaxSize().alpha(.24f), contentScale = ContentScale.Fit)
                 if (page == selected && activeVideo != null && playback.player != null) {
@@ -258,27 +258,58 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             val duration = playback.durationMs
             val fraction = seekFraction ?: if (duration > 0) (playback.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
             val displayedPosition = seekFraction?.let { (duration * it).toLong() } ?: playback.positionMs
-            Box(Modifier.fillMaxWidth()) {
-                if (duration > 0) LinearProgressIndicator(progress = { (playback.bufferedPositionMs.toFloat() / duration).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().align(Alignment.Center), color = Color.White.copy(alpha = .3f), trackColor = Color.White.copy(alpha = .1f))
-                Slider(value = fraction, onValueChange = { seeking = true; seekFraction = it },
-                    onValueChangeFinished = {
-                        val video = activeVideo
-                        if (video != null && duration > 0) {
-                            val target = ((seekFraction ?: fraction) * duration).toLong().coerceIn(0, duration)
-                            playback.player?.seekTo(target)
-                            model.savePosition(video.episodeId, target, video.requestId)
-                        }
-                        seeking = false; seekFraction = null
-                    }, enabled = duration > 0 && activeVideo != null, modifier = Modifier.fillMaxWidth().testTag("player_seek"),
-                    colors = SliderDefaults.colors(thumbColor = Orange, activeTrackColor = Orange,
-                        inactiveTrackColor = Color.White.copy(alpha = .13f), disabledThumbColor = Color.White.copy(alpha = .3f),
-                        disabledInactiveTrackColor = Color.White.copy(alpha = .13f)))
-            }
-            Row(Modifier.fillMaxWidth()) {
-                Text(playerTime(displayedPosition), color = Color.White.copy(alpha = .75f), fontSize = 10.sp)
+            PlayerSeekBar(value = fraction,
+                bufferedFraction = if (duration > 0) playback.bufferedPositionMs.toFloat() / duration else 0f,
+                onValueChange = { seeking = true; seekFraction = it },
+                onValueChangeFinished = {
+                    val video = activeVideo
+                    if (video != null && duration > 0) {
+                        val target = ((seekFraction ?: fraction) * duration).toLong().coerceIn(0, duration)
+                        playback.player?.seekTo(target)
+                        model.savePosition(video.episodeId, target, video.requestId)
+                    }
+                    seeking = false; seekFraction = null
+                }, enabled = duration > 0 && activeVideo != null && state.playbackError == null,
+                modifier = Modifier.testTag("player_seek").semantics { contentDescription = "播放进度" })
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${playerTime(displayedPosition)} / ${if (duration > 0) playerTime(duration) else "--:--"}",
+                    modifier = Modifier.testTag("player_time"), color = Color.White.copy(alpha = .75f), fontSize = 11.sp)
                 Spacer(Modifier.weight(1f))
-                Text(if (duration > 0) playerTime(duration) else "--:--", color = Color.White.copy(alpha = .55f), fontSize = 10.sp)
+                TextButton(onClick = { showSpeed = true }, modifier = Modifier.testTag("player_speed")
+                    .semantics { contentDescription = "播放速度，当前${playbackSpeedLabel(state.playbackSpeed)}" }) {
+                    Text(if (state.playbackSpeed == 1f) "倍速 1×" else "${playbackSpeedLabel(state.playbackSpeed)} 倍速",
+                        color = if (state.playbackSpeed == 1f) Color.White else Orange, fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+
+    if (showSpeed) {
+        ModalBottomSheet(onDismissRequest = { showSpeed = false }, containerColor = Color(0xFF211E1B), contentColor = Color.White) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("播放速度", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("自动记住选择，对所有剧集生效", color = Color.White.copy(alpha = .65f), fontSize = 12.sp)
+                LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().height(116.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    itemsIndexed(PlaybackSpeeds) { _, speed ->
+                        val isSelected = state.playbackSpeed == speed
+                        Surface(color = if (isSelected) Orange else Color.White.copy(alpha = .08f), shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(48.dp).testTag("player_speed_$speed")
+                                .semantics { this.selected = isSelected }
+                                .clip(RoundedCornerShape(12.dp)).clickable {
+                                    model.setPlaybackSpeed(speed)
+                                    showSpeed = false
+                                }) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(if (speed == 1f) "1× 正常" else playbackSpeedLabel(speed), fontSize = 15.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
             }
         }
     }

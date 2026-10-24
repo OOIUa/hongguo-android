@@ -1,8 +1,10 @@
 package com.hongguo.android
 
+import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -14,10 +16,13 @@ import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
@@ -31,11 +36,14 @@ class VerticalPlayerFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private var playbackModel: HongguoViewModel? = null
     private var originalAutoPlayNext: Boolean? = null
+    private var originalPlaybackSpeed: Float? = null
 
-    @After fun restoreAutoPlaySetting() {
-        val original = originalAutoPlayNext ?: return
+    @After fun restorePlaybackSettings() {
         // JUnit runs @After before the Compose rule tears down the Activity.
-        compose.runOnIdle { playbackModel?.setAutoPlayNext(original) }
+        compose.runOnIdle {
+            originalAutoPlayNext?.let { playbackModel?.setAutoPlayNext(it) }
+            originalPlaybackSpeed?.let { playbackModel?.setPlaybackSpeed(it) }
+        }
     }
 
     @Test fun swipingPickerAndAutomaticNextKeepOneActivePlayer() {
@@ -44,7 +52,9 @@ class VerticalPlayerFlowTest {
             model = ViewModelProvider(compose.activity)[HongguoViewModel::class.java]
             playbackModel = model
             originalAutoPlayNext = model.state.value.autoPlayNext
+            originalPlaybackSpeed = model.state.value.playbackSpeed
             model.setAutoPlayNext(true)
+            model.setPlaybackSpeed(1f)
         }
         compose.onNodeWithTag("nav_search").performClick()
         compose.onNodeWithTag("search_input").performTextClearance()
@@ -68,6 +78,66 @@ class VerticalPlayerFlowTest {
             var paused = false
             compose.runOnIdle { paused = attachedPlayers(compose.activity.window.decorView).singleOrNull()?.playWhenReady == false }
             paused
+        }
+
+        // Changing speed applies to the current decoder without replacing it or resuming playback.
+        var pausedPosition = 0L
+        compose.runOnIdle { pausedPosition = first.currentPosition }
+        compose.onNodeWithTag("player_speed").performClick()
+        captureScreenshot("qa-player-speed-sheet.png")
+        compose.onNodeWithTag("player_speed_1.5").performClick()
+        compose.waitUntil(5_000) {
+            var applied = false
+            compose.runOnIdle {
+                applied = attachedPlayers(compose.activity.window.decorView).singleOrNull()?.playbackParameters?.speed == 1.5f
+            }
+            applied
+        }
+        compose.runOnIdle {
+            assertSame("Changing speed must keep the current player", first, attachedPlayers(compose.activity.window.decorView).single())
+            assertFalse("Changing speed must preserve a paused episode", first.playWhenReady)
+            assertTrue("Changing speed must not seek the episode", kotlin.math.abs(pausedPosition - first.currentPosition) < 500)
+            assertEquals("Speed changes must preserve the original voice pitch", 1f, first.playbackParameters.pitch, .001f)
+            assertEquals(1.5f, model.state.value.playbackSpeed, .001f)
+            assertEquals("The selected speed must be persisted on this device", 1.5f,
+                compose.activity.getSharedPreferences("hongguo_local", 0).getFloat("playback_speed", 0f), .001f)
+            val restoredStore = ViewModelStore()
+            try {
+                val restoredModel = ViewModelProvider(restoredStore,
+                    ViewModelProvider.AndroidViewModelFactory.getInstance(compose.activity.application))[HongguoViewModel::class.java]
+                assertEquals("A fresh ViewModel must restore the device's saved speed", 1.5f,
+                    restoredModel.state.value.playbackSpeed, .001f)
+            } finally {
+                restoredStore.clear()
+            }
+        }
+        captureScreenshot("qa-player-controls.png")
+
+        // Exercise the actual seek control, with a slight vertical drift as on a handheld screen.
+        // The horizontal drag must seek this episode instead of being taken by the vertical pager.
+        compose.onNodeWithTag("player_seek").assertIsEnabled().performTouchInput {
+            swipe(start = Offset(width * .25f, center.y), end = Offset(width * .60f, center.y + 8f), durationMillis = 600)
+        }
+        compose.waitUntil(60_000) {
+            var sought = false
+            compose.runOnIdle {
+                sought = first.playbackState == Player.STATE_READY && first.currentPosition.toDouble() / first.duration in 0.5..0.7
+            }
+            sought
+        }
+        assertStillPaused(model, 0, firstRequest)
+        compose.runOnIdle {
+            assertSame("Dragging progress must not create a different player", first, attachedPlayers(compose.activity.window.decorView).single())
+            assertTrue("Dragging progress must save the selected media position", model.state.value.resumePositionMs > first.duration / 2)
+        }
+
+        // Recreation releases the decoder, but must restore speed, seek position and pause intent.
+        compose.activityRule.scenario.recreate()
+        first = awaitEpisode(model, 0)
+        assertStillPaused(model, 0, firstRequest)
+        compose.runOnIdle {
+            assertEquals(1.5f, first.playbackParameters.speed, .001f)
+            assertTrue("Recreation must restore the selected media position", first.currentPosition.toDouble() / first.duration in 0.5..0.7)
         }
         compose.onNodeWithTag("episode_pager").performTouchInput {
             swipe(start = Offset(center.x * .5f, center.y - 40f), end = Offset(center.x * .5f, center.y + 40f), durationMillis = 900)
@@ -133,17 +203,24 @@ class VerticalPlayerFlowTest {
             val player = attachedPlayers(compose.activity.window.decorView).single()
             assertFalse("A non-settling drag must preserve the user's pause intent", player.playWhenReady)
             assertFalse(player.isPlaying)
+            assertEquals("A non-settling drag must preserve the selected speed", model.state.value.playbackSpeed,
+                player.playbackParameters.speed, .001f)
         }
     }
 
     private fun awaitEpisode(model: HongguoViewModel, index: Int): ExoPlayer {
         compose.waitUntil(180_000) {
             var count = 0
-            compose.runOnIdle { count = attachedPlayers(compose.activity.window.decorView).size }
+            var renderedFrame = false
+            compose.runOnIdle {
+                val players = attachedPlayers(compose.activity.window.decorView)
+                count = players.size
+                renderedFrame = (players.singleOrNull()?.videoDecoderCounters?.renderedOutputBufferCount ?: 0) > 0
+            }
             assertTrue("Adjacent pages must never own simultaneous players", count <= 1)
             val state = model.state.value
             state.episodePosition == index && !state.preparing &&
-                (state.firstFrameRendered || state.playbackError != null)
+                ((state.firstFrameRendered && renderedFrame) || state.playbackError != null)
         }
         assertNull("The selected real episode must decode", model.state.value.playbackError)
         assertTrue(model.state.value.firstFrameRendered)
@@ -153,8 +230,23 @@ class VerticalPlayerFlowTest {
             assertEquals("Exactly one visible page must bind a player", 1, players.size)
             active = players.single()
             assertTrue("A frame must come from the real video decoder", (active.videoDecoderCounters?.renderedOutputBufferCount ?: 0) > 0)
+            assertEquals("Every newly selected or automatically advanced episode must inherit the selected speed",
+                model.state.value.playbackSpeed, active.playbackParameters.speed, .001f)
         }
         return active
+    }
+
+    private fun captureScreenshot(name: String) {
+        compose.waitForIdle()
+        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            ?: error("The device must provide a screenshot for visual review")
+        try {
+            File(compose.activity.filesDir, name).outputStream().use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+            }
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     private fun attachedPlayers(view: View): List<ExoPlayer> {

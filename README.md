@@ -1,6 +1,6 @@
 # 红果独立安卓端
 
-当前版本：**0.5.0**（versionCode 5），支持 Android 8.0（API 26）及以上，沿用既有测试签名。[下载 APK（加速 1）](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.5.0/hongguo-android-0.5.0.apk)、[备用加速](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.5.0/hongguo-android-0.5.0.apk)，或访问 [GitHub 发布页与对应源码](https://github.com/OOIUa/hongguo-android/releases/tag/v0.5.0)。实际验证结果见 [VALIDATION.md](VALIDATION.md)。
+当前版本：**0.5.1**（versionCode 6），支持 Android 8.0（API 26）及以上，沿用既有测试签名。[下载 APK（加速 1）](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.5.1/hongguo-android-0.5.1.apk)、[备用加速](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.5.1/hongguo-android-0.5.1.apk)，或访问 [GitHub 发布页与对应源码](https://github.com/OOIUa/hongguo-android/releases/tag/v0.5.1)。实际验证结果见 [VALIDATION.md](VALIDATION.md)。
 
 0.1/0.2 版本需先手动覆盖安装支持在线更新的新版；0.3.0 起支持在线更新，0.4.0 起支持两条加速线路。GitHub 无法访问时，可使用发布说明中的加速 APK 链接；已支持加速的应用也可在更新窗口选择线路。签名一致时可覆盖安装，保留设备身份、收藏、观看历史及续播位置。请勿先卸载。
 
@@ -17,6 +17,8 @@
 ## 播放与缓存
 
 全屏播放器上划播放下一集，下划返回上一集；也可打开选集面板直接跳集。支持点画面暂停或继续、拖动进度、收藏和错误重试，返回键回到详情。开启自动连播后，本集结束继续下一集，末集不循环。
+
+0.5.1 优化了播放进度条：统一绘制细轨道、缓冲进度和圆形滑块，保留较大的触摸范围，拖动时同步显示目标时间。右下角“倍速”可选择 0.5×、0.75×、1×、1.25×、1.5×、2×，本机自动保存；切集、连播、前后台恢复和再次打开应用时继续使用所选速度。调整倍速会保留当前播放位置和暂停状态。
 
 0.5.0 对常见的非碎片 CENC MP4 使用 Range 按需取块和本机解密，支持边播边缓存，首帧不必等整集下载完成。仅在媒体不支持此播放路径时，回退到整集下载、处理完成后再播放的兼容方式；不能保证所有编码、MP4 布局或上游服务都支持渐进播放。
 

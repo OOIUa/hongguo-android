@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -39,13 +40,15 @@ internal data class VideoPlaybackUi(
 /** One player owner above the pager; page composition only attaches its surface. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Long, model: HongguoViewModel, enabled: Boolean = true): VideoPlaybackUi {
+internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Long, model: HongguoViewModel,
+    enabled: Boolean = true, playbackSpeed: Float = 1f): VideoPlaybackUi {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var player by remember(video?.requestId) { mutableStateOf<ExoPlayer?>(null) }
     var ui by remember(video?.requestId) { mutableStateOf(VideoPlaybackUi(positionMs = initialPositionMs)) }
     var lastPosition by remember(video?.requestId) { mutableStateOf(initialPositionMs.coerceAtLeast(0)) }
     var wantedPlaying by rememberSaveable(video?.requestId) { mutableStateOf(true) }
+    val latestSpeed = rememberUpdatedState(playbackSpeed)
 
     DisposableEffect(video?.requestId, lifecycle, enabled) {
         var pinned = false
@@ -91,6 +94,11 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
                 val active = ExoPlayer.Builder(context.applicationContext).setLoadControl(loadControl).build()
                 created = active
                 active.addListener(object : Player.Listener {
+                    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                        // Publish seeks immediately so releasing the thumb never restores an old snapshot.
+                        if (isCurrent(active)) updateSnapshot(active)
+                    }
+
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         if (!isCurrent(active)) return
                         updateSnapshot(active)
@@ -130,6 +138,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
                 sourceHandle = handle
                 active.setMediaSource(handle.mediaSource)
                 active.seekTo(lastPosition)
+                active.setPlaybackSpeed(latestSpeed.value)
                 player = active
                 active.prepare()
                 active.playWhenReady = wantedPlaying
@@ -156,6 +165,11 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
         lifecycle.addObserver(observer)
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) createPlayer()
         onDispose { lifecycle.removeObserver(observer); releasePlayer() }
+    }
+
+    // Updating speed must preserve the current source, position and pause intent.
+    LaunchedEffect(player, playbackSpeed) {
+        player?.setPlaybackSpeed(playbackSpeed)
     }
 
     LaunchedEffect(player, video?.requestId, enabled) {

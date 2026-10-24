@@ -1,6 +1,7 @@
 package com.hongguo.android
 
 import android.app.Application
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -68,6 +69,7 @@ data class HongguoUiState(
     val playerOpen: Boolean = false,
     val autoPlayNext: Boolean = true,
     val preloadNext: Boolean = true,
+    val playbackSpeed: Float = 1f,
 )
 
 class HongguoViewModel(application: Application) : AndroidViewModel(application) {
@@ -75,7 +77,9 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private val library = LibraryStore(application)
     private val preferences = application.getSharedPreferences("hongguo_local", 0)
     private val mutableState = MutableStateFlow(HongguoUiState(query = preferences.getString("last_query", "").orEmpty(),
-        autoPlayNext = preferences.getBoolean("auto_play_next", true), preloadNext = preferences.getBoolean("preload_next", true)))
+        autoPlayNext = preferences.getBoolean("auto_play_next", true), preloadNext = preferences.getBoolean("preload_next", true),
+        playbackSpeed = runCatching { preferences.getFloat("playback_speed", 1f) }.getOrDefault(1f)
+            .takeIf { it in PlaybackSpeeds } ?: 1f))
     val state = mutableState.asStateFlow()
     private var searchJob: Job? = null
     private var detailJob: Job? = null
@@ -251,6 +255,12 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         preferences.edit().putBoolean("preload_next", enabled).apply()
         mutableState.update { it.copy(preloadNext = enabled) }
         if (enabled) { prefetchAttemptedFor = -1; prefetchNext() } else takePrefetch(null)
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        if (speed !in PlaybackSpeeds) return
+        preferences.edit { putFloat("playback_speed", speed) }
+        mutableState.update { it.copy(playbackSpeed = speed) }
     }
 
     fun updateQuery(value: String) { mutableState.update { it.copy(query = value) } }

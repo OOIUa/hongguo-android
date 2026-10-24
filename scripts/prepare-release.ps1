@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '新增全屏上下滑切集，支持暂停、选集、进度拖动与收藏。常见片源支持边播边缓存，不支持时使用完整缓存兼容播放；可按需预加载下一集。底部改为“我的”，集中查看历史、系统设置和检查更新，支持开关自动连播、下一集预加载与自动检查更新。保留加速更新及本机观看数据。'
+        notes = '优化播放进度条：统一细轨道、缓冲进度和圆形滑块，修复重叠错位与拖动回跳。新增 0.5×、0.75×、1×、1.25×、1.5×、2× 六档倍速，本机自动记忆，切集、连播和恢复播放时继续生效；调整倍速保留播放位置和暂停状态。保留加速更新、收藏、历史与续播数据。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)
