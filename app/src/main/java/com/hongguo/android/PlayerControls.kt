@@ -49,7 +49,7 @@ internal fun PlayerSeekBar(
         modifier = modifier.fillMaxWidth().height(48.dp),
         thumb = {
             Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(if (dragging) 16.dp else 10.dp)
+                Box(Modifier.size(if (dragging) 16.dp else 12.dp)
                     .shadow(if (enabled) 2.dp else 0.dp, CircleShape)
                     .clip(CircleShape)
                     .background(Color.White.copy(alpha = if (enabled) 1f else .35f)))
@@ -58,8 +58,8 @@ internal fun PlayerSeekBar(
         track = { slider ->
             Canvas(Modifier.fillMaxWidth().height(if (dragging) 5.dp else 3.dp)) {
                 val corners = CornerRadius(size.height / 2)
-                drawRoundRect(Color.White.copy(alpha = .18f), cornerRadius = corners)
-                drawRoundRect(Color.White.copy(alpha = if (enabled) .4f else .18f),
+                drawRoundRect(Color.White.copy(alpha = .22f), cornerRadius = corners)
+                drawRoundRect(Color.White.copy(alpha = if (enabled) .42f else .18f),
                     size = Size(size.width * bufferedFraction.coerceIn(0f, 1f), size.height), cornerRadius = corners)
                 drawRoundRect(if (enabled) Orange else Color.White.copy(alpha = .3f),
                     size = Size(size.width * slider.value.coerceIn(0f, 1f), size.height), cornerRadius = corners)

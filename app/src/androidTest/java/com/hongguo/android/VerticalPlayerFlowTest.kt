@@ -56,9 +56,10 @@ class VerticalPlayerFlowTest {
             model.setAutoPlayNext(true)
             model.setPlaybackSpeed(1f)
         }
-        compose.onNodeWithTag("nav_search").performClick()
+        compose.onNodeWithTag("home_search").performClick()
         compose.onNodeWithTag("search_input").performTextClearance()
-        compose.onNodeWithTag("search_input").performTextInput("总裁")
+        val dramaQuery = InstrumentationRegistry.getArguments().getString("dramaQuery") ?: "总裁"
+        compose.onNodeWithTag("search_input").performTextInput(dramaQuery)
         compose.onNodeWithTag("search_button").performClick()
         compose.waitUntil(120_000) { !model.state.value.searching }
         assertNull(model.state.value.searchError)

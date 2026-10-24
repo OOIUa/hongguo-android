@@ -44,6 +44,7 @@ data class HongguoUiState(
     val filtersError: String? = null,
     val favorites: List<LibraryEntry> = emptyList(),
     val history: List<LibraryEntry> = emptyList(),
+    val libraryCloud: Boolean = false,
     val query: String = "",
     val searchedQuery: String = "",
     val results: List<DramaCard> = emptyList(),
@@ -115,6 +116,14 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var homeVersion = 0
     private var categoryVersion = 0
     private var filtersVersion = 0
+    private var searchOrigin = AppTab.HOME
+    private var accountOrigin = AppTab.MINE
+    private var libraryOrigin = AppTab.HOME
+
+    fun closeSearch() = navigate(searchOrigin, rememberOrigin = false)
+    fun closeAccount() = navigate(accountOrigin, rememberOrigin = false)
+    fun closeLibrary() = navigate(libraryOrigin, rememberOrigin = false)
+    fun selectLibrarySource(cloud: Boolean) { mutableState.update { it.copy(libraryCloud = cloud) } }
 
     init {
         mutableState.update { it.copy(favorites = library.state.value.favorites, history = library.state.value.history) }
@@ -126,7 +135,15 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         selectTab(AppTab.HOME)
     }
 
-    fun selectTab(tab: AppTab) {
+    fun selectTab(tab: AppTab) = navigate(tab, rememberOrigin = true)
+
+    private fun navigate(tab: AppTab, rememberOrigin: Boolean) {
+        if (rememberOrigin && tab == AppTab.SEARCH && state.value.tab != AppTab.SEARCH) searchOrigin = state.value.tab
+        if (rememberOrigin && tab == AppTab.ACCOUNT && state.value.tab != AppTab.ACCOUNT) accountOrigin = state.value.tab
+        if (rememberOrigin && tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) && state.value.tab !in setOf(AppTab.HISTORY, AppTab.FAVORITES, AppTab.ACCOUNT)) {
+            libraryOrigin = state.value.tab
+            mutableState.update { it.copy(libraryCloud = false) }
+        }
         if (state.value.selectedCard != null) backToSearch()
         mutableState.update { it.copy(tab = tab) }
         when (tab) {

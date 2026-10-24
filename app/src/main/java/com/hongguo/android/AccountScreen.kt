@@ -10,7 +10,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,9 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -40,6 +37,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,7 +64,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.hongguo.account.AccountSection
 import com.hongguo.account.AccountSessionStatus
 import com.hongguo.account.AccountState
 import com.hongguo.account.AccountViewModel
@@ -111,24 +112,23 @@ internal fun AccountScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("account_screen"),
-        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { accountModel.cancelLogin(); onBack() }, modifier = Modifier.testTag("account_back")) {
-                    Text("‹ 我的", color = Muted)
+                IconButton(onClick = { accountModel.cancelLogin(); onBack() }, modifier = Modifier.testTag("account_back")) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回我的", tint = Ink)
                 }
-                Spacer(Modifier.weight(1f))
-                Text("红果账号", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("红果账号", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             }
         }
         if (state.message != null || state.loginDiagnostic != null) {
             item {
                 Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(15.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         state.message?.let { message ->
-                            Text(message, color = Ink, fontSize = 13.sp, lineHeight = 21.sp,
+                            Text(message, color = Ink, fontSize = 14.sp, lineHeight = 22.sp,
                                 modifier = Modifier.testTag("account_message"))
                         }
                         state.loginDiagnostic?.let { diagnostic ->
@@ -153,73 +153,19 @@ internal fun AccountScreen(
         if (state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
             item { AccountProfileCard(state, onLogout = { logoutRequested = true }) }
             item { AccountProgressSync(state, accountModel::setSyncEnabled) }
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("账号片单", color = Ink, fontWeight = FontWeight.Bold, fontSize = 19.sp,
-                        modifier = Modifier.weight(1f))
-                    if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    TextButton(onClick = accountModel::refresh, enabled = !state.busy,
-                        modifier = Modifier.testTag("account_refresh")) { Text("刷新") }
-                }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(AccountSection.HISTORY to "观看历史", AccountSection.FAVORITES to "账号收藏",
-                        AccountSection.RESERVATIONS to "预约作品").forEach { (section, title) ->
-                        FilterChip(selected = state.selectedSection == section,
-                            onClick = { accountModel.selectSection(section) }, label = { Text(title) },
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = Orange),
-                            modifier = Modifier.testTag("account_section_${section.name.lowercase()}"))
-                    }
-                }
-                Text("每次读取最近 50 条历史、已上线和待上线预约各 20 条；账号收藏与历史各缓存最多 200 部。本机记录单独保留。",
-                    color = Muted, fontSize = 12.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 6.dp))
-            }
-            val entries = when (state.selectedSection) {
-                AccountSection.HISTORY -> state.history
-                AccountSection.FAVORITES -> state.favorites
-                AccountSection.RESERVATIONS -> state.reservations
-            }
-            val error = when (state.selectedSection) {
-                AccountSection.HISTORY -> state.historyError
-                AccountSection.FAVORITES -> state.favoritesError
-                AccountSection.RESERVATIONS -> state.reservationsError
-            }
-            if (error != null) {
-                item {
-                    AccountNotice(error, "重试", accountModel::refresh, !state.busy, "account_list_error")
-                }
-            }
-            if (entries.isEmpty() && error == null) {
-                item {
-                    AccountNotice(if (state.busy) "正在读取账号片单…" else when (state.selectedSection) {
-                        AccountSection.HISTORY -> "暂时没有读取到观看记录"
-                        AccountSection.FAVORITES -> "暂时没有读取到收藏作品"
-                        AccountSection.RESERVATIONS -> "暂时没有读取到预约作品"
-                    }, tag = "account_empty")
-                }
-            }
-            items(entries, key = { state.selectedSection.name + ":" + it.card.id }) { entry ->
-                val reservation = state.selectedSection == AccountSection.RESERVATIONS
-                val canOpen = !reservation || entry.card.id in state.reservationOnlineIds
-                AccountLibraryRow(entry, state.selectedSection,
-                    canOpen = canOpen,
-                    uncertain = entry.card.id in state.favoriteUncertainIds,
-                    favoriteBusy = entry.card.id in state.favoriteBusyIds,
-                    onOpen = { onOpenLibrary(entry) },
-                    onRemove = { removeTarget = entry },
-                    onResolve = { accountModel.resolveFavorite(entry.card.id) })
-            }
+            cloudLibraryItems(state, accountModel, onOpenLibrary, { removeTarget = it })
         } else if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) {
             item {
-                Surface(color = Color(0xFFFFEEE5), shape = RoundedCornerShape(22.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(20.dp).testTag("account_website_only"),
+                Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp).testTag("account_website_only"),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("官网已登录，手机云账号未接通", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text("官网登录态已加密保存在本机。可以直接重试连接手机云账号，无需重新获取验证码。",
-                            color = Muted, fontSize = 13.sp, lineHeight = 21.sp)
-                        Text("接通后才能查看云片单和开启观看进度同步。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
+                        Text("官网已登录，云片单待连接", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                        Text("官网登录已加密保存在本机。可直接重试，无需重新获取验证码。",
+                            color = Muted, fontSize = 14.sp, lineHeight = 22.sp)
+                        Text("连接账号后，才能查看云片单和开启进度同步。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
                         Button(onClick = accountModel::retryWebsiteAccount, enabled = !state.busy,
                             modifier = Modifier.fillMaxWidth().testTag("account_retry_website")) {
-                            Text(if (state.busy) "正在连接手机云账号…" else "重试连接手机云账号")
+                            Text(if (state.busy) "正在连接账号…" else "重试连接账号")
                         }
                         if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         TextButton(onClick = { logoutRequested = true }, enabled = !state.busy,
@@ -228,27 +174,28 @@ internal fun AccountScreen(
                 }
             }
             item {
-                Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
-                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         AccountAdvancedImport(state, accountModel)
                     }
                 }
             }
         } else {
             item {
-                Surface(color = Color(0xFFFFEEE5), shape = RoundedCornerShape(22.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Text(if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION) "请重新确认账号" else "接着手机上的故事看",
-                            color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text("登录你本人的红果账号，查看账号收藏、观看历史和预约作品。",
-                            color = Muted, fontSize = 13.sp, lineHeight = 21.sp)
-                    }
+                Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(when (state.sessionStatus) {
+                        AccountSessionStatus.NEEDS_VERIFICATION -> "账号需要重新验证"
+                        AccountSessionStatus.RESTORING -> "正在确认已保存账号"
+                        else -> "接着手机上的故事看"
+                    }, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text("登录本人的红果账号，查看账号收藏、历史与预约。本机记录单独保留。",
+                        color = Muted, fontSize = 14.sp, lineHeight = 22.sp)
                 }
             }
             if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION || localResetRequired) {
                 item {
-                    Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
-                        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(if (localResetRequired) "恢复本机账号登录" else "已保存的账号等待验证",
                                 color = Ink, fontWeight = FontWeight.Medium, fontSize = 15.sp)
                             state.profile?.let { profile ->
@@ -320,14 +267,20 @@ internal fun AccountScreen(
 @Composable
 private fun AccountProfileCard(state: AccountState, onLogout: () -> Unit) {
     val profile = state.profile ?: return
-    Surface(shape = RoundedCornerShape(22.dp), color = Color(0xFFFFEEE5)) {
-        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(profile.nickname.ifBlank { "红果用户" }, color = Ink, fontSize = 22.sp,
-                fontWeight = FontWeight.Bold, modifier = Modifier.testTag("account_profile"))
+    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Outlined.PersonOutline, null, Modifier.size(32.dp), tint = Muted)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(profile.nickname.ifBlank { "红果用户" }, color = Ink, fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("account_profile"))
+                    Text("账号已连接", color = Orange, fontSize = 12.sp)
+                }
+            }
             Text("账号 ${profile.id}", color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (state.lastSyncAt > 0) "上次读取 ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(state.lastSyncAt))}"
-                    else "已确认账号，正在准备片单", color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                    else "已确认账号，正在准备片单", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = onLogout, modifier = Modifier.testTag("account_logout")) { Text("退出账号") }
             }
         }
@@ -336,12 +289,12 @@ private fun AccountProfileCard(state: AccountState, onLogout: () -> Unit) {
 
 @Composable
 private fun AccountProgressSync(state: AccountState, onChange: (Boolean) -> Unit) {
-    Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("同步本次观看进度", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                    Text("开启后，将登录期间的新观看进度保存到当前红果账号。不会上传本机旧记录。",
+                    Text("同步此后的观看进度", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    Text("将新的观看进度保存到当前红果账号，不上传本机旧记录。",
                         color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
                 }
                 Switch(checked = state.syncEnabled, onCheckedChange = onChange,
@@ -359,8 +312,8 @@ private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
     // Phone number and one-time code deliberately stay in memory, outside saved instance state.
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !smsSelected, onClick = {
                     if (smsSelected) model.cancelLogin()
@@ -400,7 +353,7 @@ private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
             } else {
                 OutlinedTextField(value = phone, onValueChange = { value ->
                     phone = value.filter(Char::isDigit).take(11)
-                }, label = { Text("中国大陆手机号") }, singleLine = true,
+                }, label = { Text("中国大陆手机号") }, singleLine = true, shape = RoundedCornerShape(16.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     enabled = !state.busy && state.phoneStep == PhoneStep.IDLE,
                     modifier = Modifier.fillMaxWidth().testTag("account_phone"))
@@ -408,7 +361,7 @@ private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
                     Text("验证码已发送至 ${state.phoneMasked}，验证账号资料后才会显示为已登录。",
                         color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
                     OutlinedTextField(value = code, onValueChange = { value -> code = value.filter(Char::isDigit).take(8) },
-                        label = { Text("短信验证码") }, singleLine = true,
+                        label = { Text("短信验证码") }, singleLine = true, shape = RoundedCornerShape(16.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("account_sms_code"))
                     Button(onClick = { model.verifySms(code); code = "" }, enabled = !state.busy && code.length >= 4,
@@ -420,7 +373,7 @@ private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
                         else if (state.phoneStep == PhoneStep.CODE_SENT) "重新发送验证码" else "获取验证码")
                 }
                 if (state.phoneStep == PhoneStep.CODE_SENT || state.busy) TextButton(onClick = { model.cancelLogin(); code = "" },
-                    modifier = Modifier.testTag("account_sms_cancel")) { Text("取消 / 更换手机号") }
+                    modifier = Modifier.testTag("account_sms_cancel")) { Text("取消或更换手机号") }
                 if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             }
             HorizontalDivider(color = Canvas)
@@ -462,6 +415,7 @@ private fun AccountAdvancedImport(state: AccountState, model: AccountViewModel) 
         OutlinedTextField(value = importedCookie, onValueChange = { value ->
             if (value.length <= 65536) importedCookie = value
         }, label = { Text(if (appCookieSelected) "红果 App Cookie" else "官网 Cookie") }, singleLine = true,
+            shape = RoundedCornerShape(16.dp),
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("account_cookie_input"))
@@ -475,66 +429,6 @@ private fun AccountAdvancedImport(state: AccountState, model: AccountViewModel) 
             Text("校验并登录")
         }
     }
-}
-
-@Composable
-private fun AccountLibraryRow(
-    entry: LibraryEntry,
-    section: AccountSection,
-    canOpen: Boolean,
-    uncertain: Boolean,
-    favoriteBusy: Boolean,
-    onOpen: () -> Unit,
-    onRemove: () -> Unit,
-    onResolve: () -> Unit,
-) {
-    Surface(shape = RoundedCornerShape(18.dp), color = Color.White) {
-        Column(Modifier.fillMaxWidth().padding(14.dp)) {
-            Row(Modifier.fillMaxWidth().clickable(enabled = canOpen, onClick = onOpen)
-                .testTag("account_entry_${entry.card.id}"), horizontalArrangement = Arrangement.spacedBy(13.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Cover(entry.card.cover, entry.card.title, Modifier.width(62.dp).height(84.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text(entry.card.title, color = Ink, fontWeight = FontWeight.Medium, fontSize = 16.sp,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(when (section) {
-                        AccountSection.HISTORY -> "第 ${entry.episodeIndex.coerceAtLeast(1)} 集 · ${accountPosition(entry.positionMs)}"
-                        AccountSection.FAVORITES -> "账号收藏"
-                        AccountSection.RESERVATIONS -> if (canOpen) "已上线，可以观看" else "等待上线"
-                    }, color = if (canOpen) Muted else Orange, fontSize = 12.sp)
-                    if (canOpen) Text(if (section == AccountSection.HISTORY) "接着看 ›" else "查看剧集 ›", color = Orange, fontSize = 12.sp)
-                }
-            }
-            if (section == AccountSection.FAVORITES) {
-                HorizontalDivider(color = Canvas, modifier = Modifier.padding(top = 12.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (uncertain) "上次操作结果待确认" else "收藏保存在当前红果账号", color = Muted,
-                        fontSize = 11.sp, modifier = Modifier.weight(1f))
-                    if (favoriteBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    if (uncertain) TextButton(onClick = onResolve, enabled = !favoriteBusy,
-                        modifier = Modifier.testTag("account_favorite_resolve_${entry.card.id}")) { Text("查看最新状态") }
-                    else TextButton(onClick = onRemove, enabled = !favoriteBusy,
-                        modifier = Modifier.testTag("account_favorite_remove_${entry.card.id}")) { Text("取消收藏") }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AccountNotice(message: String, action: String? = null, onAction: () -> Unit = {},
-                          enabled: Boolean = true, tag: String) {
-    Surface(shape = RoundedCornerShape(18.dp), color = Color.White) {
-        Column(Modifier.fillMaxWidth().padding(20.dp).testTag(tag), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(message, color = Muted, fontSize = 13.sp, lineHeight = 21.sp)
-            if (action != null) TextButton(onClick = onAction, enabled = enabled) { Text(action) }
-        }
-    }
-}
-
-private fun accountPosition(positionMs: Long): String {
-    val seconds = (positionMs.coerceAtLeast(0) / 1000)
-    return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
 private fun decodeAccountQr(bytes: ByteArray?): androidx.compose.ui.graphics.ImageBitmap? {

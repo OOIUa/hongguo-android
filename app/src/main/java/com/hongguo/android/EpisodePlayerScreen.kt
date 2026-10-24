@@ -32,10 +32,19 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,7 +64,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -72,6 +80,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.hongguo.account.AccountSessionStatus
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import java.util.Locale
@@ -128,6 +138,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     var synchronizing by remember { mutableStateOf<Int?>(null) }
     var showEpisodes by rememberSaveable(detail.id) { mutableStateOf(false) }
     var showSpeed by rememberSaveable(detail.id) { mutableStateOf(false) }
+    var showFavorites by rememberSaveable(detail.id) { mutableStateOf(false) }
     var seeking by remember(state.video?.requestId) { mutableStateOf(false) }
     var seekFraction by remember(state.video?.requestId) { mutableStateOf<Float?>(null) }
 
@@ -160,6 +171,11 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     val visibleIndex = pager.currentPage.coerceIn(detail.episodes.indices)
     val visibleEpisode = detail.episodes[visibleIndex]
     val favorite = state.favorites.any { it.card.id == detail.id }
+    val cloudState = accountModel?.state?.collectAsStateWithLifecycle()?.value
+    val cloudFavorite = cloudState?.let { account ->
+        account.sessionStatus == AccountSessionStatus.LOGGED_IN && account.favorites.any { it.card.id == detail.id }
+    } == true
+    val anyFavorite = favorite || cloudFavorite
     val card = state.selectedCard ?: DramaCard(detail.id, detail.title, detail.cover, detail.episodes.size, detail.summary)
     val togglePlayback = {
         playback.player?.let {
@@ -172,7 +188,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     Box(Modifier.fillMaxSize().background(Color.Black).semantics { testTagsAsResourceId = true }) {
         VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("episode_pager"),
             key = { detail.episodes[it].id }, beyondViewportPageCount = 1,
-            userScrollEnabled = !showEpisodes && !showSpeed && !seeking) { page ->
+            userScrollEnabled = !showEpisodes && !showSpeed && !showFavorites && !seeking) { page ->
             Box(Modifier.fillMaxSize().testTag("episode_page_$page"), Alignment.Center) {
                 AsyncImage(model = detail.cover, contentDescription = null, modifier = Modifier.fillMaxSize().alpha(.24f), contentScale = ContentScale.Fit)
                 if (page == selected && activeVideo != null && playback.player != null) {
@@ -181,16 +197,18 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                         interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = togglePlayback))
                 }
                 when {
-                    page != selected || pager.isScrollInProgress -> Text("第 ${detail.episodes[page].index} 集", color = Color.White.copy(alpha = .65f), fontSize = 17.sp)
+                    page != selected || pager.isScrollInProgress -> Unit
                     state.playbackError != null -> Column(Modifier.padding(horizontal = 34.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text(state.playbackError, color = Color.White, fontSize = 14.sp, lineHeight = 23.sp)
+                        Text(state.playbackError, color = Color.White, fontSize = 14.sp, lineHeight = 23.sp,
+                            modifier = Modifier.testTag("media_status"))
                         Button(onClick = model::retryPlayback, modifier = Modifier.testTag("retry_playback"), shape = RoundedCornerShape(13.dp)) { Text("重新播放") }
                     }
                     state.preparing || (activeVideo != null && playback.player == null) || (playback.isBuffering && playback.playWhenReady) -> {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(13.dp)) {
                             CircularProgressIndicator(Modifier.size(32.dp), color = Color.White, strokeWidth = 2.dp)
-                            Text(if (state.preparing) preparationLabel(state.preparationStage) else "正在缓冲", color = Color.White.copy(alpha = .85f), fontSize = 12.sp)
+                            Text(if (state.preparing) preparationLabel(state.preparationStage) else "正在缓冲", color = Color.White.copy(alpha = .85f), fontSize = 12.sp,
+                                modifier = Modifier.testTag("media_status"))
                             if (state.preparing) TextButton(onClick = model::closePlayer) { Text("返回详情", color = Color.White.copy(alpha = .75f)) }
                         }
                     }
@@ -198,7 +216,9 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                         IconButton(onClick = togglePlayback, modifier = Modifier.size(76.dp).testTag("player_resume")
                             .semantics { contentDescription = if (playback.ended) "重新播放" else "继续播放" }) {
                             Surface(color = Color.Black.copy(alpha = .35f), shape = CircleShape) {
-                                Box(Modifier.size(66.dp), Alignment.Center) { Text("▶", color = Color.White, fontSize = 30.sp) }
+                                Box(Modifier.size(66.dp), Alignment.Center) {
+                                    Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(42.dp))
+                                }
                             }
                         }
                     }
@@ -207,57 +227,37 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         }
 
         Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .5f), Color.Transparent)))
-            .statusBarsPadding().padding(horizontal = 9.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .48f), Color.Transparent)))
+            .statusBarsPadding().padding(start = 9.dp, end = 14.dp, top = 9.dp, bottom = 24.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = model::closePlayer, modifier = Modifier.testTag("player_back").semantics { contentDescription = "返回详情" }) {
-                Text("‹", color = Color.White, fontSize = 39.sp, fontWeight = FontWeight.Light)
+                Icon(Icons.Rounded.ChevronLeft, null, tint = Color.White, modifier = Modifier.size(34.dp))
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("红果剧场", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
-                Text("第 ${visibleEpisode.index} 集 / 共 ${detail.episodes.size} 集", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            }
-            TextButton(onClick = { showEpisodes = true }, modifier = Modifier.testTag("player_chapters")) { Text("选集 ›", color = Color.White, fontSize = 13.sp) }
-        }
-
-        Column(Modifier.align(Alignment.CenterEnd).padding(end = 13.dp, top = 100.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(21.dp)) {
-            if (accountModel != null) AccountFavoriteAction(card, accountModel, dark = true,
-                onSignIn = { model.selectTab(AppTab.ACCOUNT) })
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = { model.toggleFavorite(card) }, modifier = Modifier.size(49.dp).testTag("favorite_toggle")
-                    .semantics { contentDescription = if (favorite) "取消收藏" else "收藏这部剧" }) {
-                    Text(if (favorite) "★" else "☆", fontSize = 36.sp, color = if (favorite) Orange else Color.White)
+            Text("第 ${visibleEpisode.index} 集 / 共 ${detail.episodes.size} 集", color = Color.White,
+                fontSize = if (LocalConfiguration.current.screenWidthDp < 360) 14.sp else 16.sp,
+                fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.weight(1f))
+            Box(Modifier.testTag("player_chapters")) {
+                TextButton(onClick = { showEpisodes = true }, modifier = Modifier.testTag("player_episode_picker")) {
+                    Text("选集", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Rounded.ChevronRight, null, tint = Color.White, modifier = Modifier.size(21.dp))
                 }
-                Text(if (favorite) "已收藏" else "收藏", color = Color.White, fontSize = 11.sp)
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = { showEpisodes = true }, modifier = Modifier.size(49.dp).testTag("player_episode_picker")) {
-                    Surface(shape = RoundedCornerShape(10.dp), color = Color.White.copy(alpha = .14f)) {
-                        Box(Modifier.size(37.dp), Alignment.Center) { Text("▦", color = Color.White, fontSize = 26.sp) }
-                    }
-                }
-                Text("选集", color = Color.White, fontSize = 11.sp)
             }
         }
 
+        // Keep the middle and subtitle area clear. Controls occupy only the lower edge of the frame.
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .86f))))
-            .navigationBarsPadding().padding(start = 20.dp, end = 20.dp, top = 30.dp, bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(detail.title, modifier = Modifier.padding(end = 57.dp), color = Color.White, fontSize = 20.sp, lineHeight = 27.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
-            val status = when {
-                visibleIndex != selected || pager.isScrollInProgress -> "松开即可播放第 ${visibleEpisode.index} 集"
-                state.playbackError != null -> "播放失败，可点击重试"
-                state.preparing -> preparationLabel(state.preparationStage)
-                state.playbackStatus.isNotBlank() -> state.playbackStatus
-                else -> "正在准备播放"
-            }
-            Text(status, Modifier.testTag("media_status"), fontSize = 12.sp, color = Color.White.copy(alpha = .77f))
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .74f))))
+            .navigationBarsPadding().padding(start = 23.dp, end = 21.dp, top = 14.dp, bottom = 10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (visibleIndex == detail.episodes.lastIndex) "已到最后一集 · 下滑回看" else "上滑看下一集 · 下滑看上一集",
-                    color = Color.White.copy(alpha = .5f), fontSize = 10.sp, modifier = Modifier.weight(1f))
-                if (state.firstFrameRendered && activeVideo != null) Text("画面已就绪", color = Color.White.copy(alpha = .6f), fontSize = 10.sp)
+                Text(detail.title, modifier = Modifier.weight(1f).padding(end = 8.dp), color = Color.White,
+                    fontSize = if (LocalConfiguration.current.screenWidthDp < 380) 16.sp else 18.sp,
+                    lineHeight = 25.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = { showFavorites = true }, modifier = Modifier.testTag("player_favorite_options")
+                    .semantics { contentDescription = "收藏选项" }) {
+                    Icon(if (anyFavorite) Icons.Rounded.Star else Icons.Outlined.StarBorder, null,
+                        tint = if (anyFavorite) Orange else Color.White, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(if (anyFavorite) "已收藏" else "收藏", color = Color.White, fontSize = 12.sp, maxLines = 1)
+                }
             }
             val duration = playback.durationMs
             val fraction = seekFraction ?: if (duration > 0) (playback.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
@@ -277,14 +277,52 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 modifier = Modifier.testTag("player_seek").semantics { contentDescription = "播放进度" })
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("${playerTime(displayedPosition)} / ${if (duration > 0) playerTime(duration) else "--:--"}",
-                    modifier = Modifier.testTag("player_time"), color = Color.White.copy(alpha = .75f), fontSize = 11.sp)
+                    modifier = Modifier.testTag("player_time"), color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { showSpeed = true }, modifier = Modifier.testTag("player_speed")
                     .semantics { contentDescription = "播放速度，当前${playbackSpeedLabel(state.playbackSpeed)}" }) {
-                    Text(if (state.playbackSpeed == 1f) "倍速 1×" else "${playbackSpeedLabel(state.playbackSpeed)} 倍速",
-                        color = if (state.playbackSpeed == 1f) Color.White else Orange, fontSize = 12.sp,
+                    Text("倍速 ${playbackSpeedLabel(state.playbackSpeed)}",
+                        color = Color.White, fontSize = 13.sp,
                         fontWeight = FontWeight.Medium)
                 }
+            }
+        }
+    }
+
+    if (showFavorites) {
+        ModalBottomSheet(onDismissRequest = { showFavorites = false }, containerColor = Color(0xFF211E1B), contentColor = Color.White) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 23.dp).navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                Text("收藏这部剧", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(detail.title, color = Color.White.copy(alpha = .62f), fontSize = 13.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                    Icon(Icons.Outlined.BookmarkBorder, null, tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(24.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("本机收藏", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text("保存在当前设备", color = Color.White.copy(alpha = .6f), fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { model.toggleFavorite(card) }, modifier = Modifier.testTag("favorite_toggle")
+                        .semantics { contentDescription = if (favorite) "取消本机收藏" else "加入本机收藏" }) {
+                        Text(if (favorite) "已收藏" else "加入收藏", color = if (favorite) Color(0xFFFFA184) else Color.White, fontSize = 13.sp)
+                    }
+                }
+                if (accountModel != null) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                        Icon(Icons.Outlined.CloudQueue, null, tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(24.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("红果账号收藏", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text("与手机端账号同步", color = Color.White.copy(alpha = .6f), fontSize = 12.sp)
+                        }
+                        AccountFavoriteAction(card, accountModel, dark = true, compact = true, onSignIn = {
+                            showFavorites = false
+                            model.selectTab(AppTab.ACCOUNT)
+                        })
+                    }
+                }
+                Spacer(Modifier.height(22.dp))
             }
         }
     }
@@ -351,7 +389,7 @@ private fun playerTime(positionMs: Long): String {
 internal fun preparationLabel(stage: String): String = when {
     stage.contains("download", true) || stage.contains("下载") -> "正在缓冲本集视频"
     stage.contains("decrypt", true) || stage == "processing" || stage.contains("解密") -> "正在准备画面"
-    stage.contains("remux", true) || stage.contains("strip", true) || stage.contains("封装") -> "正在整理媒体文件"
-    stage == "ready" || stage == "cached" -> "视频已就绪"
-    else -> "正在获取本集片源"
+    stage.contains("remux", true) || stage.contains("strip", true) || stage.contains("封装") -> "即将开始播放"
+    stage == "ready" || stage == "cached" -> "即将开始播放"
+    else -> "正在加载视频"
 }

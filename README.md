@@ -14,16 +14,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.6.3**（versionCode 10）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.0**（versionCode 11）· Android **8.0 / API 26** 及以上。
 
-本版修复账号资料已返回却被错误拒绝的问题：业务账号标识不再限定纯数字，同步修正加密保存和重启恢复。已在 0.6.2 保存官网登录的用户，可直接点“重试连接手机云账号”。实际片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
+本版统一暖白与橙色界面：首页加入本机续看与双列海报，发现、独立搜索和片单入口更清晰，本机与红果账号记录分开展示；播放器精简常驻控件，并优化小屏和放大字体下的操作布局。原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.6.3 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.3/hongguo-android-0.6.3.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.3/hongguo-android-0.6.3.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.3/hongguo-android-0.6.3.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.6.3 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.3/hongguo-android-0.6.3-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.3/SHA256SUMS-0.6.3.txt) |
+| GitHub 直连 | [下载 v0.7.0 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.0/hongguo-android-0.7.0.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.0/hongguo-android-0.7.0.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.0/hongguo-android-0.7.0.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.0 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.0/hongguo-android-0.7.0-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.0/SHA256SUMS-0.7.0.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -34,29 +34,29 @@
 <table>
   <tr>
     <th align="center">首页推荐</th>
-    <th align="center">分类筛选</th>
-    <th align="center">我的观影空间</th>
+    <th align="center">发现与筛选</th>
+    <th align="center">我的与账号</th>
   </tr>
   <tr>
-    <td><img src="docs/images/home.png" width="240" alt="红果独立版首页：热度精选、最新短剧与漫剧榜单"></td>
-    <td><img src="docs/images/categories.png" width="240" alt="分类页面：短剧、漫剧、AI 剧与题材筛选"></td>
-    <td><img src="docs/images/my.png" width="240" alt="我的页面：收藏统计、播放历史、系统设置与检查更新"></td>
+    <td><img src="docs/images/home.png" width="240" alt="红果独立版首页：本机继续观看、搜索入口与双列海报"></td>
+    <td><img src="docs/images/categories.png" width="240" alt="发现页面：短剧、漫剧、AI 剧、动态筛选与双列海报"></td>
+    <td><img src="docs/images/my.png" width="240" alt="我的页面：本机收藏与历史、账号与隐私、播放设置和检查更新"></td>
   </tr>
 </table>
 
-截图来自 v0.5.1 的 Android 模拟器，内容列表随上游更新。
+截图来自 v0.7.0 的 Android 模拟器实拍，内容列表随上游更新。
 
 ## 功能一览
 
 | 功能 | 说明 |
 | --- | --- |
-| 发现好剧 | 热度精选、最新短剧、漫剧榜单，支持继续翻页 |
-| 分类与搜索 | 浏览短剧、漫剧、AI 剧，按上游提供的条件筛选，或直接搜索剧名 |
+| 首页与续看 | 本机最新观看记录一键续播；热度精选、最新短剧和漫剧榜单双列展示，支持继续翻页 |
+| 发现与搜索 | 浏览短剧、漫剧、AI 剧，按上游提供的条件筛选；从首页或发现进入独立搜索页 |
 | 全屏播放 | 上划下一集、下划上一集，也可打开选集面板跳转 |
 | 播放控制 | 暂停 / 继续、拖动进度、缓冲进度显示、播放失败重试 |
 | 六档倍速 | 0.5×、0.75×、1×、1.25×、1.5×、2×，自动记住选择 |
 | 连播与预加载 | 可分别开关自动连播、下一集预加载，末集不循环 |
-| 收藏与续播 | 本机保存收藏、观看历史、集数与集内位置，支持单条移除与清空 |
+| 片单与续播 | 本机与红果账号切换来源；本机保存收藏、观看历史、集数与集内位置，支持单条移除与清空 |
 | 个人红果账号 | 官网网页登录、扫码与手机号验证码入口；官网和手机云账号验证分开，失败可复制脱敏诊断 |
 | 账户片单 | 仅在手机业务身份通过验证后读取收藏、最近 50 部历史及预约，与本机记录分开 |
 | 可选进度上报 | 仅已确认的手机云账号可用，默认关闭；实际跨设备结果需本人验收 |
@@ -67,12 +67,14 @@
 
 ## 快速上手
 
-1. 安装后从「首页」或「分类」选剧，也可到「搜索」输入剧名。
-2. 进入详情，选择集数开始播放；看过的剧可继续上次的集数与位置。
+底部导航为「首页 / 发现 / 片单 / 我的」，搜索从首页或发现的搜索栏进入独立页面。
+
+1. 安装后从「首页」或「发现」选剧，也可点击搜索栏输入剧名。
+2. 进入详情，选择集数开始播放；首页「继续观看」或「片单 → 本机 → 历史」可继续上次的集数与位置。
 3. 播放中点击画面暂停 / 继续，拖动进度条跳转，上下滑动切集；右下角「倍速」调整速度。
-4. 在详情或播放器中收藏，在「收藏」查看；「我的 → 播放历史」可继续观看。
-5. 到「我的 → 系统设置」调整自动连播、下一集预加载和启动检查更新。
-6. 到「我的 → 红果账号与云片单」登录个人账号；只有一部手机时选择「在本机打开官网登录」，待页面加载后点「打开官网登录窗口」，自行完成官方验证后点上方「完成登录」。也可在另一台设备的红果 App 中扫码确认。
+4. 详情中分别提供本机与账号收藏操作；播放器点击「收藏」，在面板中选择「本机收藏」或「红果账号收藏」。到「片单」切换来源，查看对应历史、收藏；预约仅在红果账号来源显示。
+5. 到「我的 → 播放设置」调整自动连播、下一集预加载和启动检查更新。
+6. 到「我的 → 账号与隐私」登录个人账号；只有一部手机时选择「在本机打开官网登录」，待页面加载后点「打开官网登录窗口」，自行完成官方验证后点上方「完成登录」。也可在另一台设备的红果 App 中扫码确认。
 
 若显示“官网已登录，手机云账号未接通”，官网会话已加密保留，可直接重试账号资料；点击“复制诊断信息”可提供不含凭据与身份值的结构摘要。此状态不读取或写入手机云片单。
 
@@ -92,7 +94,7 @@
 
 - **渐进播放**：常见非碎片 CENC MP4 使用 Range 按需取块并在本机处理，首帧无需等待整集下载。不支持此路径的媒体会回退为整集下载、处理后播放；实际效果取决于片源、编码、封装与网络。
 - **本机记录**：收藏、历史、播放偏好与缓存保存在应用私有目录，无需广泛文件访问权限。历史在实际渲染首帧后记录，准备失败不会记为已观看。
-- **账号记录**：个人会话和账户片单加密保存在本机，退出或切换账号隔离数据。原本机记录不会自动上传；详情和播放器中的「账号收藏」是独立的云端操作。短信可能需要官网验证，收藏与跨设备续播需用本人账号核对。
+- **账号记录**：个人会话和账户片单加密保存在本机，退出或切换账号隔离数据。原本机记录不会自动上传；详情的账号收藏入口和播放器面板中的「红果账号收藏」属于独立的云端操作。短信可能需要官网验证，收藏与跨设备续播需用本人账号核对。
 - **缓存用途**：用于播放加速，可能随会话结束或空间策略被清理，不作为永久离线保存。目前仅支持前台播放，未提供后台播放服务或批量离线下载。
 
 <details>

@@ -24,6 +24,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -68,23 +71,23 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
     val contentHeight = (screenHeight * .52f).coerceIn(100f, 430f).dp
     Dialog(onDismissRequest = { if (!state.downloading) model.dismiss() },
         properties = DialogProperties(dismissOnBackPress = !state.downloading, dismissOnClickOutside = !state.downloading)) {
-        Surface(shape = RoundedCornerShape(23.dp), color = Color.White,
+        Surface(shape = RoundedCornerShape(16.dp), color = Canvas,
             modifier = Modifier.fillMaxWidth().heightIn(max = (screenHeight * .9f).dp)
                 .testTag("update_dialog").semantics { testTagsAsResourceId = true }) {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFFFFEAE0)), Alignment.Center) {
-                        Text("↑", fontSize = 27.sp, color = Orange, fontWeight = FontWeight.Medium)
+                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Cream), Alignment.Center) {
+                        Icon(Icons.Outlined.SystemUpdate, null, Modifier.size(24.dp), tint = Orange)
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(if (update != null) "发现新版本" else "检查更新", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
-                        Text("当前版本 ${BuildConfig.VERSION_NAME}", fontSize = 11.sp, color = Muted)
+                        Text("当前版本 ${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = Muted)
                     }
                 }
 
                 Column(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = contentHeight).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                    Text("更新线路", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Ink)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("更新线路", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Ink)
                     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                         listOf(listOf(UpdateSource.AUTO, UpdateSource.DIRECT),
                             listOf(UpdateSource.PROXY_PRIMARY, UpdateSource.PROXY_BACKUP)).forEach { row ->
@@ -99,13 +102,13 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
                         }
                     }
                     Text(if (state.source == UpdateSource.AUTO) "直连失败时自动尝试两条加速线路。" else "连接不畅时，可切换其他线路后重试。",
-                        color = Muted, fontSize = 11.sp, lineHeight = 18.sp)
-                    state.activeSource?.let { Text("当前线路：${it.label}", color = Orange, fontSize = 11.sp) }
+                        color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
+                    state.activeSource?.let { Text("当前线路：${it.label}", color = Orange, fontSize = 12.sp) }
                     if (state.checking) {
                         Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(11.dp)) {
                             CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
-                            Text("正在检查版本，请稍候…", fontSize = 13.sp, color = Muted)
+                            Text("正在检查版本…", fontSize = 14.sp, color = Muted)
                         }
                     }
 
@@ -113,14 +116,14 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Surface(color = Cream, shape = RoundedCornerShape(8.dp)) {
                                 Text("新版 ${update.versionName}", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    color = Orange, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    color = Orange, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             }
                             Spacer(Modifier.weight(1f))
-                            if (update.sizeBytes > 0) Text(updateSize(update.sizeBytes), fontSize = 11.sp, color = Muted)
+                            if (update.sizeBytes > 0) Text(updateSize(update.sizeBytes), fontSize = 12.sp, color = Muted)
                         }
                         if (update.notes.isNotBlank()) {
-                            Text("更新内容", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Ink)
-                            Text(update.notes, fontSize = 13.sp, lineHeight = 21.sp, color = Muted)
+                            Text("更新内容", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                            Text(update.notes, fontSize = 14.sp, lineHeight = 22.sp, color = Muted)
                         }
                     }
 
@@ -128,55 +131,55 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
                         HorizontalDivider(color = Cream)
                         val progress = state.downloadProgress?.coerceIn(0f, 1f)
                         Text(if (progress == null) "正在下载更新…" else "正在下载更新 ${(progress * 100).toInt()}%",
-                            color = Ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         if (progress == null) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Orange, trackColor = Cream)
                         else LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth(), color = Orange, trackColor = Cream)
-                        Text("下载完成并验证后，即可安装新版本。", color = Muted, fontSize = 11.sp, lineHeight = 18.sp)
+                        Text("下载完成并验证后，即可安装新版本。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
                     }
 
                     if (state.installPermissionRequired) {
-                        Surface(color = Color(0xFFFFEFE6), shape = RoundedCornerShape(12.dp)) {
+                        Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
                             Text("请允许安装此应用的更新。完成设置并返回后，会继续安装。",
-                                Modifier.padding(12.dp), fontSize = 13.sp, lineHeight = 21.sp, color = Color(0xFF995135))
+                                Modifier.padding(16.dp), fontSize = 14.sp, lineHeight = 22.sp, color = Ink)
                         }
                     }
 
                     if (state.error != null) {
-                        Surface(color = Color(0xFFFFEFE6), shape = RoundedCornerShape(12.dp)) {
+                        Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                                Text("暂时无法完成更新，请稍后重试。", color = Color(0xFF995135), fontSize = 13.sp, lineHeight = 21.sp)
+                                Text("暂时无法完成更新，请稍后重试。", color = Ink, fontSize = 14.sp, lineHeight = 22.sp)
                                 TextButton(onClick = { showErrorDetails = !showErrorDetails }) {
-                                    Text(if (showErrorDetails) "收起原因" else "查看原因", fontSize = 11.sp)
+                                    Text(if (showErrorDetails) "收起原因" else "查看原因", fontSize = 12.sp)
                                 }
                                 if (showErrorDetails) Text(state.error, color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
                             }
                         }
                     } else if (state.status.isNotBlank()) {
-                        Text(state.status, color = Muted, fontSize = 13.sp, lineHeight = 21.sp)
+                        Text(state.status, color = Muted, fontSize = 14.sp, lineHeight = 22.sp)
                     }
                 }
 
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     when {
                         state.downloading -> OutlinedButton(onClick = model::cancelDownload,
-                            modifier = Modifier.fillMaxWidth().testTag("update_cancel"), shape = RoundedCornerShape(13.dp)) {
+                            modifier = Modifier.fillMaxWidth().testTag("update_cancel"), shape = RoundedCornerShape(16.dp)) {
                             Text("取消下载")
                         }
                         state.installPermissionRequired -> Button(onClick = { model.openInstaller(activity) },
-                            modifier = Modifier.fillMaxWidth().testTag("update_permission"), shape = RoundedCornerShape(13.dp)) {
+                            modifier = Modifier.fillMaxWidth().testTag("update_permission"), shape = RoundedCornerShape(16.dp)) {
                             Text("允许安装此应用的更新")
                         }
                         state.downloadedFile != null -> Button(onClick = { model.openInstaller(activity) },
-                            modifier = Modifier.fillMaxWidth().testTag("update_install"), shape = RoundedCornerShape(13.dp)) {
+                            modifier = Modifier.fillMaxWidth().testTag("update_install"), shape = RoundedCornerShape(16.dp)) {
                             Text("安装更新")
                         }
                         state.error != null -> Button(onClick = {
                             if (update != null) model.downloadUpdate() else model.checkForUpdates()
-                        }, modifier = Modifier.fillMaxWidth().testTag("update_retry"), shape = RoundedCornerShape(13.dp)) {
+                        }, modifier = Modifier.fillMaxWidth().testTag("update_retry"), shape = RoundedCornerShape(16.dp)) {
                             Text("重试")
                         }
                         update != null && !state.checking -> Button(onClick = model::downloadUpdate,
-                            modifier = Modifier.fillMaxWidth().testTag("update_download"), shape = RoundedCornerShape(13.dp)) {
+                            modifier = Modifier.fillMaxWidth().testTag("update_download"), shape = RoundedCornerShape(16.dp)) {
                             Text("下载更新")
                         }
                     }

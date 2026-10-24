@@ -38,7 +38,16 @@ class LibraryFlowTest {
             assertEquals(12_345L, reloaded.history.single().positionMs)
             compose.onNodeWithTag("nav_favorites").performClick()
             compose.waitUntil(5_000) { model.state.value.favorites.size == 2 }
+            compose.onNodeWithTag("library_source_account").performClick()
+            compose.runOnIdle {
+                assertTrue(model.state.value.libraryCloud)
+                assertEquals(2, model.state.value.favorites.size)
+                assertEquals(1, model.state.value.history.size)
+            }
+            compose.onNodeWithTag("library_source_local").performClick()
+            compose.onNodeWithTag("library_favorites").performClick()
             compose.onNodeWithTag("favorite_item_0").assertExists()
+            compose.onNodeWithTag("library_manage").performClick()
             compose.onNodeWithTag("favorite_remove_0").performClick()
             compose.waitUntil(5_000) { model.state.value.favorites.size == 1 }
             assertEquals(1, model.state.value.history.size)
@@ -52,6 +61,7 @@ class LibraryFlowTest {
             compose.onNodeWithTag("nav_mine").performClick()
             compose.onNodeWithTag("my_history").performScrollTo().performClick()
             compose.onNodeWithTag("history_item_0").assertExists()
+            compose.onNodeWithTag("library_manage").performClick()
             compose.onNodeWithTag("history_remove_0").performClick()
             compose.waitUntil(5_000) { model.state.value.history.isEmpty() }
             store.recordPlayback(card, "18446744073709551613", 3, 12_345)

@@ -19,6 +19,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -44,29 +51,30 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
         SystemSettingsScreen(state, model, updateState, updateModel) { settingsOpen = false }
         return
     }
-    LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 22.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Text("我的", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Ink,
-                modifier = Modifier.padding(top = 16.dp))
-            Text("好故事，留给下次继续", fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 6.dp))
+            Text("我的", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Ink,
+                modifier = Modifier.padding(top = 12.dp, bottom = 8.dp))
         }
         item {
-            Surface(shape = RoundedCornerShape(22.dp), color = Color(0xFFFFEEE5)) {
-                Row(Modifier.fillMaxWidth().testTag("my_account_card").clickable(onClick = onAccount).padding(20.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(15.dp)) {
-                    Box(Modifier.size(54.dp).clip(RoundedCornerShape(18.dp)).background(Orange), Alignment.Center) {
-                        Text("果", color = Color.White, fontSize = 31.sp, fontWeight = FontWeight.Bold)
+            Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+                Row(Modifier.fillMaxWidth().testTag("my_account_card").clickable(onClick = onAccount).padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Cream), Alignment.Center) {
+                        Icon(Icons.Outlined.PersonOutline, null, Modifier.size(28.dp), tint = Muted)
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(accountName ?: "登录红果账号", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Text(accountStatus, color = Muted, fontSize = 12.sp)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(accountName ?: "登录红果账号", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(accountStatus, color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
                     }
+                    Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = Muted)
                 }
             }
         }
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MyStat("本机收藏", state.favorites.size, Modifier.weight(1f).testTag("my_favorites")) {
                     model.selectTab(AppTab.FAVORITES)
                 }
@@ -76,13 +84,13 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
             }
         }
         item {
-            Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
+            Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
                 Column {
-                    MyMenuRow("红果账号与云片单", "登录、收藏、观看历史与预约", "my_account", onAccount)
+                    MyMenuRow("账号与隐私", "登录方式、云片单与账号管理", "my_account", onAccount)
                     HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
                     MyMenuRow("播放历史", "继续上次看到的地方", "my_history") { model.selectTab(AppTab.HISTORY) }
                     HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("系统设置", "播放偏好与更新设置", "my_settings") { settingsOpen = true }
+                    MyMenuRow("播放设置", "自动连播、预加载与更新偏好", "my_settings") { settingsOpen = true }
                     HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
                     MyMenuRow("检查更新", "当前版本 ${BuildConfig.VERSION_NAME}", "update_check") {
                         updateModel.checkForUpdates()
@@ -91,61 +99,64 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
             }
         }
         item {
-            Text("红果独立版  ${BuildConfig.VERSION_NAME}", color = Muted, fontSize = 11.sp,
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 28.dp))
+            Text("本机收藏与观看记录仅保存在这台设备。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp,
+                modifier = Modifier.padding(top = 8.dp))
+            Text("红果独立版 ${BuildConfig.VERSION_NAME}", color = Muted, fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp))
         }
     }
 }
 
 @Composable
 private fun MyStat(label: String, count: Int, modifier: Modifier, onClick: () -> Unit) {
-    Surface(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(18.dp), color = Color.White) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(count.toString(), color = Orange, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-            Text(label, color = Muted, fontSize = 12.sp)
+    Surface(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(16.dp), color = Color.White) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, color = Muted, fontSize = 14.sp)
+            Text(count.toString(), color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
 private fun MyMenuRow(title: String, subtitle: String, tag: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().testTag(tag).clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 20.dp),
+    Row(Modifier.fillMaxWidth().testTag(tag).clickable(onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = Muted, fontSize = 11.sp)
+            Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
         }
-        Text("›", color = Muted, fontSize = 25.sp)
+        Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = Muted)
     }
 }
 
 @Composable
 private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
                                  updateState: UpdateUiState, updateModel: UpdateViewModel, onBack: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().testTag("settings_screen").padding(horizontal = 22.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    LazyColumn(Modifier.fillMaxSize().testTag("settings_screen").padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack, modifier = Modifier.testTag("settings_back")) { Text("‹ 我的", color = Muted) }
-                Spacer(Modifier.weight(1f))
-                Text("系统设置", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onBack, modifier = Modifier.testTag("settings_back")) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回我的", tint = Ink)
+                }
+                Text("播放设置", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             }
         }
         item {
-            Text("播放偏好", color = Muted, fontSize = 12.sp)
-            Surface(shape = RoundedCornerShape(20.dp), color = Color.White, modifier = Modifier.padding(top = 10.dp)) {
+            Text("播放偏好", color = Muted, fontSize = 14.sp)
+            Surface(shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.padding(top = 12.dp)) {
                 Column {
-                    SettingSwitch("自动连播下一集", "本集结束后继续播放，仍可随时上下滑动切集", state.autoPlayNext,
+                    SettingSwitch("自动连播下一集", "本集结束后继续播放，也可上下滑动切集", state.autoPlayNext,
                         "settings_autoplay", model::setAutoPlayNext)
                     HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    SettingSwitch("下一集预加载", "提前准备少量内容，关闭可减少预先消耗的流量", state.preloadNext,
+                    SettingSwitch("下一集预加载", "提前准备少量内容，关闭可节省流量", state.preloadNext,
                         "settings_preload", model::setPreloadNext)
                 }
             }
         }
         item {
-            Text("软件更新", color = Muted, fontSize = 12.sp)
-            Surface(shape = RoundedCornerShape(20.dp), color = Color.White, modifier = Modifier.padding(top = 10.dp)) {
+            Text("软件更新", color = Muted, fontSize = 14.sp)
+            Surface(shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.padding(top = 12.dp)) {
                 SettingSwitch("启动时检查更新", "每天最多检查一次，下载和安装仍需确认", updateState.automaticChecksEnabled,
                     "settings_auto_update", updateModel::setAutomaticChecksEnabled)
             }
@@ -159,11 +170,11 @@ private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
 
 @Composable
 private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, tag: String, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically,
+    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = Muted, fontSize = 11.sp, lineHeight = 18.sp)
+            Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
         }
         Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.testTag(tag))
     }

@@ -36,7 +36,7 @@ class StandaloneFlowTest {
         lateinit var model: HongguoViewModel
         compose.runOnIdle { model = ViewModelProvider(compose.activity)[HongguoViewModel::class.java] }
         compose.runOnIdle { model.clearFavorites(); model.clearHistory() }
-        compose.onNodeWithTag("nav_search").performClick()
+        compose.onNodeWithTag("home_search").performClick()
         compose.onNodeWithTag("search_input").performTextClearance()
         compose.onNodeWithTag("search_input").performTextInput("总裁")
         compose.onNodeWithTag("search_button").performClick()

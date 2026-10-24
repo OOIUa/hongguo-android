@@ -1,11 +1,12 @@
 package com.hongguo.android
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,12 +19,21 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,8 +47,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,57 +62,73 @@ internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val submit = { keyboard?.hide(); focus.clearFocus(); model.search() }
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Text("下一部好剧，从这里开始", Modifier.padding(top = 8.dp, bottom = 15.dp),
-            fontSize = 23.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, color = Ink)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+    val close = { keyboard?.hide(); focus.clearFocus(); model.closeSearch() }
+    BackHandler(onBack = close)
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).testTag("search_screen")) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IconButton(onClick = close, modifier = Modifier.testTag("search_back")) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Ink)
+            }
             OutlinedTextField(value = state.query, onValueChange = model::updateQuery,
                 modifier = Modifier.weight(1f).testTag("search_input"),
-                placeholder = { Text("输入剧名或关键词", fontSize = 14.sp) },
+                placeholder = { Text("搜索剧名或关键词", fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                textStyle = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, color = Ink),
+                trailingIcon = if (state.query.isNotEmpty()) {
+                    { IconButton(onClick = { model.updateQuery("") }, modifier = Modifier.testTag("search_clear")) {
+                        Icon(Icons.Outlined.Close, "清空搜索词", tint = Muted)
+                    } }
+                } else null,
+                colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Cream, unfocusedContainerColor = Cream,
+                    unfocusedBorderColor = Color.Transparent, focusedBorderColor = Orange),
                 singleLine = true, shape = RoundedCornerShape(16.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { submit() }))
-            Button(onClick = submit, enabled = state.query.isNotBlank(), shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.height(54.dp).testTag("search_button")) { Text("搜索") }
+            Button(onClick = submit, enabled = state.query.isNotBlank(), shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                modifier = Modifier.heightIn(min = 48.dp).testTag("search_button")) { Text("搜索", fontSize = 14.sp) }
         }
         if (state.searching) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
-                Text("正在寻找相关短剧…", Modifier.padding(start = 11.dp).weight(1f), color = Muted, fontSize = 13.sp)
-                TextButton(onClick = model::cancelSearch) { Text("取消") }
+            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("正在寻找相关短剧…", Modifier.padding(start = 12.dp).weight(1f), color = Muted, fontSize = 14.sp)
+                TextButton(onClick = model::cancelSearch, modifier = Modifier.testTag("search_cancel")) { Text("取消", fontSize = 14.sp) }
             }
         } else if (state.searchedQuery.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("搜索结果", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                Text("${state.results.size} 部", color = Muted, fontSize = 12.sp)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("“${state.searchedQuery}”的结果", fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 26.sp,
+                    modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, color = Ink)
+                Text("${state.results.size} 部", color = Muted, fontSize = 13.sp)
             }
         }
-        LazyColumn(Modifier.fillMaxSize().testTag("search_results"), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+        LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("search_results"),
+            contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.results.isEmpty() && !state.searching && state.searchError == null) {
                 item {
-                    EmptyPrompt(if (state.searchedQuery.isBlank()) "发现属于你的故事" else "没有找到相关剧集",
-                        if (state.searchedQuery.isBlank()) "搜索剧名，查看完整选集并在本机播放。" else "试试缩短关键词，或换个剧名再搜索。")
+                    EmptyPrompt(if (state.searchedQuery.isBlank()) "搜索你想看的短剧" else "没有找到相关剧集",
+                        if (state.searchedQuery.isBlank()) "输入剧名或关键词，查看完整选集。" else "试试缩短关键词，或换个剧名再搜索。")
                 }
             }
             itemsIndexed(state.results, key = { _, item -> item.id }) { index, card ->
                 DramaResult(card, index) { keyboard?.hide(); focus.clearFocus(); model.openDrama(card) }
             }
-            if (state.searchError != null) {
-                item { FailurePanel(state.searchError, onRetry = if (state.results.isEmpty()) model::search else model::loadMore) }
+            state.searchError?.let { error ->
+                item { FailurePanel(error, onRetry = if (state.results.isEmpty()) model::search else model::loadMore) }
             }
             if (state.hasMore) {
                 item {
                     OutlinedButton(onClick = model::loadMore, enabled = !state.loadingMore,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), shape = RoundedCornerShape(14.dp)) {
-                        if (state.loadingMore) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
-                        else Text("加载更多")
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("search_load_more"), shape = RoundedCornerShape(12.dp)) {
+                        if (state.loadingMore) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Text("加载更多", fontSize = 14.sp)
                     }
                 }
             }
             if (state.results.isNotEmpty() && !state.hasMore && !state.loadingMore) {
-                item { Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 16.dp), color = Muted, fontSize = 12.sp) }
+                item { Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 16.dp), color = Muted,
+                    fontSize = 12.sp, textAlign = TextAlign.Center) }
             }
-            item { Spacer(Modifier.height(16.dp)) }
         }
     }
 }
@@ -108,18 +136,19 @@ internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel) {
 @Composable
 internal fun DramaResult(card: DramaCard, index: Int, tag: String = "result_$index", onClick: () -> Unit) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth().testTag(tag),
-        shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(15.dp)) {
-            Cover(card.cover, card.title, Modifier.width(83.dp).height(112.dp))
-            Column(Modifier.weight(1f).heightIn(min = 112.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(card.title, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Surface(color = Cream, shape = RoundedCornerShape(6.dp)) {
-                    Text(if (card.episodeCount > 0) "${card.episodeCount} 集" else "查看剧集",
-                        Modifier.padding(horizontal = 7.dp, vertical = 3.dp), fontSize = 11.sp, color = Muted)
-                }
-                if (card.summary.isNotBlank()) Text(card.summary, color = Muted, fontSize = 12.sp, lineHeight = 18.sp,
+        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Cover(card.cover, card.title, Modifier.width(80.dp).height(108.dp))
+            Column(Modifier.weight(1f).heightIn(min = 108.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(card.title, color = Ink, fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("查看选集  →", color = Orange, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text(if (card.episodeCount > 0) "${card.episodeCount} 集" else "查看剧集", fontSize = 13.sp, lineHeight = 20.sp, color = Muted)
+                if (card.summary.isNotBlank()) Text(card.summary, color = Muted, fontSize = 13.sp, lineHeight = 20.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("查看选集", color = Color(0xFFB84428), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Outlined.ChevronRight, null, tint = Color(0xFFB84428), modifier = Modifier.size(16.dp))
+                }
             }
         }
     }
@@ -127,31 +156,32 @@ internal fun DramaResult(card: DramaCard, index: Int, tag: String = "result_$ind
 
 @Composable
 internal fun Cover(url: String, title: String, modifier: Modifier) {
-    Box(modifier.clip(RoundedCornerShape(11.dp)).background(Cream), Alignment.Center) {
-        Text("红果\n剧场", color = Color(0xFFC5AB96), fontSize = 14.sp, lineHeight = 22.sp)
+    Box(modifier.clip(RoundedCornerShape(12.dp)).background(Cream), Alignment.Center) {
+        Icon(Icons.Outlined.Movie, null, tint = Muted.copy(alpha = .45f), modifier = Modifier.size(28.dp))
         AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(),
-            contentDescription = "$title 封面", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     }
 }
 
 @Composable
 internal fun FailurePanel(message: String, onRetry: () -> Unit, tag: String = "retry_request") {
-    Surface(color = Color(0xFFFFEFE7), shape = RoundedCornerShape(14.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(message, modifier = Modifier.weight(1f), color = Color(0xFF96492F), fontSize = 13.sp, lineHeight = 20.sp)
-            TextButton(onClick = onRetry, modifier = Modifier.testTag(tag)) { Text("重试") }
+    Surface(color = Color(0xFFFFEFE7), shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(message, modifier = Modifier.weight(1f), color = Color(0xFF96492F), fontSize = 14.sp, lineHeight = 22.sp)
+            TextButton(onClick = onRetry, modifier = Modifier.testTag(tag)) { Text("重试", fontSize = 14.sp) }
         }
     }
 }
 
 @Composable
 internal fun EmptyPrompt(title: String, subtitle: String) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 70.dp), horizontalAlignment = Alignment.CenterHorizontally,
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Box(Modifier.size(64.dp).clip(RoundedCornerShape(22.dp)).background(Cream), Alignment.Center) {
-            Text("剧", fontSize = 31.sp, color = Orange, fontWeight = FontWeight.Light)
+        Box(Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(Cream), Alignment.Center) {
+            Icon(Icons.Outlined.VideoLibrary, null, modifier = Modifier.size(30.dp), tint = Muted)
         }
-        Text(title, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-        Text(subtitle, fontSize = 12.sp, lineHeight = 20.sp, color = Muted)
+        Text(title, fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = Ink, textAlign = TextAlign.Center)
+        Text(subtitle, fontSize = 14.sp, lineHeight = 22.sp, color = Muted, textAlign = TextAlign.Center)
     }
 }

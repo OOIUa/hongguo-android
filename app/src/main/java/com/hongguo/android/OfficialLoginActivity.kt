@@ -4,7 +4,10 @@ import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Build
@@ -88,48 +91,51 @@ class OfficialLoginActivity : ComponentActivity() {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
         }
         bar.addView(Button(this).apply {
             text = "返回"
             contentDescription = "取消官网登录"
+            styleLoginButton(this)
             setOnClickListener { closeLogin(null) }
         })
         bar.addView(TextView(this).apply {
             text = "红果官网登录"
             textSize = 17f
             setTextColor(Color.rgb(41, 36, 33))
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             gravity = android.view.Gravity.CENTER
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         complete = Button(this).apply {
             text = "完成登录"
             contentDescription = "完成官网登录并确认账号"
             isEnabled = false
-            setTextColor(Color.rgb(232, 90, 55))
+            styleLoginButton(this, prominent = true)
             setOnClickListener { finishWithOfficialSession() }
         }
         bar.addView(complete)
         root.addView(bar)
         status = TextView(this).apply {
-            text = "请先点下方“打开官网登录窗口”，在官网完成登录后，点上方“完成登录”。页面可双指放大。"
-            textSize = 13f
-            setTextColor(Color.rgb(129, 117, 109))
-            setPadding(dp(15), dp(8), dp(15), dp(10))
+            text = "在官网完成登录后，点“完成登录”返回确认。页面可双指放大。"
+            textSize = 14f
+            setTextColor(Color.rgb(107, 98, 92))
+            setPadding(dp(20), dp(8), dp(20), dp(12))
         }
         root.addView(status)
         openLogin = Button(this).apply {
             text = "打开官网登录窗口"
             contentDescription = "打开官网的手机号或扫码登录窗口"
             isEnabled = false
-            setTextColor(Color.rgb(232, 90, 55))
+            styleLoginButton(this)
             setOnClickListener { openOfficialLoginDialog() }
         }
         root.addView(openLogin, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
-            setMargins(dp(12), 0, dp(12), dp(6))
+            setMargins(dp(20), 0, dp(20), dp(12))
         })
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = false
             max = 100
+            progressTintList = ColorStateList.valueOf(Color.rgb(201, 68, 38))
         }
         root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)))
         val view = WebView(this)
@@ -365,6 +371,26 @@ class OfficialLoginActivity : ComponentActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun styleLoginButton(button: Button, prominent: Boolean = false) {
+        val accent = Color.rgb(201, 68, 38)
+        val muted = Color.rgb(107, 98, 92)
+        val cream = Color.rgb(245, 237, 229)
+        button.isAllCaps = false
+        button.textSize = 14f
+        button.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        button.minHeight = dp(48)
+        button.minWidth = 0
+        button.minimumWidth = 0
+        button.setPadding(dp(12), dp(4), dp(12), dp(4))
+        button.background = GradientDrawable().apply {
+            cornerRadius = dp(16).toFloat()
+            setColor(cream)
+        }
+        val states = arrayOf(intArrayOf(android.R.attr.state_enabled), intArrayOf())
+        button.backgroundTintList = ColorStateList(states, intArrayOf(if (prominent) accent else cream, cream))
+        button.setTextColor(ColorStateList(states, intArrayOf(if (prominent) Color.WHITE else accent, muted)))
+    }
 
     companion object {
         private const val RESULT_SESSION = "com.hongguo.android.OFFICIAL_LOGIN_SESSION"

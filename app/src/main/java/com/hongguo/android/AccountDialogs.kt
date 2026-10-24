@@ -3,9 +3,14 @@ package com.hongguo.android
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.sp
 
 /** Explicit confirmations are tied to a specific account operation, never a whole list. */
 @Composable
@@ -22,10 +27,11 @@ internal fun AccountConfirmationDialogs(
     if (logoutRequested) {
         AlertDialog(
             onDismissRequest = onDismissLogout,
+            icon = { Icon(if (localReset) Icons.Outlined.DeleteOutline else Icons.Outlined.PersonOutline, null, tint = Orange) },
             title = { Text(if (localReset) "清除本机保存的登录态？" else "退出红果账号？") },
             text = {
-                Text(if (localReset) "将清除本机保存的红果登录态，之后需要重新登录。本机收藏和观看记录继续保留。"
-                    else "将退出${accountLabel ?: "本机保存的红果账号"}并停止账号同步。本机收藏和观看记录继续保留。")
+                Text(if (localReset) "将清除这台设备保存的红果登录信息，之后需要重新登录。本机收藏和观看记录保留。"
+                    else "将退出${accountLabel ?: "本机保存的红果账号"}并停止账号同步。本机收藏和观看记录保留。", fontSize = 14.sp)
             },
             confirmButton = {
                 TextButton(onClick = onLogout, modifier = Modifier.testTag("account_logout_confirm")) {
@@ -38,8 +44,9 @@ internal fun AccountConfirmationDialogs(
     removeTarget?.let { entry ->
         AlertDialog(
             onDismissRequest = onDismissRemove,
+            icon = { Icon(Icons.Outlined.DeleteOutline, null, tint = Orange) },
             title = { Text("取消账号收藏？") },
-            text = { Text("将从当前红果账号的收藏中移除《${entry.card.title}》。本机收藏继续保留。") },
+            text = { Text("将从当前红果账号移除《${entry.card.title}》。本机收藏保留。", fontSize = 14.sp) },
             confirmButton = {
                 TextButton(onClick = { onRemove(entry) }, modifier = Modifier.testTag("account_remove_favorite_confirm")) {
                     Text("取消收藏")

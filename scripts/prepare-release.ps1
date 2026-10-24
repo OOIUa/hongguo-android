@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复账号资料已经返回却被错误拒绝的问题：红果账号标识按原始字符串处理，兼容包含字母、符号或较长标识的账号；同步修正加密保存与重启恢复。已保存官网登录的用户可直接点“重试连接手机云账号”，无需重新登录。账号隔离、内容编号校验及原有本机记录继续保留。'
+        notes = '全新暖白与橙色界面，统一首页、发现、片单、搜索、详情、账号和设置。首页增加本机续看与双列海报；片单集中展示本机历史、收藏及独立的红果账号记录；播放器精简为单一选集和收藏入口，保留滑动切集、倍速、进度与连播。优化小屏和大字体布局，原有本机数据、登录、云片单和更新功能继续保留。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)
