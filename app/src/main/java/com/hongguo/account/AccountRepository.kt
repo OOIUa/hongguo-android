@@ -2,7 +2,9 @@ package com.hongguo.account
 
 import android.content.Context
 import com.hongguo.account.protocol.AccountCredentials
+import com.hongguo.account.protocol.AccountCredentialSource
 import com.hongguo.account.protocol.AccountProtocolException
+import com.hongguo.account.protocol.AccountVerificationStage
 import com.hongguo.account.protocol.CloudAccountClient
 import com.hongguo.account.protocol.CloudFavorite
 import com.hongguo.account.protocol.CloudProfile
@@ -114,6 +116,8 @@ class AccountRepository internal constructor(
     val ownerKey: String? get() = synchronized(lock) {
         disk.profile?.id?.takeIf { mutableState.value.sessionStatus == AccountSessionStatus.LOGGED_IN }?.let { "$it:$ownerGeneration" }
     }
+    /** UI confirmation fence only; it never grants cloud access like ownerKey. */
+    val sessionKey: String get() = synchronized(lock) { generation.toString() }
 
     init {
         scope.launch(io) {
@@ -124,8 +128,11 @@ class AccountRepository internal constructor(
                     if (generation != 0L) return@launch
                     disk = loaded
                     val profile = loaded.profile
-                    mutableState.value = AccountState(profile = profile,
-                        sessionStatus = if (profile == null) AccountSessionStatus.SIGNED_OUT else AccountSessionStatus.RESTORING)
+                    mutableState.value = AccountState(profile = profile, sessionStatus = when {
+                        profile != null -> AccountSessionStatus.RESTORING
+                        loaded.websiteCredentials != null -> AccountSessionStatus.WEBSITE_ONLY
+                        else -> AccountSessionStatus.SIGNED_OUT
+                    })
                     showCacheLocked()
                     updatePhoneCountdownLocked()
                 }
@@ -186,7 +193,7 @@ class AccountRepository internal constructor(
         resetRequestsLocked()
         val login = loginFactory()
         activeLogin = login
-        mutableState.value = mutableState.value.copy(message = null, busy = true)
+        mutableState.value = mutableState.value.copy(message = null, loginDiagnostic = null, busy = true)
         generation to login
     }
 
@@ -210,8 +217,7 @@ class AccountRepository internal constructor(
                 }
                 if (current(g)) state { it.copy(qrBytes = null, qrRemainingSeconds = 0, message = "二维码已过期，请手动重新获取") }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (current(g)) state { it.copy(busy = false, qrBytes = null,
-                message = loginFailureMessage(error, "扫码登录未完成，可重试或在官网完成验证")) } }
+            catch (error: Exception) { handleLoginFailure(g, error, "扫码登录未完成，可重试或在官网完成验证") }
         }
     }
 
@@ -260,27 +266,43 @@ class AccountRepository internal constructor(
             try { finishLogin(pair.first, runInterruptible(io) { pair.second.verify(value) }) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
-                if (current(pair.first)) state { it.copy(busy = false,
-                    message = loginFailureMessage(error, "本次验证码验证未完成，请在官网完成验证，或等待后手动获取新验证码")) }
+                handleLoginFailure(pair.first, error, "本次验证码验证未完成，请在官网完成验证，或等待后手动获取新验证码")
             }
         }
     }
 
     fun importCookie(cookie: String) = completeWebLogin(cookie)
 
+    /** An explicit App import has its own authentication proof; a website session is not required. */
+    fun importAppCookie(cookie: String) = completeImportedLogin(cookie, AccountCredentialSource.APP)
+
     /** Called only with cookies captured from the official HTTPS website or entered by the user. */
-    fun completeWebLogin(cookie: String) {
+    fun completeWebLogin(cookie: String) = completeImportedLogin(cookie, AccountCredentialSource.WEBSITE)
+
+    private fun completeImportedLogin(cookie: String, source: AccountCredentialSource) {
         val clean = cookie.trim()
         if (clean.length !in 1..65_536 || clean.any { it == '\r' || it == '\n' || it == '\u0000' } ||
             clean.split(';').none { part -> part.substringBefore('=').trim() in setOf("sessionid", "sessionid_ss") && part.substringAfter('=', "").trim().isNotBlank() }) {
-            state { it.copy(message = "未取得完整的官网登录态，请重新登录") }; return
+            state { it.copy(message = "未取得完整的登录态，请重新登录") }; return
         }
         val (g, _) = beginLogin()
         loginJob = scope.launch(io) {
-            try { finishLogin(g, AccountCredentials(clean)) }
+            try { finishLogin(g, AccountCredentials(clean, source = source)) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (current(g)) state { it.copy(busy = false,
-                message = loginFailureMessage(error, "账号验证请求未完成，请检查网络后重试")) } }
+            catch (error: Exception) { handleLoginFailure(g, error, "账号验证请求未完成，请检查网络后重试") }
+        }
+    }
+
+    fun retryWebsiteAccount() {
+        val (g, saved) = synchronized(lock) {
+            if (mutableState.value.busy || disk.profile != null) return
+            val credentials = disk.websiteCredentials ?: return
+            beginLogin().first to credentials
+        }
+        loginJob = scope.launch(io) {
+            try { finishLogin(g, saved) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { handleLoginFailure(g, error, "账号资料读取未完成，请稍后重试", saved) }
         }
     }
 
@@ -288,12 +310,28 @@ class AccountRepository internal constructor(
         if (!current(g)) return
         val credentials = runInterruptible(io) { gateway.prepareCredentials(web) }
         if (!current(g)) return
-        val profile = runInterruptible(io) { gateway.profile(credentials) }
+        val profile = try { runInterruptible(io) { gateway.profile(credentials) } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            // PROFILE is reached only after the website has proved its session. Keep that proof
+            // separate from an active cloud owner; retry never requests another SMS or QR.
+            if (credentials.source == AccountCredentialSource.WEBSITE && error is AccountProtocolException &&
+                error.verificationStage == AccountVerificationStage.PROFILE) synchronized(lock) {
+                if (generation == g && disk.profile == null) {
+                    if (!saveLocked(disk.copy(websiteCredentials = credentials))) {
+                        throw AccountProtocolException("官网会话未能保存，请检查本机空间后重试",
+                            verificationStage = AccountVerificationStage.PROFILE, diagnostic = error.diagnostic)
+                    }
+                    mutableState.value = mutableState.value.copy(sessionStatus = AccountSessionStatus.WEBSITE_ONLY, localClearFailed = false)
+                }
+            }
+            throw error
+        }
         if (!validAccountId(profile.id)) throw AccountProtocolException("未取得有效的红果账号身份，请重新验证",
-            verificationStage = com.hongguo.account.protocol.AccountVerificationStage.PROFILE)
+            verificationStage = AccountVerificationStage.PROFILE)
         synchronized(lock) {
             if (generation != g) return
-            if (!saveLocked(disk.copy(credentials = credentials, profile = profile))) {
+            if (!saveLocked(disk.copy(credentials = credentials, profile = profile, websiteCredentials = null))) {
                 mutableState.value = mutableState.value.copy(busy = false); return
             }
             ownerGeneration++
@@ -301,7 +339,8 @@ class AccountRepository internal constructor(
             activeLogin?.cancel(); activeLogin = null
             mutableState.value = mutableState.value.copy(profile = profile, sessionStatus = AccountSessionStatus.LOGGED_IN,
                 busy = false, qrBytes = null, qrExpiresAt = 0, qrRemainingSeconds = 0, phoneStep = PhoneStep.IDLE,
-                historyError = null, favoritesError = null, reservationsError = null, message = "已登录红果账号")
+                historyError = null, favoritesError = null, reservationsError = null, loginDiagnostic = null, localClearFailed = false,
+                message = "已登录红果账号")
             showCacheLocked()
         }
         refresh()
@@ -318,7 +357,8 @@ class AccountRepository internal constructor(
                     if (generation != g) return@launch
                     if (!validAccountId(profile.id) || profile.id != disk.profile?.id) throw AccountProtocolException("账号身份已变化", requiresLogin = true)
                     if (!saveLocked(disk.copy(profile = profile))) return@launch
-                    mutableState.value = mutableState.value.copy(sessionStatus = AccountSessionStatus.LOGGED_IN, profile = profile, message = null)
+                    mutableState.value = mutableState.value.copy(sessionStatus = AccountSessionStatus.LOGGED_IN, profile = profile,
+                        message = null, loginDiagnostic = null, localClearFailed = false)
                 }
                 refreshLists(g, credentials)
                 scheduleProgress(false)
@@ -327,12 +367,14 @@ class AccountRepository internal constructor(
                 if (!current(g)) return@launch
                 if (requiresLogin(error)) invalidate(g)
                 else state { it.copy(sessionStatus = AccountSessionStatus.NEEDS_VERIFICATION, busy = false,
+                    loginDiagnostic = (error as? AccountProtocolException)?.diagnostic,
                     message = loginFailureMessage(error, "账号验证未完成") + "；已保留本机登录态与片单，可点击重新验证") }
             }
         }
     }
 
     fun refresh() {
+        if (mutableState.value.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) { retryWebsiteAccount(); return }
         if (mutableState.value.sessionStatus in setOf(AccountSessionStatus.NEEDS_VERIFICATION, AccountSessionStatus.RESTORING)) { restore(); return }
         val pair = synchronized(lock) {
             if (mutableState.value.sessionStatus != AccountSessionStatus.LOGGED_IN) return
@@ -628,7 +670,7 @@ class AccountRepository internal constructor(
         resetRequestsLocked()
         val uid = disk.profile?.id
         val accounts = if (uid == null) disk.accounts else disk.accounts + (uid to cacheLocked().copy(pending = emptyMap()))
-        val next = disk.copy(credentials = null, profile = null, accounts = accounts)
+        val next = disk.copy(credentials = null, profile = null, accounts = accounts, websiteCredentials = null)
         val cleared = clearSessionLocked(next)
         lastUploaded.clear(); lastObserved.clear(); lastProgressUploadAt = 0
         mutableState.value = AccountState(phoneRemainingSeconds = ((disk.smsRetryAt - now() + 999) / 1000).coerceAtLeast(0).toInt(),
@@ -647,7 +689,7 @@ class AccountRepository internal constructor(
         resetRequestsLocked()
         val uid = disk.profile?.id
         val accounts = if (uid == null) disk.accounts else disk.accounts + (uid to cacheLocked().copy(pending = emptyMap(), syncEnabled = false))
-        val next = disk.copy(credentials = null, profile = null, accounts = accounts)
+        val next = disk.copy(credentials = null, profile = null, accounts = accounts, websiteCredentials = null)
         val cleared = clearSessionLocked(next)
         lastUploaded.clear(); lastObserved.clear()
         mutableState.value = AccountState(localClearFailed = cleared == SessionClear.FAILED, message = when (cleared) {
@@ -672,6 +714,23 @@ class AccountRepository internal constructor(
     }
 
     private fun requiresLogin(error: Exception) = error is AccountProtocolException && error.requiresLogin
+
+    private fun handleLoginFailure(g: Long, error: Exception, fallback: String,
+                                   websiteToClear: AccountCredentials? = null) = synchronized(lock) {
+        if (generation != g) return@synchronized
+        var clearFailed = mutableState.value.localClearFailed
+        if (disk.profile == null && websiteToClear != null && disk.websiteCredentials == websiteToClear && error is AccountProtocolException &&
+            error.verificationStage == AccountVerificationStage.WEBSITE && error.requiresLogin) {
+            clearFailed = clearSessionLocked(disk.copy(websiteCredentials = null)) == SessionClear.FAILED
+        }
+        activeLogin?.cancel(); activeLogin = null
+        mutableState.value = mutableState.value.copy(busy = false, qrBytes = null, qrExpiresAt = 0, qrRemainingSeconds = 0,
+            phoneStep = PhoneStep.IDLE, localClearFailed = clearFailed,
+            sessionStatus = if (disk.profile != null) mutableState.value.sessionStatus
+                else if (disk.websiteCredentials != null) AccountSessionStatus.WEBSITE_ONLY else AccountSessionStatus.SIGNED_OUT,
+            loginDiagnostic = (error as? AccountProtocolException)?.diagnostic,
+            message = loginFailureMessage(error, fallback))
+    }
 
     private fun loginFailureMessage(error: Exception, fallback: String): String = when (error) {
         // Only these two types contain locally generated, credential-free messages.

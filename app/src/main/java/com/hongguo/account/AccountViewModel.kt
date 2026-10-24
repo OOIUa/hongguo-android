@@ -11,12 +11,15 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     private val repository = (application as HongguoApplication).accountRepository
     val state = repository.state
     val ownerKey: String? get() = repository.ownerKey
+    val sessionKey: String get() = repository.sessionKey
     fun startQrLogin() = repository.startQrLogin()
     fun cancelLogin() = repository.cancelLogin()
     fun sendSms(phone: String) = repository.sendSms(phone)
     fun verifySms(code: String) = repository.verifySms(code)
     fun importCookie(cookie: String) = repository.importCookie(cookie)
+    fun importAppCookie(cookie: String) = repository.importAppCookie(cookie)
     fun completeWebLogin(cookie: String) = repository.completeWebLogin(cookie)
+    fun retryWebsiteAccount() = repository.retryWebsiteAccount()
     fun logout() = repository.logout()
     fun refresh() = repository.refresh()
     fun setSyncEnabled(enabled: Boolean) = repository.setSyncEnabled(enabled)

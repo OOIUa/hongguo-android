@@ -1,6 +1,7 @@
 package com.hongguo.account
 
 import com.hongguo.account.protocol.AccountCredentials
+import com.hongguo.account.protocol.AccountCredentialSource
 import com.hongguo.account.protocol.AccountProtocolException
 import com.hongguo.account.protocol.AccountVerificationStage
 import com.hongguo.account.protocol.CloudFavorite
@@ -69,11 +70,14 @@ class AccountRepositoryTest {
         var beforeFavoriteWrite: (() -> Unit)? = null
         var beforeFavoriteReadReturn: (() -> Unit)? = null
         var applyFavorite = true
+        val profileCredentials = mutableListOf<AccountCredentials>()
+        var historyCalls = 0
         override fun prepareCredentials(credentials: AccountCredentials) = credentials.copy(deviceId = "7100000000000000001", installId = "7200000000000000001")
         override fun profile(credentials: AccountCredentials): CloudProfile {
+            profileCredentials += credentials
             onProfile?.invoke(); profileError?.let { throw it }; return profileValue
         }
-        override fun history(credentials: AccountCredentials): List<CloudProgress> { historyError?.let { throw it }; return historyValue }
+        override fun history(credentials: AccountCredentials): List<CloudProgress> { historyCalls++; historyError?.let { throw it }; return historyValue }
         override fun favorites(credentials: AccountCredentials): List<CloudFavorite> {
             favoritesError?.let { throw it }
             val snapshot = favoritesValue
@@ -113,9 +117,11 @@ class AccountRepositoryTest {
 
     @Test fun networkRestorePreservesCredentialsAndCachedListsButDoesNotAllowWrites() = runTest {
         val store = signedStore(AccountCache(history = listOf(entry), syncEnabled = true))
-        val api = Gateway().apply { profileError = IOException("offline") }
+        val api = Gateway().apply { profileError = AccountProtocolException("offline", verificationStage = AccountVerificationStage.PROFILE,
+            diagnostic = "profile-v1;class=BUSINESS_ID_MISSING") }
         val repo = repository(store, api); runCurrent()
         assertEquals(AccountSessionStatus.NEEDS_VERIFICATION, repo.state.value.sessionStatus)
+        assertNotNull(repo.state.value.loginDiagnostic)
         assertEquals(entry, repo.state.value.history.single())
         assertEquals(credentials, store.value.credentials)
         assertNull(repo.ownerKey)
@@ -123,6 +129,7 @@ class AccountRepositoryTest {
         assertTrue(api.uploaded.isEmpty())
         api.profileError = null; repo.refresh(); runCurrent()
         assertEquals(AccountSessionStatus.LOGGED_IN, repo.state.value.sessionStatus)
+        assertNull(repo.state.value.loginDiagnostic)
     }
 
     @Test fun confirmedExpiredSessionClearsCredentialsAndPendingWithoutDeletingAccountCache() = runTest {
@@ -257,6 +264,111 @@ class AccountRepositoryTest {
         repo.startQrLogin(); runCurrent(); advanceTimeBy(2_001); runCurrent()
         assertTrue(repo.state.value.message.orEmpty().contains("红果账号资料验证"))
         assertNull(repo.ownerKey)
+    }
+
+    @Test fun verifiedWebsiteSessionIsRetainedForRetryWithoutGrantingCloudOwnership() = runTest {
+        val store = MemoryStore()
+        val login = Login()
+        val api = Gateway().apply {
+            profileError = AccountProtocolException("手机账号授权未确认", verificationStage = AccountVerificationStage.PROFILE,
+                diagnostic = "classification=BUSINESS_ID_MISSING")
+        }
+        val repo = repository(store, api, login); runCurrent()
+        repo.completeWebLogin("sessionid=website-fixture"); runCurrent()
+        assertEquals(AccountSessionStatus.WEBSITE_ONLY, repo.state.value.sessionStatus)
+        assertNull(repo.state.value.profile)
+        assertNull(repo.ownerKey)
+        assertNull(store.value.credentials)
+        assertEquals("sessionid=website-fixture", store.value.websiteCredentials?.cookie)
+        assertEquals("classification=BUSINESS_ID_MISSING", repo.state.value.loginDiagnostic)
+        repo.setSyncEnabled(true); repo.reportProgress(entry, 60000, true, null)
+        repo.setFavorite(card, true); runCurrent()
+        assertEquals(0, api.historyCalls)
+        assertTrue(api.uploaded.isEmpty())
+        assertEquals(0, api.setFavoriteCalls)
+        api.profileError = null
+        repo.retryWebsiteAccount(); runCurrent()
+        assertEquals(0, login.sends)
+        assertEquals(0, login.polls)
+        assertEquals(AccountSessionStatus.LOGGED_IN, repo.state.value.sessionStatus)
+        assertNull(store.value.websiteCredentials)
+        assertNull(repo.state.value.loginDiagnostic)
+        assertNotNull(repo.ownerKey)
+        assertEquals(api.profileCredentials.first().deviceId, api.profileCredentials.last().deviceId)
+    }
+
+    @Test fun websiteOnlyRestartWaitsForExplicitRetryAndLogoutErasesSavedSession() = runTest {
+        val store = MemoryStore(AccountDisk(websiteCredentials = credentials))
+        val api = Gateway()
+        val repo = repository(store, api); runCurrent()
+        assertEquals(AccountSessionStatus.WEBSITE_ONLY, repo.state.value.sessionStatus)
+        assertTrue(api.profileCredentials.isEmpty())
+        assertNull(repo.ownerKey)
+        val session = repo.sessionKey
+        repo.logout(); runCurrent()
+        assertNotEquals(session, repo.sessionKey)
+        assertNull(store.value.websiteCredentials)
+        val restarted = repository(store, api); runCurrent()
+        assertEquals(AccountSessionStatus.SIGNED_OUT, restarted.state.value.sessionStatus)
+    }
+
+    @Test fun explicitWebsiteExpiryClearsPendingSessionButNetworkFailureRetainsIt() = runTest {
+        val store = MemoryStore(AccountDisk(websiteCredentials = credentials))
+        val api = Gateway().apply { profileError = AccountProtocolException("offline", verificationStage = AccountVerificationStage.WEBSITE) }
+        val repo = repository(store, api); runCurrent()
+        repo.retryWebsiteAccount(); runCurrent()
+        assertEquals(AccountSessionStatus.WEBSITE_ONLY, repo.state.value.sessionStatus)
+        assertNotNull(store.value.websiteCredentials)
+        api.profileError = AccountProtocolException("expired", 13, true, AccountVerificationStage.WEBSITE)
+        repo.retryWebsiteAccount(); runCurrent()
+        assertEquals(AccountSessionStatus.SIGNED_OUT, repo.state.value.sessionStatus)
+        assertNull(store.value.websiteCredentials)
+    }
+
+    @Test fun rejectedNewWebsiteCookieCannotEraseThePreviouslyConfirmedWebsiteSession() = runTest {
+        val store = MemoryStore(AccountDisk(websiteCredentials = credentials))
+        val api = Gateway().apply { profileError = AccountProtocolException("expired", 13, true, AccountVerificationStage.WEBSITE) }
+        val repo = repository(store, api); runCurrent()
+        repo.importCookie("sessionid=different-expired-session"); runCurrent()
+        assertEquals(credentials, store.value.websiteCredentials)
+        assertEquals(AccountSessionStatus.WEBSITE_ONLY, repo.state.value.sessionStatus)
+    }
+
+    @Test fun lateWebsiteProfileFailureCannotSaveSessionAfterLogout() = runTest {
+        val store = MemoryStore()
+        val api = Gateway().apply { profileError = AccountProtocolException("unverified", verificationStage = AccountVerificationStage.PROFILE) }
+        val repo = repository(store, api); runCurrent()
+        api.onProfile = { repo.logout() }
+        repo.completeWebLogin("sessionid=late-fixture"); runCurrent()
+        assertNull(store.value.websiteCredentials)
+        assertEquals(AccountSessionStatus.SIGNED_OUT, repo.state.value.sessionStatus)
+    }
+
+    @Test fun explicitAppImportHasItsOwnSourceAndNeverClaimsWebsiteSessionWhenItFails() = runTest {
+        val store = MemoryStore()
+        val api = Gateway().apply { profileError = AccountProtocolException("unverified", verificationStage = AccountVerificationStage.PROFILE) }
+        val repo = repository(store, api); runCurrent()
+        repo.importAppCookie("sessionid=app-fixture"); runCurrent()
+        assertEquals(AccountCredentialSource.APP, api.profileCredentials.single().source)
+        assertNull(store.value.websiteCredentials)
+        assertEquals(AccountSessionStatus.SIGNED_OUT, repo.state.value.sessionStatus)
+        api.profileError = null
+        repo.importAppCookie("sessionid=app-fixture"); runCurrent()
+        assertEquals(AccountCredentialSource.APP, store.value.credentials?.source)
+        assertNotNull(repo.ownerKey)
+    }
+
+    @Test fun failedNewWebsiteLoginDoesNotReplacePreviouslyVerifiedCloudOwner() = runTest {
+        val store = signedStore()
+        val api = Gateway()
+        val repo = repository(store, api); runCurrent()
+        val owner = repo.ownerKey
+        api.profileError = AccountProtocolException("unverified", verificationStage = AccountVerificationStage.PROFILE)
+        repo.completeWebLogin("sessionid=new-website-fixture"); runCurrent()
+        assertEquals(owner, repo.ownerKey)
+        assertEquals(AccountSessionStatus.LOGGED_IN, repo.state.value.sessionStatus)
+        assertEquals(credentials, store.value.credentials)
+        assertNull(store.value.websiteCredentials)
     }
 
     @Test fun lateDiskLoadCannotResurrectAUserLoggedOutSession() = runTest {

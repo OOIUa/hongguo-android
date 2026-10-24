@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复官网登录完成后返回应用被误判验证失败的问题，兼容官网不同登录状态返回格式。补齐账号校验请求与设备会话信息，统一官网登录、扫码和手机号登录的验证提示。若仍无法登录，将显示具体失败环节与错误码，便于定位。覆盖升级保留本机收藏和历史。'
+        notes = '区分“官网已登录”和“手机云账号已接通”，未接通时加密保留官网会话，可直接重试账号资料而无需重新收验证码。增加可复制的脱敏诊断信息，便于定位账号资料异常。高级导入区分官网与红果 App 登录态。官网会话与手机云账号的互通仍待验证，未确认身份时不会读取或写入云片单。覆盖升级保留本机记录。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

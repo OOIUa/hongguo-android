@@ -14,16 +14,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.6.1**（versionCode 8）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.6.2**（versionCode 9）· Android **8.0 / API 26** 及以上。
 
-本版修复个人账号登录后返回应用的验证兼容问题，补齐 CSRF 与设备会话，并增加具体失败环节提示。账号功能仍处于测试阶段，登录与同步结果需用本人账号核对；接入方式与使用范围见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
+本版区分官网已登录与手机云账号已接通，增加官网会话保留、直接重读账号资料和可复制的脱敏诊断。官网会话接入手机云账号仍未打通，不能把官网登录成功视为手机片单已可用；也可显式导入本人的红果 App 登录态，再验证业务身份。详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.6.1 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/hongguo-android-0.6.1.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/hongguo-android-0.6.1.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/hongguo-android-0.6.1.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.6.1 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/hongguo-android-0.6.1-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/SHA256SUMS-0.6.1.txt) |
+| GitHub 直连 | [下载 v0.6.2 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.2/hongguo-android-0.6.2.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.2/hongguo-android-0.6.2.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.2/hongguo-android-0.6.2.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.6.2 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.2/hongguo-android-0.6.2-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.2/SHA256SUMS-0.6.2.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -57,9 +57,9 @@
 | 六档倍速 | 0.5×、0.75×、1×、1.25×、1.5×、2×，自动记住选择 |
 | 连播与预加载 | 可分别开关自动连播、下一集预加载，末集不循环 |
 | 收藏与续播 | 本机保存收藏、观看历史、集数与集内位置，支持单条移除与清空 |
-| 个人红果账号 | 官网网页登录、官方 App 扫码与手机号验证码入口；账号资料验证后加密保存 |
-| 账户片单 | 读取账户收藏、最近 50 部观看历史及已上线 / 待上线预约，与本机记录分开 |
-| 可选进度上报 | 默认关闭；开启后仅上报实际播放的进度，支持本机持久待同步队列 |
+| 个人红果账号 | 官网网页登录、扫码与手机号验证码入口；官网和手机云账号验证分开，失败可复制脱敏诊断 |
+| 账户片单 | 仅在手机业务身份通过验证后读取收藏、最近 50 部历史及预约，与本机记录分开 |
+| 可选进度上报 | 仅已确认的手机云账号可用，默认关闭；实际跨设备结果需本人验收 |
 | 边播边缓存 | 对支持的片源按需下载与处理，不兼容时回退完整缓存播放 |
 | 应用内更新 | 手动 / 启动检查，支持直连、两条加速线路及自动切换 |
 
@@ -73,6 +73,8 @@
 4. 在详情或播放器中收藏，在「收藏」查看；「我的 → 播放历史」可继续观看。
 5. 到「我的 → 系统设置」调整自动连播、下一集预加载和启动检查更新。
 6. 到「我的 → 红果账号与云片单」登录个人账号；只有一部手机时选择「在本机打开官网登录」，待页面加载后点「打开官网登录窗口」，自行完成官方验证后点上方「完成登录」。也可在另一台设备的红果 App 中扫码确认。
+
+若显示“官网已登录，手机云账号未接通”，官网会话已加密保留，可直接重试账号资料；点击“复制诊断信息”可提供不含凭据与身份值的结构摘要。此状态不读取或写入手机云片单。
 
 应用需要联网访问上游内容源，无需填写服务器地址。切到后台会停止播放与预加载。
 

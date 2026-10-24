@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import com.hongguo.account.protocol.AccountCredentials
+import com.hongguo.account.protocol.AccountCredentialSource
 import com.hongguo.account.protocol.CloudProfile
 import com.hongguo.android.LibraryCodec
 import com.hongguo.android.LibrarySnapshot
@@ -107,9 +108,24 @@ internal object AccountDiskCodec {
     private fun readEntry(value: Any?): com.hongguo.android.LibraryEntry? = LibraryCodec.decode(Json.stringify(value)).history.firstOrNull()
     private fun library(cache: AccountCache) = Json.parse(LibraryCodec.encode(LibrarySnapshot(cache.favorites, cache.history)))
 
+    private fun websiteOnly(value: AccountCredentials?): AccountCredentials? = value?.also {
+        if (it.source != AccountCredentialSource.WEBSITE) throw IOException("待验证的官网登录资料来源无效")
+    }
+
+    private fun decodeWebsiteCredentials(value: Any?): AccountCredentials? {
+        if (value == null) return null
+        if (value !is String) throw IOException("待验证的官网登录资料格式无效")
+        // This optional field did not exist in old snapshots. Its new entries must have an explicit
+        // website provenance; the general credential decoder's legacy default must not grant it.
+        if (map(Json.parse(value))["source"] != AccountCredentialSource.WEBSITE.name)
+            throw IOException("待验证的官网登录资料来源无效")
+        return websiteOnly(AccountCredentials.fromJson(value))
+    }
+
     fun encode(value: AccountDisk): String = Json.stringify(linkedMapOf(
         "version" to 1,
         "credentials" to value.credentials?.toJson(),
+        "websiteCredentials" to websiteOnly(value.websiteCredentials)?.toJson(),
         "profile" to value.profile?.let { mapOf("id" to it.id, "nickname" to it.nickname) },
         "smsRetryAt" to value.smsRetryAt,
         "accounts" to value.accounts.mapValues { (_, cache) -> mapOf(
@@ -131,6 +147,7 @@ internal object AccountDiskCodec {
         }
         val credentials = (root["credentials"] as? String)?.let { AccountCredentials.fromJson(it) }
         if ((profile == null) != (credentials == null)) throw IOException("账号数据不完整")
+        val websiteCredentials = decodeWebsiteCredentials(root["websiteCredentials"])
         val accounts = map(root["accounts"]).filterKeys(::validAccountId).mapValues { (_, raw) ->
             val cache = map(raw)
             val library = LibraryCodec.decode(Json.stringify(cache["library"]))
@@ -151,7 +168,7 @@ internal object AccountDiskCodec {
                 syncEnabled = cache["syncEnabled"] == true, lastSyncAt = number(cache["lastSyncAt"]),
             )
         }
-        return AccountDisk(credentials, profile, accounts, number(root["smsRetryAt"]))
+        return AccountDisk(credentials, profile, accounts, number(root["smsRetryAt"]), websiteCredentials)
     }
 }
 

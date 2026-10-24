@@ -16,17 +16,22 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.io.IOException
 
+enum class AccountCredentialSource { WEBSITE, APP }
+
 data class AccountCredentials(val cookie: String, val deviceId: String = "", val installId: String = "",
-    val device: Map<String,String> = emptyMap(), val appDeviceCookie: String = "") {
+    val device: Map<String,String> = emptyMap(), val appDeviceCookie: String = "",
+    val source: AccountCredentialSource = AccountCredentialSource.WEBSITE) {
     fun toJson() = JSONObject().put("cookie",cookie).put("deviceId",deviceId).put("installId",installId)
-        .put("device",JSONObject(device)).put("appDeviceCookie", normalizeAppDeviceCookie(appDeviceCookie)).toString()
+        .put("device",JSONObject(device)).put("appDeviceCookie", normalizeAppDeviceCookie(appDeviceCookie))
+        .put("source", source.name).toString()
     override fun toString() = "AccountCredentials([redacted])"
     companion object {
         fun fromJson(value: String): AccountCredentials {
             require(value.length <= 131072) { "账号凭据过大" }
             val json=parseObject(value); val device=json.optJSONObject("device") ?: JSONObject()
             return AccountCredentials(json.str("cookie"),json.str("deviceId"),json.str("installId"),
-                device.keys().asSequence().associateWith { device.str(it) }, normalizeAppDeviceCookie(json.str("appDeviceCookie")))
+                device.keys().asSequence().associateWith { device.str(it) }, normalizeAppDeviceCookie(json.str("appDeviceCookie")),
+                AccountCredentialSource.entries.firstOrNull { it.name == json.str("source") } ?: AccountCredentialSource.WEBSITE)
                 .also { checkCookie(it.cookie) }
         }
     }
@@ -114,7 +119,8 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
             DeviceRegister.parse(cloudResponse(it), emptyList())?.copy(device = registrationDevice, cookies = cookieMap)
         }
     }
-    private fun json(credentials: AccountCredentials,path: String,params: Map<String,String> = emptyMap(),body: ByteArray? = null,gzip: Boolean=false): JSONObject {
+    private fun json(credentials: AccountCredentials,path: String,params: Map<String,String> = emptyMap(),body: ByteArray? = null,gzip: Boolean=false,
+        onGatewayLogin: ((String?) -> Unit)? = null): JSONObject {
         checkCookie(credentials.cookie)
         if (!validIdentifier(credentials.deviceId) || !validIdentifier(credentials.installId))
             throw AccountProtocolException("账号设备身份无效，请重新登录", requiresLogin = true)
@@ -132,9 +138,12 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
         if(wireBody!=null) request.post(wireBody.toRequestBody("application/json; charset=utf-8".toMediaType()).oneShot())
         if(gzip) request.header("Content-Encoding","gzip")
         return transport.execute(request.build()) { response ->
+            val gatewayLogin = safeGatewayLogin(response.header("X-Tt-Agw-Login"))
+            onGatewayLogin?.invoke(gatewayLogin)
             val json=parseObject(cloudResponse(response))
             val code=json.optInt("code",-1)
-            if(code!=0) throw AccountProtocolException("账号接口不可用（错误码 $code），请重新登录或稍后重试", code, code == 1003)
+            if(code!=0) throw AccountProtocolException("账号接口不可用（错误码 $code），请重新登录或稍后重试", code, code == 1003,
+                diagnostic = if (onGatewayLogin != null) appProfileDiagnostic(json, credentials, gatewayLogin) else null)
             json
         }
     }
@@ -162,13 +171,20 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
         }
     }
     fun profile(credentials: AccountCredentials): CloudProfile {
-        validateWebsite(credentials)
+        if (credentials.source == AccountCredentialSource.WEBSITE) validateWebsite(credentials)
         return verifyAccountStage(AccountVerificationStage.PROFILE) {
-            val data=json(credentials,"/reading/user/info/v1/").optJSONObject("data")
-                ?: throw AccountProtocolException("官网登录已确认，但红果未返回账号资料，请稍后重试")
+            var gatewayLogin: String? = null
+            val reply = json(credentials,"/reading/user/info/v1/", onGatewayLogin = { gatewayLogin = it })
+            val data = reply.optJSONObject("data") ?: throw AccountProtocolException(
+                if (credentials.source == AccountCredentialSource.WEBSITE) "官网登录已确认，但红果未返回账号资料，请稍后重试"
+                else "红果 App 登录态未返回账号资料，请重新验证",
+                diagnostic = appProfileDiagnostic(reply, credentials, gatewayLogin))
             val id=data.str("biz_user_id")
             if(!validIdentifier(id) || id == credentials.deviceId || id == credentials.installId)
-                throw AccountProtocolException("官网登录已确认，但红果未返回有效账号身份，请重新验证")
+                throw AccountProtocolException(
+                    if (credentials.source == AccountCredentialSource.WEBSITE) "官网登录已确认，但红果 App 未确认账号授权；可保留官网登录状态，或导入本人的 App 登录态"
+                    else "红果 App 登录态未返回有效账号身份，请确认登录态及对应设备资料",
+                    diagnostic = appProfileDiagnostic(reply, credentials, gatewayLogin))
             CloudProfile(id,data.str("user_name").ifBlank { "红果用户" })
         }
     }

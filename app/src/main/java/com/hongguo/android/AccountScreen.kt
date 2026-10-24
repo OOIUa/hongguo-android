@@ -1,6 +1,9 @@
 package com.hongguo.android
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
@@ -76,8 +79,11 @@ internal fun AccountScreen(
     val state by accountModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val ownerKey = accountModel.ownerKey
-    var logoutRequested by remember(ownerKey, state.profile?.id) { mutableStateOf(false) }
-    var removeTarget by remember(ownerKey, state.profile?.id) { mutableStateOf<LibraryEntry?>(null) }
+    val sessionKey = accountModel.sessionKey
+    val sessionStatus = state.sessionStatus
+    var logoutRequested by remember(sessionKey, ownerKey, state.profile?.id, sessionStatus) { mutableStateOf(false) }
+    var removeTarget by remember(ownerKey, state.profile?.id, sessionStatus) { mutableStateOf<LibraryEntry?>(null) }
+    var diagnosticCopied by remember(state.loginDiagnostic) { mutableStateOf(false) }
     var localResetRequired by rememberSaveable { mutableStateOf(false) }
     var webOpen by rememberSaveable { mutableStateOf(false) }
     var webError by remember { mutableStateOf<String?>(null) }
@@ -94,7 +100,8 @@ internal fun AccountScreen(
     LaunchedEffect(state.message, state.sessionStatus, state.localClearFailed) {
         if (state.localClearFailed) {
             localResetRequired = true
-        } else if (state.sessionStatus == AccountSessionStatus.LOGGED_IN || state.message?.startsWith("已退出账号") == true) {
+        } else if (state.sessionStatus == AccountSessionStatus.LOGGED_IN ||
+            state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY || state.message?.startsWith("已退出账号") == true) {
             localResetRequired = false
         } else if (state.sessionStatus == AccountSessionStatus.SIGNED_OUT &&
             state.message?.let { "本机账号资料无法读取" in it || "本机清除保存失败" in it || "账号资料保存失败" in it } == true) {
@@ -116,13 +123,26 @@ internal fun AccountScreen(
                 Text("红果账号", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             }
         }
-        state.message?.let { message ->
+        if (state.message != null || state.loginDiagnostic != null) {
             item {
                 Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.fillMaxWidth().padding(15.dp)) {
-                        Text(message, color = Ink, fontSize = 13.sp, lineHeight = 21.sp,
-                            modifier = Modifier.testTag("account_message"))
-                        TextButton(onClick = accountModel::consumeMessage) { Text("知道了") }
+                        state.message?.let { message ->
+                            Text(message, color = Ink, fontSize = 13.sp, lineHeight = 21.sp,
+                                modifier = Modifier.testTag("account_message"))
+                        }
+                        state.loginDiagnostic?.let { diagnostic ->
+                            TextButton(onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                if (clipboard != null) {
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("红果登录诊断", diagnostic))
+                                    diagnosticCopied = true
+                                }
+                            }, modifier = Modifier.testTag("account_copy_diagnostic")) { Text("复制诊断信息") }
+                            if (diagnosticCopied) Text("诊断信息已复制", color = Muted, fontSize = 12.sp,
+                                modifier = Modifier.testTag("account_diagnostic_copied"))
+                        }
+                        if (state.message != null) TextButton(onClick = accountModel::consumeMessage) { Text("知道了") }
                     }
                 }
             }
@@ -187,6 +207,32 @@ internal fun AccountScreen(
                     onOpen = { onOpenLibrary(entry) },
                     onRemove = { removeTarget = entry },
                     onResolve = { accountModel.resolveFavorite(entry.card.id) })
+            }
+        } else if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) {
+            item {
+                Surface(color = Color(0xFFFFEEE5), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(20.dp).testTag("account_website_only"),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("官网已登录，手机云账号未接通", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                        Text("官网登录态已加密保存在本机。可以直接重试连接手机云账号，无需重新获取验证码。",
+                            color = Muted, fontSize = 13.sp, lineHeight = 21.sp)
+                        Text("接通后才能查看云片单和开启观看进度同步。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
+                        Button(onClick = accountModel::retryWebsiteAccount, enabled = !state.busy,
+                            modifier = Modifier.fillMaxWidth().testTag("account_retry_website")) {
+                            Text(if (state.busy) "正在连接手机云账号…" else "重试连接手机云账号")
+                        }
+                        if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        TextButton(onClick = { logoutRequested = true }, enabled = !state.busy,
+                            modifier = Modifier.testTag("account_website_logout")) { Text("退出已保存的官网登录") }
+                    }
+                }
+            }
+            item {
+                Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AccountAdvancedImport(state, accountModel)
+                    }
+                }
             }
         } else {
             item {
@@ -258,10 +304,14 @@ internal fun AccountScreen(
     }
     AccountConfirmationDialogs(
         logoutRequested, { logoutRequested = false },
-        { logoutRequested = false; if (accountModel.ownerKey == ownerKey) accountModel.logout() },
+        {
+            logoutRequested = false
+            if (accountModel.sessionKey == sessionKey && accountModel.state.value.sessionStatus == sessionStatus) accountModel.logout()
+        },
         removeTarget, { removeTarget = null },
         { entry -> removeTarget = null; accountModel.setFavorite(entry.card, false, ownerKey) },
-        accountLabel = state.profile?.let { "${it.nickname.ifBlank { "红果用户" }}（账号 ${it.id}）" },
+        accountLabel = if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) "本机保存的官网登录会话"
+            else state.profile?.let { "${it.nickname.ifBlank { "红果用户" }}（账号 ${it.id}）" },
         localReset = localResetRequired,
     )
 }
@@ -308,8 +358,6 @@ private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
     // Phone number and one-time code deliberately stay in memory, outside saved instance state.
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    var advancedOpen by rememberSaveable { mutableStateOf(false) }
-    var importedCookie by remember { mutableStateOf("") }
     Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -375,30 +423,55 @@ private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
                 if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             }
             HorizontalDivider(color = Canvas)
-            TextButton(onClick = {
-                advancedOpen = !advancedOpen
+            AccountAdvancedImport(state, model)
+        }
+    }
+}
+
+@Composable
+private fun AccountAdvancedImport(state: AccountState, model: AccountViewModel) {
+    var advancedOpen by rememberSaveable { mutableStateOf(false) }
+    var appCookieSelected by rememberSaveable { mutableStateOf(false) }
+    // Login credentials stay only in memory and are erased before any validation request.
+    var importedCookie by remember { mutableStateOf("") }
+    TextButton(onClick = {
+        advancedOpen = !advancedOpen
+        importedCookie = ""
+    }, modifier = Modifier.testTag("account_cookie_expand")) {
+        Text(if (advancedOpen) "收起高级登录" else "高级：导入已有登录态", color = Muted, fontSize = 12.sp)
+    }
+    if (advancedOpen) {
+        Text("仅在本机校验你本人的账号。", color = Muted, fontSize = 12.sp)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = !appCookieSelected, onClick = {
+                appCookieSelected = false
                 importedCookie = ""
-            }, modifier = Modifier.testTag("account_cookie_expand")) {
-                Text(if (advancedOpen) "收起高级登录" else "高级：导入已有登录态", color = Muted, fontSize = 12.sp)
-            }
-            if (advancedOpen) {
-                Text("仅在本机校验你本人的账号。", color = Muted, fontSize = 12.sp)
-                OutlinedTextField(value = importedCookie, onValueChange = { value ->
-                    if (value.length <= 65536) importedCookie = value
-                }, label = { Text("官网 Cookie") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("account_cookie_input"))
-                OutlinedButton(onClick = {
-                    val candidate = importedCookie
-                    importedCookie = ""
-                    model.cancelLogin()
-                    model.importCookie(candidate)
-                }, enabled = !state.busy && importedCookie.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().testTag("account_cookie_submit")) {
-                    Text("校验并登录")
-                }
-            }
+            }, enabled = !state.busy, label = { Text("官网登录态") },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = Orange),
+                modifier = Modifier.testTag("account_cookie_source_web"))
+            FilterChip(selected = appCookieSelected, onClick = {
+                appCookieSelected = true
+                importedCookie = ""
+            }, enabled = !state.busy, label = { Text("红果 App 登录态") },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = Orange),
+                modifier = Modifier.testTag("account_cookie_source_app"))
+        }
+        if (appCookieSelected) Text("请确认输入来自你本人的红果 App 账号。通过手机云账号验证后才能使用云片单。",
+            color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
+        OutlinedTextField(value = importedCookie, onValueChange = { value ->
+            if (value.length <= 65536) importedCookie = value
+        }, label = { Text(if (appCookieSelected) "红果 App Cookie" else "官网 Cookie") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("account_cookie_input"))
+        OutlinedButton(onClick = {
+            val candidate = importedCookie
+            importedCookie = ""
+            model.cancelLogin()
+            if (appCookieSelected) model.importAppCookie(candidate) else model.importCookie(candidate)
+        }, enabled = !state.busy && importedCookie.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().testTag("account_cookie_submit")) {
+            Text("校验并登录")
         }
     }
 }

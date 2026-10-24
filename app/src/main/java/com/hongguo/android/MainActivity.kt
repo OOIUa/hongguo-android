@@ -93,8 +93,14 @@ class MainActivity : ComponentActivity() {
                                     AppTab.SEARCH -> SearchScreen(state, model)
                                     AppTab.FAVORITES -> LibraryScreen(state, model, history = false)
                                     AppTab.MINE -> MyScreen(state, model, updateState, updateModel,
-                                        accountName = accountState.profile?.nickname,
-                                        accountStatus = if (accountState.profile != null) "查看账号收藏、历史与预约" else "登录后查看手机片单")
+                                        accountName = if (accountState.sessionStatus == com.hongguo.account.AccountSessionStatus.WEBSITE_ONLY)
+                                            "官网登录已保存" else accountState.profile?.nickname,
+                                        accountStatus = when (accountState.sessionStatus) {
+                                            com.hongguo.account.AccountSessionStatus.WEBSITE_ONLY -> "官网已登录，手机云账号未接通"
+                                            com.hongguo.account.AccountSessionStatus.LOGGED_IN -> "查看账号收藏、历史与预约"
+                                            com.hongguo.account.AccountSessionStatus.NEEDS_VERIFICATION -> "已保存账号，等待重新验证"
+                                            else -> "登录后查看手机片单"
+                                        })
                                     AppTab.ACCOUNT -> AccountScreen(accountModel,
                                         onBack = { model.selectTab(AppTab.MINE) }, onOpenLibrary = model::openLibrary)
                                     AppTab.HISTORY -> Column(Modifier.fillMaxSize()) {

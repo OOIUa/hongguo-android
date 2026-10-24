@@ -18,7 +18,7 @@ data class RelatedWork(val series: Series, val season: String, val upcoming: Boo
 
 /** Contains only safe, locally generated messages; no raw provider response or signed URL. */
 class AccountProtocolException(message: String, val errorCode: Int? = null, val requiresLogin: Boolean = false,
-    val verificationStage: AccountVerificationStage? = null) : IOException(message)
+    val verificationStage: AccountVerificationStage? = null, val diagnostic: String? = null) : IOException(message)
 
 internal fun validIdentifier(value: String): Boolean = value.matches(Regex("[0-9]{1,30}")) && value.any { it != '0' }
 internal fun JSONArray.objects() = (0 until length()).mapNotNull { optJSONObject(it) }

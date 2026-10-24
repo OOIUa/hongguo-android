@@ -4,7 +4,7 @@ import com.hongguo.account.protocol.AccountCredentials
 import com.hongguo.account.protocol.CloudProfile
 import com.hongguo.android.LibraryEntry
 
-enum class AccountSessionStatus { SIGNED_OUT, RESTORING, NEEDS_VERIFICATION, LOGGED_IN }
+enum class AccountSessionStatus { SIGNED_OUT, RESTORING, NEEDS_VERIFICATION, LOGGED_IN, WEBSITE_ONLY }
 enum class AccountSection { HISTORY, FAVORITES, RESERVATIONS }
 enum class PhoneStep { IDLE, CODE_SENT }
 
@@ -35,6 +35,8 @@ data class AccountState(
     val lastSyncAt: Long = 0,
     /** Session is stopped in memory, but the private credential file still needs explicit cleanup. */
     val localClearFailed: Boolean = false,
+    /** Fixed local stage/status and field names only; never cookies, tokens or raw responses. */
+    val loginDiagnostic: String? = null,
 )
 
 internal data class PendingProgress(val entry: LibraryEntry, val durationMs: Long, val revision: Long)
@@ -56,6 +58,8 @@ internal data class AccountDisk(
     val profile: CloudProfile? = null,
     val accounts: Map<String, AccountCache> = emptyMap(),
     val smsRetryAt: Long = 0,
+    /** Website verification succeeded; this session has no confirmed App business identity yet. */
+    val websiteCredentials: AccountCredentials? = null,
 ) {
     override fun toString() = "AccountDisk([private])"
 }
