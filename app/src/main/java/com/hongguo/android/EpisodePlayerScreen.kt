@@ -5,21 +5,27 @@ import com.hongguo.account.AccountViewModel
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -97,15 +103,11 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
         val lightStatus = controller?.isAppearanceLightStatusBars
         val lightNavigation = controller?.isAppearanceLightNavigationBars
         val barBehavior = controller?.systemBarsBehavior
-        controller?.let {
-            it.isAppearanceLightStatusBars = false
-            it.isAppearanceLightNavigationBars = false
-            it.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            it.hide(WindowInsetsCompat.Type.systemBars())
-        }
+        controller?.let(::restorePlayerImmersive)
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> model.onPlayerForeground(true)
+                Lifecycle.Event.ON_RESUME -> controller?.let(::restorePlayerImmersive)
                 Lifecycle.Event.ON_STOP -> model.onPlayerForeground(false)
                 else -> Unit
             }
@@ -139,6 +141,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     var showEpisodes by rememberSaveable(detail.id) { mutableStateOf(false) }
     var showSpeed by rememberSaveable(detail.id) { mutableStateOf(false) }
     var showFavorites by rememberSaveable(detail.id) { mutableStateOf(false) }
+    var doubleSpeedHeld by remember(state.video?.requestId) { mutableStateOf(false) }
     var seeking by remember(state.video?.requestId) { mutableStateOf(false) }
     var seekFraction by remember(state.video?.requestId) { mutableStateOf<Float?>(null) }
 
@@ -166,8 +169,19 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         !pager.isScrollInProgress && pager.currentPage == selected && it.episodeId == detail.episodes[selected].id
     }
     // A temporary drag disables the owner without discarding this request's pause/resume intent.
+    val sheetOpen = showEpisodes || showSpeed || showFavorites
+    val temporaryDoubleSpeed = doubleSpeedHeld && activeVideo != null && !sheetOpen
     val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null,
-        playbackSpeed = state.playbackSpeed)
+        playbackSpeed = if (temporaryDoubleSpeed) 2f else state.playbackSpeed)
+    LaunchedEffect(activeVideo?.requestId, playback.playWhenReady, playback.ended, sheetOpen) {
+        if (activeVideo == null || !playback.playWhenReady || playback.ended || sheetOpen) doubleSpeedHeld = false
+    }
+    val activity = LocalActivity.current
+    val view = LocalView.current
+    // A sheet owns another window and can reveal system bars without resuming the Activity.
+    LaunchedEffect(sheetOpen, activity, view) {
+        if (!sheetOpen) activity?.window?.let { restorePlayerImmersive(WindowCompat.getInsetsController(it, view)) }
+    }
     val visibleIndex = pager.currentPage.coerceIn(detail.episodes.indices)
     val visibleEpisode = detail.episodes[visibleIndex]
     val favorite = state.favorites.any { it.card.id == detail.id }
@@ -193,8 +207,11 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 AsyncImage(model = detail.cover, contentDescription = null, modifier = Modifier.fillMaxSize().alpha(.24f), contentScale = ContentScale.Fit)
                 if (page == selected && activeVideo != null && playback.player != null) {
                     VideoSurface(playback, Modifier.fillMaxSize())
-                    Box(Modifier.fillMaxSize().testTag("player_toggle").clickable(
-                        interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = togglePlayback))
+                    PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),
+                        enabled = !sheetOpen, onTap = togglePlayback, onHoldSpeedChange = { holding ->
+                            // Holding a paused video must not resume it or change the saved speed.
+                            doubleSpeedHeld = holding && playback.isPlaying && !sheetOpen
+                        })
                 }
                 when {
                     page != selected || pager.isScrollInProgress -> Unit
@@ -226,22 +243,9 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             }
         }
 
-        Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .48f), Color.Transparent)))
-            .statusBarsPadding().padding(start = 9.dp, end = 14.dp, top = 9.dp, bottom = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = model::closePlayer, modifier = Modifier.testTag("player_back").semantics { contentDescription = "返回详情" }) {
-                Icon(Icons.Rounded.ChevronLeft, null, tint = Color.White, modifier = Modifier.size(34.dp))
-            }
-            Text("第 ${visibleEpisode.index} 集 / 共 ${detail.episodes.size} 集", color = Color.White,
-                fontSize = if (LocalConfiguration.current.screenWidthDp < 360) 14.sp else 16.sp,
-                fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.weight(1f))
-            Box(Modifier.testTag("player_chapters")) {
-                TextButton(onClick = { showEpisodes = true }, modifier = Modifier.testTag("player_episode_picker")) {
-                    Text("选集", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Icon(Icons.Rounded.ChevronRight, null, tint = Color.White, modifier = Modifier.size(21.dp))
-                }
-            }
-        }
+        PlayerTopBar(episodeIndex = visibleEpisode.index, episodeCount = detail.episodes.size,
+            onBack = model::closePlayer, onShowEpisodes = { showEpisodes = true },
+            temporaryDoubleSpeed = temporaryDoubleSpeed, modifier = Modifier.align(Alignment.TopCenter))
 
         // Keep the middle and subtitle area clear. Controls occupy only the lower edge of the frame.
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
@@ -379,6 +383,54 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             }
         }
     }
+}
+
+/** Stable safe area: transient system bars must never move these controls into the status bar. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun PlayerTopBar(
+    episodeIndex: Int,
+    episodeCount: Int,
+    onBack: () -> Unit,
+    onShowEpisodes: () -> Unit,
+    modifier: Modifier = Modifier,
+    temporaryDoubleSpeed: Boolean = false,
+    statusBarInsets: WindowInsets = WindowInsets.statusBarsIgnoringVisibility,
+    cutoutInsets: WindowInsets = WindowInsets.displayCutout,
+) {
+    val safeInsets = statusBarInsets.union(cutoutInsets).only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+    Column(modifier.fillMaxWidth().testTag("player_top_bar")
+        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .48f), Color.Transparent)))
+        .windowInsetsPadding(safeInsets).padding(start = 9.dp, end = 14.dp, top = 9.dp, bottom = 24.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack, modifier = Modifier.testTag("player_back").semantics { contentDescription = "返回详情" }) {
+                Icon(Icons.Rounded.ChevronLeft, null, tint = Color.White, modifier = Modifier.size(34.dp))
+            }
+            Text("第 $episodeIndex 集 / 共 $episodeCount 集", color = Color.White,
+                fontSize = if (LocalConfiguration.current.screenWidthDp < 360) 14.sp else 16.sp,
+                fontWeight = FontWeight.Medium, maxLines = 1,
+                modifier = Modifier.weight(1f).testTag("player_episode_label"))
+            Box(Modifier.testTag("player_chapters")) {
+                TextButton(onClick = onShowEpisodes, modifier = Modifier.testTag("player_episode_picker")) {
+                    Text("选集", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Rounded.ChevronRight, null, tint = Color.White, modifier = Modifier.size(21.dp))
+                }
+            }
+        }
+        if (temporaryDoubleSpeed) Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
+            Surface(color = Color.Black.copy(alpha = .4f), shape = RoundedCornerShape(50)) {
+                Text("2倍速播放中", color = Color.White, fontSize = 12.sp,
+                    modifier = Modifier.testTag("player_hold_speed").padding(horizontal = 13.dp, vertical = 7.dp))
+            }
+        }
+    }
+}
+
+private fun restorePlayerImmersive(controller: WindowInsetsControllerCompat) {
+    controller.isAppearanceLightStatusBars = false
+    controller.isAppearanceLightNavigationBars = false
+    controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    controller.hide(WindowInsetsCompat.Type.systemBars())
 }
 
 private fun playerTime(positionMs: Long): String {

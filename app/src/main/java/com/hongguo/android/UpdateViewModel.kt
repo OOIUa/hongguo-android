@@ -2,6 +2,7 @@ package com.hongguo.android
 
 import android.app.Activity
 import android.app.Application
+import android.content.SharedPreferences
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -33,10 +34,22 @@ data class UpdateUiState(
     val automaticChecksEnabled: Boolean = true,
 )
 
-class UpdateViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = UpdateRepository()
+class UpdateViewModel internal constructor(
+    application: Application,
+    private val preferences: SharedPreferences,
+    private val checkManifest: suspend (UpdateSource, (UpdateSource) -> Unit) -> AppUpdate,
+    private val installedVersionCode: Long = BuildConfig.VERSION_CODE.toLong(),
+    private val deviceSdk: Int = Build.VERSION.SDK_INT,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application,
+        application.getSharedPreferences("app_updates", 0),
+        { source, onSource ->
+            UpdateRepository().check(BuildConfig.UPDATE_MANIFEST_URL, BuildConfig.UPDATE_REPOSITORY, source, onSource)
+        },
+    )
+
     private val installer = UpdateInstaller(application)
-    private val preferences = application.getSharedPreferences("app_updates", 0)
     private val mutableState = MutableStateFlow(UpdateUiState(source = runCatching {
         UpdateSource.valueOf(preferences.getString("source", UpdateSource.AUTO.name).orEmpty())
     }.getOrDefault(UpdateSource.AUTO), automaticChecksEnabled = preferences.getBoolean("automatic_checks", true)))
@@ -47,10 +60,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     private var checkVersion = 0
     private var downloadVersion = 0
     private var awaitingPermission = false
+    private var checkWasRequestedManually = false
 
     init {
-        val elapsed = System.currentTimeMillis() - preferences.getLong("last_attempt", 0)
-        if (state.value.automaticChecksEnabled && (elapsed < 0 || elapsed >= 24 * 60 * 60 * 1000L)) check(false)
+        // The Activity retains this model across configuration changes. Foreground callbacks
+        // only resume installation, so each cold-start model checks once without a daily veto.
+        if (state.value.automaticChecksEnabled) check(false)
     }
 
     fun setAutomaticChecksEnabled(enabled: Boolean) {
@@ -83,22 +98,31 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun check(manual: Boolean) {
+        if (state.value.checking) {
+            // A manual tap makes the already-running startup request visible. Do not cancel
+            // and race another identical request, or lose the manual result behind a silent one.
+            if (manual) {
+                checkWasRequestedManually = true
+                mutableState.update { it.copy(visible = true) }
+            }
+            return
+        }
         checkingJob?.cancel()
         val version = ++checkVersion
         val source = state.value.source
+        checkWasRequestedManually = manual
         mutableState.update { it.copy(visible = manual, checking = true, update = null,
             downloadedFile = null, error = null, status = "正在检查更新…", installPermissionRequired = false, activeSource = null) }
-        preferences.edit().putLong("last_attempt", System.currentTimeMillis()).apply()
         checkingJob = viewModelScope.launch {
             try {
-                val update = repository.check(BuildConfig.UPDATE_MANIFEST_URL, BuildConfig.UPDATE_REPOSITORY, source) { active ->
+                val update = checkManifest(source) { active ->
                     if (version == checkVersion) mutableState.update { it.copy(activeSource = active,
                         status = "正在通过${active.label}检查更新…") }
                 }
                 if (version != checkVersion) return@launch
-                val newer = update.isNewerThan(BuildConfig.VERSION_CODE.toLong())
-                val supported = update.minSdk <= Build.VERSION.SDK_INT
-                mutableState.update { it.copy(visible = manual || (newer && supported), checking = false,
+                val newer = update.isNewerThan(installedVersionCode)
+                val supported = update.minSdk <= deviceSdk
+                mutableState.update { it.copy(visible = checkWasRequestedManually || (newer && supported), checking = false,
                     update = update.takeIf { newer && supported },
                     status = when {
                         !newer -> "当前已是最新版本（${BuildConfig.VERSION_NAME}）"
@@ -107,7 +131,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                     }, error = if (newer && !supported) "新版本需要更新的 Android 系统。" else null) }
             } catch (error: CancellationException) { throw error }
             catch (error: Exception) {
-                if (version == checkVersion) mutableState.update { it.copy(visible = manual, checking = false,
+                if (version == checkVersion) mutableState.update { it.copy(visible = checkWasRequestedManually, checking = false,
                     status = "暂时无法检查更新", error = updateFailure(error)) }
             }
         }
@@ -123,7 +147,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     fun downloadUpdate() {
         val update = state.value.update ?: return
-        if (state.value.downloading || !update.isNewerThan(BuildConfig.VERSION_CODE.toLong())) return
+        if (state.value.downloading || !update.isNewerThan(installedVersionCode)) return
         val version = ++downloadVersion
         val source = state.value.source
         downloadJob?.cancel()

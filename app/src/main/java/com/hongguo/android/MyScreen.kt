@@ -157,7 +157,7 @@ private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
         item {
             Text("软件更新", color = Muted, fontSize = 14.sp)
             Surface(shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.padding(top = 12.dp)) {
-                SettingSwitch("启动时检查更新", "每天最多检查一次，下载和安装仍需确认", updateState.automaticChecksEnabled,
+                SettingSwitch("启动时检查更新", "每次重新启动应用时检查，下载和安装仍需确认", updateState.automaticChecksEnabled,
                     "settings_auto_update", updateModel::setAutomaticChecksEnabled)
             }
         }

@@ -72,6 +72,9 @@ class VerticalPlayerFlowTest {
         var first = awaitEpisode(model, 0)
         val firstRequest = model.state.value.video!!.requestId
 
+        // Holding is a temporary decoder override, never a persisted speed preference.
+        assertTemporaryHold(first, model, expectedSpeed = 2f, playing = true)
+
         // A paused episode must stay paused after a boundary drag or a drag that returns to the same page.
         compose.runOnIdle { assertTrue("The initial episode must begin with play enabled", first.playWhenReady) }
         compose.onNodeWithTag("player_toggle").performClick()
@@ -113,6 +116,9 @@ class VerticalPlayerFlowTest {
             }
         }
         captureScreenshot("qa-player-controls.png")
+
+        // Long pressing a paused episode must neither resume it nor replace its selected speed.
+        assertTemporaryHold(first, model, expectedSpeed = 1.5f, playing = false)
 
         // Exercise the actual seek control, with a slight vertical drift as on a handheld screen.
         // The horizontal drag must seek this episode instead of being taken by the vertical pager.
@@ -185,6 +191,51 @@ class VerticalPlayerFlowTest {
             empty
         }
         compose.runOnIdle { assertEquals("Leaving full-screen playback must release the player", Player.STATE_IDLE, selected.playbackState) }
+    }
+
+    private fun assertTemporaryHold(player: ExoPlayer, model: HongguoViewModel, expectedSpeed: Float, playing: Boolean) {
+        val preferred = model.state.value.playbackSpeed
+        if (playing) compose.waitUntil(10_000) {
+            var ready = false
+            compose.runOnIdle { ready = player.isPlaying }
+            ready
+        }
+        val clockWasAutomatic = compose.mainClock.autoAdvance
+        try {
+            compose.mainClock.autoAdvance = false
+            compose.onNodeWithTag("player_toggle").performTouchInput {
+                down(Offset(width * .2f, height * .4f))
+            }
+            compose.mainClock.advanceTimeBy(android.view.ViewConfiguration.getLongPressTimeout().toLong() + 150)
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.autoAdvance = clockWasAutomatic
+            compose.waitUntil(5_000) {
+                var applied = false
+                compose.runOnIdle { applied = player.playbackParameters.speed == expectedSpeed }
+                applied
+            }
+            compose.runOnIdle {
+                assertSame("Holding must retain the current decoder", player, attachedPlayers(compose.activity.window.decorView).single())
+                assertEquals(playing, player.playWhenReady)
+                assertEquals(preferred, model.state.value.playbackSpeed, .001f)
+                assertEquals(preferred, compose.activity.getSharedPreferences("hongguo_local", 0).getFloat("playback_speed", 0f), .001f)
+                assertEquals(1f, player.playbackParameters.pitch, .001f)
+            }
+            if (playing) {
+                compose.onNodeWithTag("player_hold_speed").assertExists()
+                captureScreenshot("qa-player-hold-speed.png")
+            } else compose.onNodeWithTag("player_hold_speed").assertDoesNotExist()
+        } finally {
+            compose.mainClock.autoAdvance = clockWasAutomatic
+            compose.onNodeWithTag("player_toggle").performTouchInput { up() }
+        }
+        compose.waitUntil(5_000) {
+            var restored = false
+            compose.runOnIdle { restored = player.playbackParameters.speed == preferred }
+            restored
+        }
+        compose.runOnIdle { assertEquals(playing, player.playWhenReady) }
+        compose.onNodeWithTag("player_hold_speed").assertDoesNotExist()
     }
 
     private fun assertStillPaused(model: HongguoViewModel, index: Int, requestId: Long) {

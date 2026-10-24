@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '全新暖白与橙色界面，统一首页、发现、片单、搜索、详情、账号和设置。首页增加本机续看与双列海报；片单集中展示本机历史、收藏及独立的红果账号记录；播放器精简为单一选集和收藏入口，保留滑动切集、倍速、进度与连播。优化小屏和大字体布局，原有本机数据、登录、云片单和更新功能继续保留。'
+        notes = '底部导航改为轻薄贴底样式，统一线框图标并用短线标记当前页面；修复播放页顶部信息与状态栏、刘海区域重叠；新增播放中长按视频左半屏临时2倍速，松手恢复原速度且不改变默认倍速；修复启动更新检查被24小时限制阻断，改为每次重新启动后台检查，有新版才提醒。原有记录、播放、账号片单和更新功能继续保留。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

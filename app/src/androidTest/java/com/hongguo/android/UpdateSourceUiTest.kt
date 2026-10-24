@@ -42,14 +42,17 @@ class UpdateSourceUiTest {
                 val originalSource = preferences.getString("source", null)
                 val hadAttempt = preferences.contains("last_attempt")
                 val originalAttempt = preferences.getLong("last_attempt", 0)
+                val hadAutomatic = preferences.contains("automatic_checks")
+                val originalAutomatic = preferences.getBoolean("automatic_checks", true)
                 try {
                     assertTrue(preferences.edit().putString("source", UpdateSource.AUTO.name)
-                        .putLong("last_attempt", System.currentTimeMillis()).commit())
+                        .putBoolean("automatic_checks", false).commit())
                     base.evaluate()
                 } finally {
                     val restore = preferences.edit()
                     if (hadSource) restore.putString("source", originalSource) else restore.remove("source")
                     if (hadAttempt) restore.putLong("last_attempt", originalAttempt) else restore.remove("last_attempt")
+                    if (hadAutomatic) restore.putBoolean("automatic_checks", originalAutomatic) else restore.remove("automatic_checks")
                     assertTrue("Restore update preferences after Activity/model teardown", restore.commit())
                 }
             }
