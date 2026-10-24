@@ -5,7 +5,11 @@
 - 最终升版后 assembleDebug、assembleDebugAndroidTest、107 项 JVM 测试通过；Lint 为 0 errors、30 warnings、1 hint。
 - 最终 APK 在 Android 16 独立模拟器通过 12 项设备测试：5 项进度条控件交互、7 项更新安装包拒绝边界。倍速、暂停、拖动、Activity 重建、跨集和连播的真实上游回归在本次功能开发阶段通过，见下方记录。
 - APK 元数据与签名已核对：versionCode 6 / versionName 0.5.1 / API 26，证书 SHA-256 与 `release-signing.sha256` 完全相同。
-- 公开发布资产、三路匿名下载及旧版在线覆盖升级结果将在实际完成后补记。未将本地构建与模拟器测试写成公开发布或实体手机验证。
+- GitHub Latest 已发布为正式 `v0.5.1`（非草稿、非 prerelease），对应源码提交 `2011b52`。APK、完整源码 ZIP、update.json、SHA256SUMS-0.5.1.txt 四份附件的 GitHub digest 和大小均与本地一致；源码 ZIP 与标签提交的源码一致，无密钥、本机配置或 Git 内部目录。
+- GitHub 直连、gh-proxy.com、ghfast.top 三路匿名 latest 清单均为 versionCode 6 / versionName 0.5.1，753 字节，与本地清单逐字节一致。三路完整 APK 均为 15,360,111 字节，SHA-256 为 `a52ea4e53edda4631e3fa52633a6406c1d72d1c4232ed1f334c5835e8cdc68b3`，全部通过；本次完整 APK 获取时间依次约 5.38、9.34、5.87 秒，仅代表此次网络。
+- 模拟器保留数据并覆盖装回真实已发布的 0.5.0；旧版从“我的 → 检查更新”发现 0.5.1，经加速线路 1 下载并通过应用校验，设备缓存包 SHA-256 与公开发布包完全相同。经 Android 系统更新确认、Play Protect 扫描显示安全并继续安装后，安装器显示“App updated”，PackageManager 确认为 code 6 / 0.5.1。
+- 实际覆盖安装前后 `installation.xml`、`hongguo_local.xml`、`hongguo_library.xml` 的 SHA-256 完全一致，设备身份、收藏、历史与续播设置保持不变。测试数据包含 1 部收藏、1 部历史及非零集内续播位置；未卸载旧版或清除数据。
+- 更新后在“我的”再次经加速线路 1 检查更新，显示“当前已是最新版本（0.5.1）”。截图及三路下载、安装包哈希与数据保留记录保存在项目上级 `qa/` 下。本轮升级验证为 Android 16 模拟器，未将其等同于实体手机验证。
 
 # 播放页优化验证（升版前本地测试）
 
