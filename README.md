@@ -14,14 +14,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.5.1**（versionCode 6）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.6.0**（versionCode 7）· Android **8.0 / API 26** 及以上。
+
+本版新增个人红果账号、账户片单和可选进度上报。账号功能仍处于测试阶段，登录与同步结果需用本人账号核对；接入方式与使用范围见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.5.1 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.5.1/hongguo-android-0.5.1.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.5.1/hongguo-android-0.5.1.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.5.1/hongguo-android-0.5.1.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.5.1 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.5.1/hongguo-android-0.5.1-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.5.1/SHA256SUMS-0.5.1.txt) |
+| GitHub 直连 | [下载 v0.6.0 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/hongguo-android-0.6.0.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/hongguo-android-0.6.0.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/hongguo-android-0.6.0.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.6.0 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/hongguo-android-0.6.0-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/SHA256SUMS-0.6.0.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -55,6 +57,9 @@
 | 六档倍速 | 0.5×、0.75×、1×、1.25×、1.5×、2×，自动记住选择 |
 | 连播与预加载 | 可分别开关自动连播、下一集预加载，末集不循环 |
 | 收藏与续播 | 本机保存收藏、观看历史、集数与集内位置，支持单条移除与清空 |
+| 个人红果账号 | 官网网页登录、官方 App 扫码与手机号验证码入口；账号资料验证后加密保存 |
+| 账户片单 | 读取账户收藏、最近 50 部观看历史及已上线 / 待上线预约，与本机记录分开 |
+| 可选进度上报 | 默认关闭；开启后仅上报实际播放的进度，支持本机持久待同步队列 |
 | 边播边缓存 | 对支持的片源按需下载与处理，不兼容时回退完整缓存播放 |
 | 应用内更新 | 手动 / 启动检查，支持直连、两条加速线路及自动切换 |
 
@@ -67,6 +72,7 @@
 3. 播放中点击画面暂停 / 继续，拖动进度条跳转，上下滑动切集；右下角「倍速」调整速度。
 4. 在详情或播放器中收藏，在「收藏」查看；「我的 → 播放历史」可继续观看。
 5. 到「我的 → 系统设置」调整自动连播、下一集预加载和启动检查更新。
+6. 到「我的 → 红果账号与云片单」登录个人账号；只有一部手机时选择「在本机打开官网登录」，待页面加载后点「打开官网登录窗口」，自行完成官方验证后点上方「完成登录」。也可在另一台设备的红果 App 中扫码确认。
 
 应用需要联网访问上游内容源，无需填写服务器地址。切到后台会停止播放与预加载。
 
@@ -84,6 +90,7 @@
 
 - **渐进播放**：常见非碎片 CENC MP4 使用 Range 按需取块并在本机处理，首帧无需等待整集下载。不支持此路径的媒体会回退为整集下载、处理后播放；实际效果取决于片源、编码、封装与网络。
 - **本机记录**：收藏、历史、播放偏好与缓存保存在应用私有目录，无需广泛文件访问权限。历史在实际渲染首帧后记录，准备失败不会记为已观看。
+- **账号记录**：个人会话和账户片单加密保存在本机，退出或切换账号隔离数据。原本机记录不会自动上传；详情和播放器中的「账号收藏」是独立的云端操作。短信可能需要官网验证，收藏与跨设备续播需用本人账号核对。
 - **缓存用途**：用于播放加速，可能随会话结束或空间策略被清理，不作为永久离线保存。目前仅支持前台播放，未提供后台播放服务或批量离线下载。
 
 <details>
@@ -148,7 +155,7 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 
 ### 验证范围
 
-[验证记录](VALIDATION.md) 记录了 v0.5.1 的构建、107 项 JVM 测试、Lint 及 Android 16 模拟器回归，并包含从 v0.5.0 在线更新后保留本机数据的验证。实体手机、Android 8–15 设备及全部编码 / MP4 布局尚未全面验证。
+[验证记录](VALIDATION.md) 包含构建、静态检查、模拟器回归及覆盖更新的数据保留记录。实体手机、Android 8–15 设备及全部编码 / MP4 布局尚未全面验证，账号功能的实际登录与同步结果需由本人核对。
 
 ## 常见问题
 
@@ -162,7 +169,7 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 
 **能离线保存剧集或同步收藏吗？**
 
-目前缓存仅用于播放加速，不提供永久离线保存或跨设备同步。卸载或清除应用数据会删除本机记录。
+缓存仅用于播放加速，不提供永久离线保存。登录个人账号后可读取云端片单，并主动开启本次观看进度上报。本机旧记录不会自动上传，历史与预约按固定批次读取。卸载或清除应用数据会删除本机记录。
 
 **更新下载失败怎么办？**
 

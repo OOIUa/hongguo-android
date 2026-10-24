@@ -18,3 +18,20 @@ Android adaptations replace desktop configuration, console handling, HTTP servic
 AndroidX, Kotlin, Kotlin Coroutines and Coil are used as build/runtime dependencies. Their original dependency metadata and license notices remain applicable. The Gradle wrapper is from Gradle 8.13.
 
 Complete application source, build scripts and modifications accompany the test APK in this project directory. No signing private key, local SDK configuration or build cache is part of the source distribution.
+
+## Personal account integration (0.6.0)
+
+The native account protocol in `app/src/main/java/com/hongguo/account/protocol/` is adapted from:
+
+- tsukiyo-zero/hongguoTV, commit `34c793055fa897075d9061dc7d62ee84031ef855` (2026-10-24), GPL-3.0-only.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/34c793055fa897075d9061dc7d62ee84031ef855/kotlin-tv
+- Its original account device/login reference is charlie901208/HGTV, `feat/phone-login` (GPL-3.0-only), as identified in the upstream NOTICE.
+  https://github.com/charlie901208/HGTV/tree/feat/phone-login
+- Account endpoint and parsing references include pan8664716/HGTV, commit `ad69d589bbf472e72ce4f2e985a376f8a10bf99a` (GPL-3.0-only).
+  https://github.com/pan8664716/HGTV/tree/ad69d589bbf472e72ce4f2e985a376f8a10bf99a
+- The account request signer originated from the Kotlin port of woshishiq1/drpys, commit `22261adfa31435e3b3ef5a730b8a2a75bcaf1715`, GPL-3.0.
+  https://github.com/woshishiq1/drpys/tree/22261adfa31435e3b3ef5a730b8a2a75bcaf1715
+
+Original authors' copyrights and SPDX notices are retained. The Compose account UI, encrypted account state, lifecycle isolation and durable progress scheduling are adapted or implemented for this application. No private account samples, credentials, proprietary desktop binaries or unlicensed account implementations are bundled.
+
+Additional runtime dependencies: OkHttp 4.12.0 and Okio (Apache-2.0), Bouncy Castle bcprov-jdk18on 1.79 (MIT). The upstream notices and license texts are included under `app/src/main/assets/licenses/` and in corresponding source. org.json, MockWebServer and kotlinx-coroutines-test are used only for JVM tests; Android supplies its built-in JSON implementation.

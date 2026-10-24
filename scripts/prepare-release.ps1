@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '优化播放进度条：统一细轨道、缓冲进度和圆形滑块，修复重叠错位与拖动回跳。新增 0.5×、0.75×、1×、1.25×、1.5×、2× 六档倍速，本机自动记忆，切集、连播和恢复播放时继续生效；调整倍速保留播放位置和暂停状态。保留加速更新、收藏、历史与续播数据。'
+        notes = '新增红果个人账号：支持官网登录、扫码与手机号验证码入口，登录后查看账号收藏、观看历史和预约。新增账号收藏操作与可选观看进度同步，默认不上传本机旧记录。入口：我的 → 红果账号与云片单。账号功能处于体验阶段，遇到平台验证可切换官网登录。覆盖升级保留本机收藏和历史。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

@@ -70,7 +70,9 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
             if (active != null) {
                 wantedPlaying = active.playWhenReady
                 lastPosition = if (active.playbackState == Player.STATE_ENDED) 0 else active.currentPosition.coerceAtLeast(0)
-                if (video != null) model.savePosition(video.episodeId, lastPosition, video.requestId)
+                if (video != null) model.savePosition(video.episodeId, lastPosition, video.requestId,
+                    active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0,
+                    force = true, completed = active.playbackState == Player.STATE_ENDED)
             }
             // Wake this source's blocked reader before ExoPlayer waits for its playback thread.
             runCatching { ownedSource?.cancelActiveReads() }
@@ -105,13 +107,17 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
                         when (playbackState) {
                             Player.STATE_BUFFERING -> model.onPlaybackStatus(video.episodeId, video.requestId, "正在缓冲")
                             Player.STATE_READY -> model.onPlaybackStatus(video.episodeId, video.requestId, if (active.isPlaying) "正在播放" else "已暂停")
-                            Player.STATE_ENDED -> model.onPlaybackEnded(video.episodeId, video.requestId)
+                            Player.STATE_ENDED -> model.onPlaybackEnded(video.episodeId, video.requestId,
+                                active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0)
                         }
                     }
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         if (!isCurrent(active)) return
                         updateSnapshot(active)
+                        if (!isPlaying && active.playbackState != Player.STATE_ENDED)
+                            model.savePosition(video.episodeId, active.currentPosition, video.requestId,
+                                active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0, force = true)
                         if (active.playbackState == Player.STATE_READY) model.onPlaybackStatus(video.episodeId, video.requestId,
                             if (isPlaying) "正在播放" else "已暂停")
                     }
@@ -185,7 +191,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
             if (active.isPlaying) model.onPlaybackBuffered(currentVideo.episodeId, currentVideo.requestId,
                 active.bufferedPosition - active.currentPosition)
             if (now - lastSavedAt >= 2_000 && active.playbackState != Player.STATE_ENDED) {
-                model.savePosition(currentVideo.episodeId, active.currentPosition, currentVideo.requestId)
+                model.savePosition(currentVideo.episodeId, active.currentPosition, currentVideo.requestId, duration)
                 lastSavedAt = now
             }
             delay(350)

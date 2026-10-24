@@ -35,7 +35,9 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
-                      updateState: UpdateUiState, updateModel: UpdateViewModel) {
+                      updateState: UpdateUiState, updateModel: UpdateViewModel,
+                      accountName: String? = null, accountStatus: String = "登录后查看手机片单",
+                      onAccount: () -> Unit = { model.selectTab(AppTab.ACCOUNT) }) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = settingsOpen) { settingsOpen = false }
     if (settingsOpen) {
@@ -51,24 +53,24 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
         }
         item {
             Surface(shape = RoundedCornerShape(22.dp), color = Color(0xFFFFEEE5)) {
-                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically,
+                Row(Modifier.fillMaxWidth().testTag("my_account_card").clickable(onClick = onAccount).padding(20.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(15.dp)) {
                     Box(Modifier.size(54.dp).clip(RoundedCornerShape(18.dp)).background(Orange), Alignment.Center) {
                         Text("果", color = Color.White, fontSize = 31.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("我的观影空间", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Text("收藏与记录，随时接着看", color = Muted, fontSize = 12.sp)
+                        Text(accountName ?: "登录红果账号", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Text(accountStatus, color = Muted, fontSize = 12.sp)
                     }
                 }
             }
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                MyStat("我的收藏", state.favorites.size, Modifier.weight(1f).testTag("my_favorites")) {
+                MyStat("本机收藏", state.favorites.size, Modifier.weight(1f).testTag("my_favorites")) {
                     model.selectTab(AppTab.FAVORITES)
                 }
-                MyStat("看过的剧", state.history.size, Modifier.weight(1f).testTag("my_history_count")) {
+                MyStat("本机看过", state.history.size, Modifier.weight(1f).testTag("my_history_count")) {
                     model.selectTab(AppTab.HISTORY)
                 }
             }
@@ -76,6 +78,8 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
         item {
             Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
                 Column {
+                    MyMenuRow("红果账号与云片单", "登录、收藏、观看历史与预约", "my_account", onAccount)
+                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
                     MyMenuRow("播放历史", "继续上次看到的地方", "my_history") { model.selectTab(AppTab.HISTORY) }
                     HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
                     MyMenuRow("系统设置", "播放偏好与更新设置", "my_settings") { settingsOpen = true }

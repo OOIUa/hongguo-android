@@ -1,10 +1,14 @@
 package com.hongguo.android
 
 import android.app.Application
+import com.hongguo.account.AccountRepository
 import com.hongguo.api.util.Config
 import java.security.SecureRandom
 
 class HongguoApplication : Application() {
+    /** The media and account requesters share lifecycle, never credentials or device identity. */
+    val accountRepository: AccountRepository by lazy { AccountRepository(this) }
+
     override fun onCreate() {
         super.onCreate()
         val preferences = getSharedPreferences("installation", MODE_PRIVATE)

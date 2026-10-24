@@ -20,7 +20,7 @@ import com.hongguo.api.service.ProgressiveMedia
 
 private val mediaCleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-enum class AppTab { HOME, CATEGORY, SEARCH, FAVORITES, MINE, HISTORY }
+enum class AppTab { HOME, CATEGORY, SEARCH, FAVORITES, MINE, HISTORY, ACCOUNT }
 
 data class FeedState(
     val items: List<DramaCard> = emptyList(),
@@ -75,6 +75,7 @@ data class HongguoUiState(
 class HongguoViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = DramaRepository()
     private val library = LibraryStore(application)
+    private val accounts = (application as HongguoApplication).accountRepository
     private val preferences = application.getSharedPreferences("hongguo_local", 0)
     private val mutableState = MutableStateFlow(HongguoUiState(query = preferences.getString("last_query", "").orEmpty(),
         autoPlayNext = preferences.getBoolean("auto_play_next", true), preloadNext = preferences.getBoolean("preload_next", true),
@@ -101,6 +102,13 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var pendingLibrary: LibraryEntry? = null
     private data class ResumeTarget(val card: DramaCard, val index: Int)
     private val resumeTargets = ConcurrentHashMap<String, ResumeTarget>()
+    private data class AccountPlayback(
+        val entry: LibraryEntry,
+        val owner: String?,
+        var rendered: Boolean = false,
+        var durationMs: Long = 0,
+    )
+    private val accountPlaybacks = LinkedHashMap<Long, AccountPlayback>()
     @Volatile private var searchVersion = 0
     @Volatile private var detailVersion = 0
     @Volatile private var mediaVersion = 0
@@ -374,6 +382,9 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         bufferReadyForPrefetch = false
         prefetchAttemptedFor = -1
         val version = mediaVersion
+        accountPlaybacks[version.toLong()] = AccountPlayback(
+            LibraryEntry(cardFor(detail), episode.id, episode.index), accounts.ownerKey)
+        while (accountPlaybacks.size > 16) accountPlaybacks.remove(accountPlaybacks.keys.first())
         resumeTargets[episode.id] = ResumeTarget(cardFor(detail), episode.index)
         val savedPosition = if (restart) 0 else resumeOverrideMs ?: preferences.getLong("${detail.id}.${episode.id}.position", 0)
         mutableState.update {
@@ -424,6 +435,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun closePlayer() {
+        state.value.video?.let { accounts.flushProgress(accountPlaybacks[it.requestId]?.owner) }
         val previous = state.value.video
         ++mediaVersion
         mediaJob?.cancel()
@@ -438,6 +450,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         if (active && !playerForeground) prefetchAttemptedFor = -1
         playerForeground = active
         if (!active) {
+            state.value.video?.let { accounts.flushProgress(accountPlaybacks[it.requestId]?.owner) }
             takePrefetch(null)
             if (state.value.playerOpen && state.value.preparing) {
                 ++mediaVersion
@@ -527,6 +540,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         if (!isCurrentVideo(episodeId, requestId)) return
         val alreadyRendered = state.value.firstFrameRendered
         mutableState.update { it.copy(firstFrameRendered = true) }
+        accountPlaybacks[requestId]?.takeIf { it.entry.episodeId == episodeId }?.rendered = true
         if (!alreadyRendered) resumeTargets[episodeId]?.let { target ->
             library.recordPlayback(target.card, episodeId, target.index, state.value.resumePositionMs)
         }
@@ -540,16 +554,24 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun onPlaybackEnded(episodeId: String, requestId: Long) {
+    fun onPlaybackEnded(episodeId: String, requestId: Long, durationMs: Long = 0) {
         val current = state.value
         if (!isCurrentVideo(episodeId, requestId)) return
-        savePosition(episodeId, 0, requestId)
+        val playback = accountPlaybacks[requestId]
+        if (durationMs > 0 && playback != null) playback.durationMs = durationMs
+        if (playback?.rendered == true && playback.durationMs > 0) {
+            accounts.reportProgress(playback.entry.copy(positionMs = playback.durationMs,
+                updatedAt = System.currentTimeMillis()), playback.durationMs, true, playback.owner)
+        }
+        // Local replay starts at the beginning; the cloud retains the completed episode duration.
+        savePosition(episodeId, 0, requestId, completed = true)
         if (current.episodePosition < (current.detail?.episodes?.lastIndex ?: -1)) {
             if (current.autoPlayNext) nextEpisode() else onPlaybackStatus(episodeId, requestId, "本集已播完，上滑观看下一集")
         } else onPlaybackStatus(episodeId, requestId, "已播完最后一集")
     }
 
-    fun savePosition(episodeId: String, positionMs: Long, requestId: Long? = null) {
+    fun savePosition(episodeId: String, positionMs: Long, requestId: Long? = null,
+                     durationMs: Long = 0, force: Boolean = false, completed: Boolean = false) {
         val current = state.value
         if (requestId != null && current.video?.episodeId == episodeId && current.video.requestId != requestId) return
         val target = resumeTargets[episodeId] ?: return
@@ -561,6 +583,13 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         }
         editor.apply()
         library.updatePosition(target.card, episodeId, target.index, positionMs.coerceAtLeast(0))
+        val playback = requestId?.let { accountPlaybacks[it] }
+        if (playback != null && playback.entry.episodeId == episodeId) {
+            if (durationMs > 0) playback.durationMs = durationMs
+            if (playback.rendered && !completed) accounts.reportProgress(
+                playback.entry.copy(positionMs = positionMs.coerceAtLeast(0), updatedAt = System.currentTimeMillis()),
+                playback.durationMs, force, playback.owner)
+        }
         if (current.video?.episodeId == episodeId && (requestId == null || current.video.requestId == requestId))
             mutableState.update { it.copy(resumePositionMs = positionMs.coerceAtLeast(0)) }
     }

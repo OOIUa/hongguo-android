@@ -21,6 +21,13 @@
                 android:resource="@xml/update_paths" />
         </provider>
         <activity
+            android:name=".OfficialLoginActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:process=":official_login"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">

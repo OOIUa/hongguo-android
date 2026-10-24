@@ -1,5 +1,7 @@
 package com.hongguo.android
 
+import com.hongguo.account.AccountViewModel
+
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -75,7 +77,7 @@ import coil.compose.AsyncImage
 import java.util.Locale
 
 @Composable
-internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel) {
+internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel, accountModel: AccountViewModel? = null) {
     val detail = state.detail ?: return
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val view = LocalView.current
@@ -111,14 +113,14 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel)
             }
         }
     }
-    key(detail.id) { EpisodePager(state, model, detail) }
+    key(detail.id) { EpisodePager(state, model, detail, accountModel) }
 }
 
 private data class PagerMovement(val scrolling: Boolean, val settled: Int, val synchronizing: Int?)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail) {
+private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail, accountModel: AccountViewModel?) {
     if (detail.episodes.isEmpty()) return
     val selected = state.episodePosition.coerceIn(detail.episodes.indices)
     val pager = rememberPagerState(initialPage = selected, pageCount = { detail.episodes.size })
@@ -219,6 +221,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
 
         Column(Modifier.align(Alignment.CenterEnd).padding(end = 13.dp, top = 100.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(21.dp)) {
+            if (accountModel != null) AccountFavoriteAction(card, accountModel, dark = true,
+                onSignIn = { model.selectTab(AppTab.ACCOUNT) })
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 IconButton(onClick = { model.toggleFavorite(card) }, modifier = Modifier.size(49.dp).testTag("favorite_toggle")
                     .semantics { contentDescription = if (favorite) "取消收藏" else "收藏这部剧" }) {
@@ -266,7 +270,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     if (video != null && duration > 0) {
                         val target = ((seekFraction ?: fraction) * duration).toLong().coerceIn(0, duration)
                         playback.player?.seekTo(target)
-                        model.savePosition(video.episodeId, target, video.requestId)
+                        model.savePosition(video.episodeId, target, video.requestId, duration)
                     }
                     seeking = false; seekFraction = null
                 }, enabled = duration > 0 && activeVideo != null && state.playbackError == null,

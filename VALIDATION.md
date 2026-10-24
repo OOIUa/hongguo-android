@@ -1,3 +1,20 @@
+# 0.6.0 个人账号本地测试版
+
+验证日期：2026-10-24（Asia/Shanghai）。源码与本地 APK 为 versionName 0.6.0、versionCode 7，包名 `com.hongguo.android`，minSdk 26。GitHub 已发布版本和更新清单仍是 0.5.1。
+
+- `:app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebugAndroidTest` 通过。147 项 JVM 测试全部通过；Lint 为 0 errors、41 warnings、1 hint，没有新增 baseline 或忽略错误。
+- 账号协议测试覆盖官网与 App 资料双校验、匿名/空会话拒绝、19 位 ID、设备身份复用、响应大小与错误结构、同源 Cookie、禁止跨域重定向和写入自动重放、取消及签名固定向量。
+- 状态测试覆盖账号恢复与断网、迟到磁盘读取/登录结果、账号切换、登录持久化失败、收藏回读不确定与旧读取保护、进度观测的 IO 持久化/15 秒节流/强制刷新、旧确认保护新进度、退出写入失败的加密文件擦除后备。
+- Android 16 / API 36.1 模拟器完整同批通过 14 项设备测试：AccountSecurityDeviceTest 3 项、AccountUiFlowTest 1 项、AccountAnonymousProbeTest 2 项、MyPageFlowTest 1 项、LibraryFlowTest 1 项、PlayerControlsTest 5 项、VerticalPlayerFlowTest 1 项。
+- 设备上验证真实 Keystore AES-GCM 读写、密文无明文凭据、篡改拒绝、跨进程一次性登录回执、官网顶层 HTTPS 来源限制、账号入口/无效手机号禁止发送、本机记录保持，以及原有控制与真实媒体的首帧、暂停、拖动、重建、上下划、自动下一集与选集。
+- 匿名联网探测已取得可解码的官网二维码，并确认未扫码不能视为已认证；匿名设备注册返回有效设备及安装身份。没有发送短信、扫描确认二维码或登录任何个人账号。
+- 手机官网页面实测已出现官方“登录红果短剧”对话框、验证码登录、获取验证码、登录/注册及扫码区域。修复了 Macintosh 桌面 UA 在触屏环境被官网当作 iPad、从而不挂载 PC 登录组件的问题，改用 Windows 桌面 UA；未注入平台/触屏属性，未发送短信或提交登录表单。XML 证据为上级 `qa/hongguo-060-official-login-windows.xml`。
+- 真实切集测试首轮出现一次第二集准备失败，单独重试及随后完整 14 项同批回归均通过。未发现预加载取消向新请求传播的确定代码问题；保留该网络/上游瞬态记录，不将其解释为全部片源稳定性证明。
+- APK 包名、versionCode/name、API 26 和签名证书已核对，证书 SHA-256 与 `release-signing.sha256` 一致；可以覆盖既有同签名安装。本次只提供本地测试包和对应源码，不替换 GitHub Release 或现有 `dist/update.json`。
+- 个人账号及跨设备写回仍待本人验收：实际短信/官网授权、昵称与 UID 核对、收藏增删、手机片单回读、云端集号和毫秒位置。账户历史仅最近 50 部，预约各 20 部，收藏分页未宣称完整。实体手机及 Android 8–15 尚未验收。
+
+最终交付 APK 重新安装后，14 项设备用例在同批再次全部通过（31.915 秒）；147 项 JVM 用例仍全部通过。主要证据：`build-060-final-package.log`、`device-060-delivery.log`、JVM XML 和 Lint 报告；界面及匿名网页登录证据在上级 `qa/`。
+
 # 0.5.1 验证记录
 
 验证日期：2026-10-24（Asia/Shanghai）。versionName 0.5.1、versionCode 6，包名 `com.hongguo.android`、minSdk 26，沿用既有签名证书。

@@ -1,6 +1,7 @@
 package com.hongguo.android
 
 import android.os.Bundle
+import com.hongguo.account.AccountViewModel
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -68,18 +69,20 @@ class MainActivity : ComponentActivity() {
             ) {
                 val model: HongguoViewModel = viewModel()
                 val state by model.state.collectAsStateWithLifecycle()
+                val accountModel: AccountViewModel = viewModel()
+                val accountState by accountModel.state.collectAsStateWithLifecycle()
                 val updateModel: UpdateViewModel = viewModel()
                 val updateState by updateModel.state.collectAsStateWithLifecycle()
                 BackHandler(enabled = state.playerOpen || state.selectedCard != null || state.tab != AppTab.HOME) {
                     if (state.playerOpen) model.closePlayer()
                     else if (state.selectedCard != null) model.backToSearch()
-                    else if (state.tab == AppTab.HISTORY) model.selectTab(AppTab.MINE)
+                    else if (state.tab in setOf(AppTab.HISTORY, AppTab.ACCOUNT)) model.selectTab(AppTab.MINE)
                     else model.selectTab(AppTab.HOME)
                 }
-                if (state.playerOpen && state.detail != null) EpisodePlayerScreen(state, model)
+                if (state.playerOpen && state.detail != null) EpisodePlayerScreen(state, model, accountModel)
                 else {
                     Scaffold(containerColor = Canvas, bottomBar = {
-                        if (state.selectedCard == null) AppNavigation(if (state.tab == AppTab.HISTORY) AppTab.MINE else state.tab, model::selectTab)
+                        if (state.selectedCard == null) AppNavigation(state.tab, model::selectTab)
                     }) { insets ->
                         Column(Modifier.fillMaxSize().padding(insets).semantics { testTagsAsResourceId = true }) {
                             if (state.selectedCard == null) {
@@ -89,14 +92,18 @@ class MainActivity : ComponentActivity() {
                                     AppTab.CATEGORY -> CategoryScreen(state, model)
                                     AppTab.SEARCH -> SearchScreen(state, model)
                                     AppTab.FAVORITES -> LibraryScreen(state, model, history = false)
-                                    AppTab.MINE -> MyScreen(state, model, updateState, updateModel)
+                                    AppTab.MINE -> MyScreen(state, model, updateState, updateModel,
+                                        accountName = accountState.profile?.nickname,
+                                        accountStatus = if (accountState.profile != null) "查看账号收藏、历史与预约" else "登录后查看手机片单")
+                                    AppTab.ACCOUNT -> AccountScreen(accountModel,
+                                        onBack = { model.selectTab(AppTab.MINE) }, onOpenLibrary = model::openLibrary)
                                     AppTab.HISTORY -> Column(Modifier.fillMaxSize()) {
                                         TextButton(onClick = { model.selectTab(AppTab.MINE) }) { Text("‹ 我的") }
                                         LibraryScreen(state, model, history = true)
                                     }
                                 }
                             }
-                            else DetailScreen(state, model)
+                            else DetailScreen(state, model, accountModel)
                         }
                     }
                 }
@@ -127,7 +134,7 @@ private fun BrandHeader() {
 }
 
 @Composable
-private fun DetailScreen(state: HongguoUiState, model: HongguoViewModel) {
+private fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accountModel: AccountViewModel) {
     val card = state.selectedCard ?: return
     val listState = rememberLazyListState()
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -137,7 +144,7 @@ private fun DetailScreen(state: HongguoUiState, model: HongguoViewModel) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(state.detail?.title ?: card.title, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(state.detail?.let { "共 ${it.episodes.size} 集 · 进度保存在本机" } ?: "正在读取剧集信息",
+                Text(state.detail?.let { "共 ${it.episodes.size} 集" } ?: "正在读取剧集信息",
                     fontSize = 11.sp, color = Muted)
             }
             Cover(state.detail?.cover ?: card.cover, card.title, Modifier.width(36.dp).height(49.dp))
@@ -146,6 +153,9 @@ private fun DetailScreen(state: HongguoUiState, model: HongguoViewModel) {
                 .semantics { contentDescription = if (favorite) "取消收藏" else "收藏这部剧" }) {
                 Text(if (favorite) "★" else "☆", fontSize = 26.sp, color = if (favorite) Orange else Muted)
             }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            AccountFavoriteAction(card, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
         }
         if (state.loadingDetail) {
             Column(Modifier.fillMaxWidth().padding(vertical = 35.dp), horizontalAlignment = Alignment.CenterHorizontally) {

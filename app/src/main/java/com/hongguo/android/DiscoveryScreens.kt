@@ -68,7 +68,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit) {
     val focus = LocalFocusManager.current
     val tabs = listOf(AppTab.HOME to "首页", AppTab.CATEGORY to "分类", AppTab.SEARCH to "搜索",
         AppTab.FAVORITES to "收藏", AppTab.MINE to "我的")
-    val activeTab = if (selected == AppTab.HISTORY) AppTab.MINE else selected
+    val activeTab = if (selected in setOf(AppTab.HISTORY, AppTab.ACCOUNT)) AppTab.MINE else selected
     NavigationBar(containerColor = Color.White, tonalElevation = 0.dp,
         modifier = Modifier.semantics { testTagsAsResourceId = true }) {
         tabs.forEach { (tab, label) ->
@@ -122,7 +122,7 @@ private fun NavigationGlyph(tab: AppTab, selected: Boolean) {
                 star.close()
                 drawPath(star, color, style = stroke)
             }
-            AppTab.MINE -> {
+            AppTab.MINE, AppTab.ACCOUNT -> {
                 drawCircle(color, w * .17f, Offset(w * .5f, h * .29f), style = stroke)
                 drawArc(color, 180f, 180f, false, Offset(w * .16f, h * .52f), Size(w * .68f, h * .64f), style = stroke)
             }
