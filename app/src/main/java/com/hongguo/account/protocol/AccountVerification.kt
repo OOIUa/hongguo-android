@@ -29,14 +29,17 @@ internal fun safeGatewayLogin(value: String?): String? = value?.takeIf { it.matc
 /** Structure-only failure evidence. Never print identifiers, names, tokens or unknown field names. */
 internal fun appProfileDiagnostic(reply: JSONObject, credentials: AccountCredentials, gatewayLogin: String?): String {
     val data = reply.optJSONObject("data")
-    val id = data?.str("biz_user_id").orEmpty()
+    val rawId = data?.opt("biz_user_id")
+    val id = businessAccountId(rawId)
+    val missingId = rawId == null || rawId === JSONObject.NULL || (rawId is String && rawId.isBlank())
     val nameFlag = data?.opt("has_set_username") as? Boolean
     val classification = when {
         data == null -> "PROFILE_STRUCTURE"
-        id.isNotBlank() && (id == credentials.deviceId || id == credentials.installId) -> "DEVICE_IDENTITY"
-        id.isBlank() && nameFlag == false -> "ANONYMOUS_INDICATORS"
-        id.isBlank() -> "BUSINESS_ID_MISSING"
-        !validIdentifier(id) -> "BUSINESS_ID_INVALID"
+        id != null && (id == credentials.deviceId || id == credentials.installId) -> "DEVICE_IDENTITY"
+        missingId && nameFlag == false -> "ANONYMOUS_INDICATORS"
+        missingId -> "BUSINESS_ID_MISSING"
+        id == null -> "BUSINESS_ID_INVALID"
+        !validIdentifier(id) && safeGatewayLogin(gatewayLogin) != "1" -> "ACCOUNT_AUTH_UNCONFIRMED"
         else -> "BUSINESS_ID_PRESENT"
     }
     fun type(row: JSONObject?, key: String): String = when {

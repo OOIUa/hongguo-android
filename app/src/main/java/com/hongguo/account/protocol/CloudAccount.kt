@@ -179,8 +179,11 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
                 if (credentials.source == AccountCredentialSource.WEBSITE) "官网登录已确认，但红果未返回账号资料，请稍后重试"
                 else "红果 App 登录态未返回账号资料，请重新验证",
                 diagnostic = appProfileDiagnostic(reply, credentials, gatewayLogin))
-            val id=data.str("biz_user_id")
-            if(!validIdentifier(id) || id == credentials.deviceId || id == credentials.installId)
+            val id=businessAccountId(data.opt("biz_user_id"))
+            // Preserve the existing numeric contract. Newly supported opaque account IDs also
+            // require the current self-profile response's positive gateway authentication signal.
+            if(id == null || id == credentials.deviceId || id == credentials.installId ||
+                (!validIdentifier(id) && gatewayLogin != "1"))
                 throw AccountProtocolException(
                     if (credentials.source == AccountCredentialSource.WEBSITE) "官网登录已确认，但红果 App 未确认账号授权；可保留官网登录状态，或导入本人的 App 登录态"
                     else "红果 App 登录态未返回有效账号身份，请确认登录态及对应设备资料",

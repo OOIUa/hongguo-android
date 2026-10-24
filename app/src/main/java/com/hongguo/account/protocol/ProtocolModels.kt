@@ -47,7 +47,7 @@ internal fun preserveLargeIntegers(text: String): String {
             val start = at++
             while (at < text.length && (text[at] in '0'..'9' || text[at] in ".eE+-")) at++
             val token = text.substring(start, at)
-            if (token.matches(Regex("-?[0-9]{16,}"))) out.append('"').append(token).append('"') else out.append(token)
+            if (token.matches(Regex("[0-9]{16,}"))) out.append('"').append(token).append('"') else out.append(token)
         } else { out.append(ch); at++ }
     }
     return out.toString()

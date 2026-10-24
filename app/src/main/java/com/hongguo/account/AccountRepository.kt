@@ -13,6 +13,7 @@ import com.hongguo.account.protocol.CloudReservation
 import com.hongguo.account.protocol.PhoneLogin
 import com.hongguo.account.protocol.Series
 import com.hongguo.account.protocol.WebLogin
+import com.hongguo.account.protocol.validBusinessAccountId
 import com.hongguo.android.DramaCard
 import com.hongguo.android.LibraryCodec
 import com.hongguo.android.LibraryEntry
@@ -327,7 +328,7 @@ class AccountRepository internal constructor(
             }
             throw error
         }
-        if (!validAccountId(profile.id)) throw AccountProtocolException("未取得有效的红果账号身份，请重新验证",
+        if (!validBusinessAccountId(profile.id)) throw AccountProtocolException("未取得有效的红果账号身份，请重新验证",
             verificationStage = AccountVerificationStage.PROFILE)
         synchronized(lock) {
             if (generation != g) return
@@ -355,7 +356,7 @@ class AccountRepository internal constructor(
                 val profile = runInterruptible(io) { gateway.profile(credentials) }
                 synchronized(lock) {
                     if (generation != g) return@launch
-                    if (!validAccountId(profile.id) || profile.id != disk.profile?.id) throw AccountProtocolException("账号身份已变化", requiresLogin = true)
+                    if (!validBusinessAccountId(profile.id) || profile.id != disk.profile?.id) throw AccountProtocolException("账号身份已变化", requiresLogin = true)
                     if (!saveLocked(disk.copy(profile = profile))) return@launch
                     mutableState.value = mutableState.value.copy(sessionStatus = AccountSessionStatus.LOGGED_IN, profile = profile,
                         message = null, loginDiagnostic = null, localClearFailed = false)
@@ -462,7 +463,7 @@ class AccountRepository internal constructor(
         val credentials: AccountCredentials
         synchronized(lock) {
             if (expectedOwner == null || expectedOwner != ownerKey) { state { it.copy(message = "账号已变化，请重新确认收藏操作") }; return }
-            if (!validAccountId(card.id) || mutableState.value.favoriteBusyIds.isNotEmpty()) return
+            if (!validContentId(card.id) || mutableState.value.favoriteBusyIds.isNotEmpty()) return
             if (card.id in cacheLocked().favoriteAttempts) { state { it.copy(message = "此收藏操作结果待核对，请先读取云端状态") }; return }
             g = generation; credentials = disk.credentials ?: return
             favoriteRevision++
@@ -553,7 +554,7 @@ class AccountRepository internal constructor(
             var dispatch = false
             var expedite = force
             synchronized(lock) {
-                if (ownerKey != this@AccountRepository.ownerKey || !validAccountId(entry.card.id) || !validAccountId(entry.episodeId) || entry.episodeIndex < 1) return@launch
+                if (ownerKey != this@AccountRepository.ownerKey || !validContentId(entry.card.id) || !validContentId(entry.episodeId) || entry.episodeIndex < 1) return@launch
                 val cache = cacheLocked()
                 if (!cache.syncEnabled) return@launch
                 val seen = lastObserved[entry.card.id]

@@ -26,6 +26,34 @@ class AccountDiskCodecTest {
         assertFalse(source.toString().contains("fixture-private"))
     }
 
+    @Test fun opaqueBusinessIdentityAndCaseDistinctCachesRoundTripExactly() {
+        val uid = "00AbC_business-Id+/="
+        val other = "00abc_business-id+/="
+        val entry = LibraryEntry(DramaCard("7300000000000000001", "甲", "", 80, ""),
+            "7400000000000000001", 4, 9999, 1700000000000)
+        val source = AccountDisk(AccountCredentials("sessionid=opaque-fixture"), CloudProfile(uid, "测试"),
+            mapOf(uid to AccountCache(history = listOf(entry)), other to AccountCache()))
+        val decoded = AccountDiskCodec.decode(AccountDiskCodec.encode(source))
+        assertEquals(source, decoded)
+        assertEquals(uid, decoded.profile?.id)
+        assertEquals(setOf(uid, other), decoded.accounts.keys)
+        assertEquals(entry, decoded.accounts.getValue(uid).history.single())
+        assertTrue(decoded.accounts.getValue(other).history.isEmpty())
+    }
+
+    @Test fun opaqueAccountKeysDoNotRelaxNumericContentKeys() {
+        val uid = "AbC_business-Id"
+        val numeric = "7300000000000000001"
+        val cache = AccountCache(reservationOnlineIds = setOf(numeric, uid, "0"),
+            favoriteAttempts = mapOf(numeric to FavoriteAttempt(true, 1), uid to FavoriteAttempt(true, 2), "0" to FavoriteAttempt(false, 3)))
+        val source = AccountDisk(AccountCredentials("sessionid=opaque-fixture"), CloudProfile(uid, "测试"),
+            mapOf(uid to cache, "bad key" to AccountCache(), "null" to AccountCache()))
+        val decoded = AccountDiskCodec.decode(AccountDiskCodec.encode(source))
+        assertEquals(setOf(uid), decoded.accounts.keys)
+        assertEquals(setOf(numeric), decoded.accounts.getValue(uid).reservationOnlineIds)
+        assertEquals(setOf(numeric), decoded.accounts.getValue(uid).favoriteAttempts.keys)
+    }
+
     @Test fun partialCredentialProfileSnapshotIsRejected() {
         val result = runCatching { AccountDiskCodec.decode("{\"version\":1,\"profile\":{\"id\":\"7000000000000000001\"},\"accounts\":{}}") }
         assertTrue(result.isFailure)

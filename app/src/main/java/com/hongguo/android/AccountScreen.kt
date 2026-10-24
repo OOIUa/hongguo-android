@@ -252,7 +252,8 @@ internal fun AccountScreen(
                             Text(if (localResetRequired) "恢复本机账号登录" else "已保存的账号等待验证",
                                 color = Ink, fontWeight = FontWeight.Medium, fontSize = 15.sp)
                             state.profile?.let { profile ->
-                                Text("${profile.nickname.ifBlank { "红果用户" }} · 账号 ${profile.id}", color = Muted, fontSize = 12.sp)
+                                Text("${profile.nickname.ifBlank { "红果用户" }} · 账号 ${profile.id}", color = Muted, fontSize = 12.sp,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                             if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION) {
                                 Text("恢复网络后可重新验证；也可以退出已保存的账号后重新登录。", color = Muted,
@@ -323,7 +324,7 @@ private fun AccountProfileCard(state: AccountState, onLogout: () -> Unit) {
         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(profile.nickname.ifBlank { "红果用户" }, color = Ink, fontSize = 22.sp,
                 fontWeight = FontWeight.Bold, modifier = Modifier.testTag("account_profile"))
-            Text("账号 ${profile.id}", color = Muted, fontSize = 12.sp)
+            Text("账号 ${profile.id}", color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (state.lastSyncAt > 0) "上次读取 ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(state.lastSyncAt))}"
                     else "已确认账号，正在准备片单", color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))

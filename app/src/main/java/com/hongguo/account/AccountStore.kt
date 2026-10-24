@@ -7,6 +7,7 @@ import android.util.AtomicFile
 import com.hongguo.account.protocol.AccountCredentials
 import com.hongguo.account.protocol.AccountCredentialSource
 import com.hongguo.account.protocol.CloudProfile
+import com.hongguo.account.protocol.validBusinessAccountId
 import com.hongguo.android.LibraryCodec
 import com.hongguo.android.LibrarySnapshot
 import com.hongguo.api.util.Json
@@ -142,26 +143,26 @@ internal object AccountDiskCodec {
         val root = map(Json.parse(value))
         if (number(root["version"]) != 1L) throw IOException("账号数据版本不支持")
         val profileRaw = map(root["profile"])
-        val profile = (profileRaw["id"] as? String)?.takeIf(::validAccountId)?.let {
+        val profile = (profileRaw["id"] as? String)?.takeIf(::validBusinessAccountId)?.let {
             CloudProfile(it, (profileRaw["nickname"] as? String).orEmpty().take(256))
         }
         val credentials = (root["credentials"] as? String)?.let { AccountCredentials.fromJson(it) }
         if ((profile == null) != (credentials == null)) throw IOException("账号数据不完整")
         val websiteCredentials = decodeWebsiteCredentials(root["websiteCredentials"])
-        val accounts = map(root["accounts"]).filterKeys(::validAccountId).mapValues { (_, raw) ->
+        val accounts = map(root["accounts"]).filterKeys(::validBusinessAccountId).mapValues { (_, raw) ->
             val cache = map(raw)
             val library = LibraryCodec.decode(Json.stringify(cache["library"]))
             val reservations = LibraryCodec.decode(Json.stringify(cache["reservations"])).history
             AccountCache(
                 history = library.history, favorites = library.favorites, reservations = reservations,
-                reservationOnlineIds = list(cache["online"]).filterIsInstance<String>().filter(::validAccountId).toSet(),
+                reservationOnlineIds = list(cache["online"]).filterIsInstance<String>().filter(::validContentId).toSet(),
                 pending = map(cache["pending"]).entries.mapNotNull { (id, item) ->
                     val pending = map(item)
                     readEntry(pending["entry"])?.takeIf { it.card.id == id && it.episodeId.isNotBlank() }?.let {
                         id to PendingProgress(it, number(pending["duration"]), number(pending["revision"]))
                     }
                 }.take(200).toMap(),
-                favoriteAttempts = map(cache["attempts"]).filterKeys(::validAccountId).mapValues { (_, item) ->
+                favoriteAttempts = map(cache["attempts"]).filterKeys(::validContentId).mapValues { (_, item) ->
                     val attempt = map(item)
                     FavoriteAttempt(attempt["add"] == true, number(attempt["at"]))
                 },
@@ -172,4 +173,4 @@ internal object AccountDiskCodec {
     }
 }
 
-internal fun validAccountId(value: String): Boolean = value.matches(Regex("[0-9]{1,30}")) && value.any { it != '0' }
+internal fun validContentId(value: String): Boolean = value.matches(Regex("[0-9]{1,30}")) && value.any { it != '0' }

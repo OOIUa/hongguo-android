@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '区分“官网已登录”和“手机云账号已接通”，未接通时加密保留官网会话，可直接重试账号资料而无需重新收验证码。增加可复制的脱敏诊断信息，便于定位账号资料异常。高级导入区分官网与红果 App 登录态。官网会话与手机云账号的互通仍待验证，未确认身份时不会读取或写入云片单。覆盖升级保留本机记录。'
+        notes = '修复账号资料已经返回却被错误拒绝的问题：红果账号标识按原始字符串处理，兼容包含字母、符号或较长标识的账号；同步修正加密保存与重启恢复。已保存官网登录的用户可直接点“重试连接手机云账号”，无需重新登录。账号隔离、内容编号校验及原有本机记录继续保留。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

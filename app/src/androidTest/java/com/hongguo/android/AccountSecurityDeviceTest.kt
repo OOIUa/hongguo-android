@@ -46,7 +46,8 @@ class AccountSecurityDeviceTest {
         val store = AccountStore(isolated)
         val disk = AccountDisk(AccountCredentials("sessionid=synthetic-encryption-test", "123456789", "987654321",
             appDeviceCookie = "store-region=synthetic-device-cookie"),
-            CloudProfile("18446744073709551615", "加密验证账号"))
+            CloudProfile("Hg_Test:#opaque/+001=", "加密验证账号"),
+            accounts = mapOf("Hg_Test:#opaque/+001=" to com.hongguo.account.AccountCache()))
         try {
             store.save(disk)
             assertEquals(disk.credentials, store.load().credentials)

@@ -72,6 +72,7 @@ class AccountRepositoryTest {
         var applyFavorite = true
         val profileCredentials = mutableListOf<AccountCredentials>()
         var historyCalls = 0
+        var favoritesCalls = 0
         override fun prepareCredentials(credentials: AccountCredentials) = credentials.copy(deviceId = "7100000000000000001", installId = "7200000000000000001")
         override fun profile(credentials: AccountCredentials): CloudProfile {
             profileCredentials += credentials
@@ -79,6 +80,7 @@ class AccountRepositoryTest {
         }
         override fun history(credentials: AccountCredentials): List<CloudProgress> { historyCalls++; historyError?.let { throw it }; return historyValue }
         override fun favorites(credentials: AccountCredentials): List<CloudFavorite> {
+            favoritesCalls++
             favoritesError?.let { throw it }
             val snapshot = favoritesValue
             beforeFavoriteReadReturn?.invoke()
@@ -392,6 +394,76 @@ class AccountRepositoryTest {
         assertTrue(api.uploaded.isEmpty())
         assertTrue(repo.state.value.history.isEmpty())
         assertNotEquals(previousOwner, repo.ownerKey)
+    }
+
+    @Test fun opaqueBusinessIdentityRestoresExactAccountAndRejectsOpaqueContentBeforeRequests() = runTest {
+        val opaque = "00AbC_business-Id+/="
+        val other = "00abc_business-id+/="
+        val saved = AccountDisk(credentials, CloudProfile(opaque, "已验证账号"),
+            mapOf(opaque to AccountCache(history = listOf(entry)), other to AccountCache()))
+        val store = MemoryStore(AccountDiskCodec.decode(AccountDiskCodec.encode(saved)))
+        val api = Gateway().apply {
+            profileValue = CloudProfile(opaque, "已验证账号")
+            historyError = IOException("offline")
+        }
+        val repo = repository(store, api); runCurrent()
+        assertEquals(AccountSessionStatus.LOGGED_IN, repo.state.value.sessionStatus)
+        assertEquals(opaque, repo.state.value.profile?.id)
+        assertEquals(entry, repo.state.value.history.single())
+        assertNotNull(repo.ownerKey)
+        repo.setSyncEnabled(true)
+        val writes = store.writes
+        val reads = api.favoritesCalls
+        val owner = repo.ownerKey
+        repo.setFavorite(card.copy(id = opaque), true, owner)
+        repo.reportProgress(entry.copy(card = card.copy(id = opaque)), 60000, true, owner)
+        repo.reportProgress(entry.copy(episodeId = opaque), 60000, true, owner)
+        runCurrent()
+        assertEquals(reads, api.favoritesCalls)
+        assertEquals(0, api.setFavoriteCalls)
+        assertTrue(api.uploaded.isEmpty())
+        assertEquals(writes, store.writes)
+        assertTrue(store.value.accounts.getValue(opaque).pending.isEmpty())
+        assertTrue(store.value.accounts.getValue(other).history.isEmpty())
+    }
+
+    @Test fun opaqueLoginSurvivesCodecRestartAndSameIdentityReloginChangesOwnerGeneration() = runTest {
+        val opaque = "00AbC_business:Id+/="
+        val api = Gateway().apply { profileValue = CloudProfile(opaque, "已验证账号") }
+        val store = MemoryStore()
+        val repo = repository(store, api); runCurrent()
+        repo.completeWebLogin("sessionid=opaque-fixture"); runCurrent()
+        assertEquals(AccountSessionStatus.LOGGED_IN, repo.state.value.sessionStatus)
+        assertEquals(opaque, store.value.profile?.id)
+        val restartedStore = MemoryStore(AccountDiskCodec.decode(AccountDiskCodec.encode(store.value)))
+        val restarted = repository(restartedStore, api); runCurrent()
+        assertEquals(AccountSessionStatus.LOGGED_IN, restarted.state.value.sessionStatus)
+        assertEquals(opaque, restarted.state.value.profile?.id)
+        val previousOwner = restarted.ownerKey
+        restarted.completeWebLogin("sessionid=opaque-new-fixture"); runCurrent()
+        assertEquals(opaque, restarted.state.value.profile?.id)
+        assertNotEquals(previousOwner, restarted.ownerKey)
+        restarted.setSyncEnabled(true)
+        restarted.reportProgress(entry, 60000, true, previousOwner); runCurrent()
+        assertTrue(api.uploaded.isEmpty())
+        restarted.reportProgress(entry, 60000, true, restarted.ownerKey); runCurrent()
+        assertEquals(1, api.uploaded.size)
+    }
+
+    @Test fun opaqueIdentityCaseChangeOnRestoreCannotClaimTheStoredAccountsCache() = runTest {
+        val opaque = "00AbC_business-Id"
+        val changed = "00abc_business-id"
+        val saved = AccountDisk(credentials, CloudProfile(opaque, "原账号"),
+            mapOf(opaque to AccountCache(history = listOf(entry)), changed to AccountCache()))
+        val store = MemoryStore(AccountDiskCodec.decode(AccountDiskCodec.encode(saved)))
+        val api = Gateway().apply { profileValue = CloudProfile(changed, "其他账号") }
+        val repo = repository(store, api); runCurrent()
+        assertEquals(AccountSessionStatus.SIGNED_OUT, repo.state.value.sessionStatus)
+        assertNull(repo.ownerKey)
+        assertNull(store.value.credentials)
+        assertEquals(entry, store.value.accounts.getValue(opaque).history.single())
+        assertTrue(store.value.accounts.getValue(changed).history.isEmpty())
+        assertEquals(0, api.historyCalls)
     }
 
     @Test fun independentListFailurePreservesOnlyThatAccountsLastSuccessfulList() = runTest {
