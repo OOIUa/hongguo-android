@@ -8,7 +8,9 @@
 2. **其他设备协助：扫码登录。** APK 向官网获取二维码并轮询确认；支持过期、取消和手动刷新。显示二维码不会被视作账号已登录。
 3. **手机号验证码。** 使用官网明确的短信接口，每次发码及验码只提交一次。发送前持久保存重发等待时间，重启或网络超时不自动重发；遇到平台验证要求可转官网登录。
 4. **高级登录态导入。** 用户主动提供自己的 Cookie 后仍走设备注册和真实账号资料校验，非空 Cookie 不代表认证成功。
-5. 凭据必须通过 App 账号资料接口并取得有效用户 ID，完成本机加密保存后才显示登录成功。设备身份与会话一并保存并复用。没有写入 APK 资产或日志。
+5. 官网会话先按当前官网的 `has_login=true/1` 或有效公开身份字段验证，支持 `data`、`user_info`、`user` 及外层状态；不要求官网一定返回数字 UID，不把 `is_auth` 等无依据字段当作未登录。随后仍须通过 App 账号资料接口取得有效 `biz_user_id`，完成本机加密保存后才显示登录成功；设备 ID、安装 ID、昵称和 `code=0` 均不能替代真实账号身份。
+6. 官网 WebView、原生授权及后置资料请求使用一致的桌面 UA；资料请求携带官网 CSRF Cookie 对应请求头，支持默认令牌回退。官网 Cookie 与注册设备 Cookie 分开保存；只有域匹配、根路径、未过期的白名单设备 Cookie 可进入 App 请求，`install_id` 与保存的 `iid` 保持一致，设备 Cookie 不回填官网请求。
+7. 登录错误区分官网会话、设备初始化和 App 账号资料校验，显示本机生成的提示、HTTP 状态或数字错误码，不显示响应原文或凭据。官网错误 13 / 1003 明确视为会话失效，403、网络或不支持的结构不冒充已登录。
 
 Android Keystore AES-GCM 保护账号文件，AtomicFile 原子落盘；Android 备份保持禁用。重启后先验证已有登录态，网络错误保留本机凭据及片单并提示待验证，明确认证失效时停止同步。取消、退出及切换账号后，旧请求不得恢复会话或覆盖新账号资料。
 
@@ -36,6 +38,7 @@ Android Keystore AES-GCM 保护账号文件，AtomicFile 原子落盘；Android 
 - 独立实现持久队列、账号隔离、取消保护与写入回读。未复制缺少明确许可的 Go 账号实现或闭源桌面程序。
 - 官网网页登录只允许红果官网 HTTPS 顶层页面，无 JavaScript 原生桥接，不忽略 TLS 证书错误；平台验证仍由用户正常完成。
 - 官网将 `Macintosh` 且支持触屏的环境视为 iPad，会省略 PC 登录组件；因此网页登录使用 Windows 桌面 UA、1280 宽布局和官网公开的 `hongguo:pc-open-login` 界面事件。不修改触屏或平台 API，不自动发送短信或提交表单。
+- 0.6.1 会话兼容性修复依据 2026-10-25 的[官网账号组件](https://lf-fe.fqnovelstatic.com/obj/novel-fanqie-fe/growth/incentive-h5-monorepo/apps/hongguo/static/js/async/t.d1c39a18e1.js)及 [Passport SDK](https://lf-fe.fqnovelstatic.com/obj/novel-fanqie-fe/growth/incentive-h5-monorepo/apps/hongguo/static/js/async/32.385955e6dc.js)核对。SDK 提供 TicketGuard 能力不等于官网实际启用，未将其推断为本次失败原因。
 
 来源、固定提交与依赖许可详见 `THIRD_PARTY_NOTICES.md`。
 

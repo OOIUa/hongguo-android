@@ -55,10 +55,12 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
         (mapOf("aid" to "513755", "passport_jssdk_version" to "3.4.10", "passport_jssdk_type" to "normal",
             "account_sdk_source" to "web", "is_from_ttaccountsdk" to "1", "language" to "zh") + params)
             .forEach { (key, value) -> url.addQueryParameter(key, value) }
-        val request = Request.Builder().url(url.build()).header("User-Agent", UA).header("Referer", base.toString())
+        val target = url.build()
+        val request = Request.Builder().url(target).header("User-Agent", USER_AGENT).header("Referer", base.toString())
             .header("Origin", base.toString().trimEnd('/')).header("Accept", "application/json, text/javascript")
-        cookies.firstOrNull { it.name == "passport_csrf_token" && it.matches(url.build()) }
-            ?.let { request.header("x-tt-passport-csrf-token", it.value) }
+        passportCsrfToken(cookies.filter { it.matches(target) && it.expiresAt > System.currentTimeMillis() }
+            .joinToString("; ") { "${it.name}=${it.value}" })
+            ?.let { request.header("x-tt-passport-csrf-token", it) }
         if (data != null) request.post(FormBody.Builder().apply { data.forEach { (key, value) -> add(key, value) } }.build().oneShot())
         val result = execute(request.build())
         if (result.second != null) throw AccountProtocolException("登录接口返回了意外跳转")
@@ -71,7 +73,7 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
             val code = data.optInt("error_code", -1)
             val message = if (data.has("verify_center_decision_conf")) "红果要求完成滑块验证，请改用扫码登录"
                 else when (code) {
-                    1003 -> "登录会话已失效，请重新扫码或重新获取验证码"
+                    13, 1003 -> "登录会话已失效，请重新扫码或重新获取验证码"
                     1102 -> "验证码有误，请重新获取后再试"
                     1103, 1104 -> "验证码已失效，请重新获取后再试"
                     1105 -> "红果要求额外验证，请改用扫码登录"
@@ -111,7 +113,7 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
         var url = base.resolve(value) ?: throw AccountProtocolException("登录确认地址无效")
         repeat(5) {
             if (!sameOrigin(url)) throw AccountProtocolException("登录确认跳转到不支持的站点")
-            val result = execute(Request.Builder().url(url).header("User-Agent", UA).header("Referer", base.toString()).build())
+            val result = execute(Request.Builder().url(url).header("User-Agent", USER_AGENT).header("Referer", base.toString()).build())
             val next = result.second ?: return
             url = next
         }
@@ -143,14 +145,18 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
 
     private fun hasSession() = cookies.any { it.name in setOf("sessionid", "sessionid_ss") && it.matches(base) && it.expiresAt > System.currentTimeMillis() }
     fun credentials(): AccountCredentials {
-        check(hasSession()) { "官网尚未下发登录态，请先在手机确认登录" }
-        websiteAccountId(checked(call("/passport/account/info/v2/")))
+        verifyAccountStage(AccountVerificationStage.WEBSITE) {
+            if (!hasSession()) throw AccountProtocolException("官网尚未下发登录态，请先在手机确认登录")
+            val reply = call("/passport/account/info/v2/")
+            if (reply.str("message") != "success") checked(reply)
+            validateWebsiteSession(reply)
+        }
         return AccountCredentials(cookies.filter { it.matches(base) && it.expiresAt > System.currentTimeMillis() }.joinToString("; ") { "${it.name}=${it.value}" })
     }
 
     companion object {
         const val BASE = "https://hongguoduanju.com"
-        private const val UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+        const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
         internal fun mix(value: String) = value.toByteArray(Charsets.UTF_8).joinToString("") { ((it.toInt() and 255) xor 5).toString(16) }
     }
 }

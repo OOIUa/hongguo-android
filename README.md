@@ -14,16 +14,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.6.0**（versionCode 7）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.6.1**（versionCode 8）· Android **8.0 / API 26** 及以上。
 
-本版新增个人红果账号、账户片单和可选进度上报。账号功能仍处于测试阶段，登录与同步结果需用本人账号核对；接入方式与使用范围见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
+本版修复个人账号登录后返回应用的验证兼容问题，补齐 CSRF 与设备会话，并增加具体失败环节提示。账号功能仍处于测试阶段，登录与同步结果需用本人账号核对；接入方式与使用范围见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.6.0 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/hongguo-android-0.6.0.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/hongguo-android-0.6.0.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/hongguo-android-0.6.0.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.6.0 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/hongguo-android-0.6.0-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.0/SHA256SUMS-0.6.0.txt) |
+| GitHub 直连 | [下载 v0.6.1 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/hongguo-android-0.6.1.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/hongguo-android-0.6.1.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/hongguo-android-0.6.1.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.6.1 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/hongguo-android-0.6.1-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.6.1/SHA256SUMS-0.6.1.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 

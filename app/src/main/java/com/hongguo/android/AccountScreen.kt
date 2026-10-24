@@ -384,7 +384,7 @@ private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
             if (advancedOpen) {
                 Text("仅在本机校验你本人的账号。", color = Muted, fontSize = 12.sp)
                 OutlinedTextField(value = importedCookie, onValueChange = { value ->
-                    if (value.length <= 32768) importedCookie = value
+                    if (value.length <= 65536) importedCookie = value
                 }, label = { Text("官网 Cookie") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),

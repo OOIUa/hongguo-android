@@ -1,3 +1,15 @@
+# 0.6.1 登录验证兼容修复
+
+验证日期：2026-10-25（Asia/Shanghai）。versionName 0.6.1、versionCode 8，包名及最低系统要求保持不变。
+
+- 本次依据用户反馈定位到三种登录共同的后置校验。官网当前允许 `has_login=true/1` 而不返回数字 UID，也支持外层状态及 `data.user`；原实现强制数字官网 UID 并判断未有官方语义依据的标志，会拒绝官网支持的响应。已修正，并继续要求 App 返回有效业务身份。
+- 对照官网当前账号组件与 Passport SDK 核对实际路径、状态解析和 CSRF 默认令牌回退；资料请求与网页登录使用同一桌面 UA。注册设备 Cookie 按原域、根路径与白名单筛选，单独加密保存，仅用于 App 请求，`install_id` 与已保存 `iid` 一致。旧加密凭据格式保持兼容。
+- 构建、协议与状态回归、Lint 已通过。定向覆盖无公开 UID、外层/嵌套响应、匿名与异常信号、真实业务 ID 约束、CSRF、Cookie 作用域、设备身份复用、失败阶段及原始异常脱敏。
+- Android 16 模拟器验证跨进程一次性登录回执、官网来源限制、包含新增设备 Cookie 的真实 Keystore 加密读写与篡改拒绝、登录入口及原有本机片单、设置和播放操作；匿名二维码和设备注册探测通过，未发送短信或操作个人账号。
+- 以已发布的 0.6.0 APK 覆盖安装本次构建，升级前后 `installation.xml`、`hongguo_local.xml`、`hongguo_library.xml` 完全一致，未卸载或清除用户数据。
+- 具体证据位于上级 `qa/build-061-final.log`、`device-061-final.log`、`upgrade-060-to-061-before.txt`、`upgrade-060-to-061-after.txt` 与 `account-auth-official-evidence-20261025.md`；对应 JVM XML 与 Lint 报告位于本地构建目录。
+- 这些结果证明已修复的契约差异及回归范围；没有取得用户真实登录成功响应，不能据此确认此次手机登录已恢复。需本人升级后重新登录并核对身份与片单；如仍失败，新提示会区分官网会话、设备初始化及 App 资料校验。
+
 # 0.6.0 个人账号本地测试版
 
 验证日期：2026-10-24（Asia/Shanghai）。源码与本地 APK 为 versionName 0.6.0、versionCode 7，包名 `com.hongguo.android`，minSdk 26。GitHub 已发布版本和更新清单仍是 0.5.1。

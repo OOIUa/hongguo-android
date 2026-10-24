@@ -2,6 +2,7 @@ package com.hongguo.account
 
 import com.hongguo.account.protocol.AccountCredentials
 import com.hongguo.account.protocol.AccountProtocolException
+import com.hongguo.account.protocol.AccountVerificationStage
 import com.hongguo.account.protocol.CloudFavorite
 import com.hongguo.account.protocol.CloudProfile
 import com.hongguo.account.protocol.CloudProgress
@@ -96,8 +97,9 @@ class AccountRepositoryTest {
         var polls = 0
         var sendError: Exception? = null
         var qrExpiry = 3
+        var confirmed = false
         override fun qr() = WebLogin.Qr(byteArrayOf(1, 2, 3), qrExpiry)
-        override fun poll(): Boolean { polls++; return false }
+        override fun poll(): Boolean { polls++; return confirmed }
         override fun credentials() = AccountCredentials("sessionid=fixture")
         override fun send(number: String): PhoneLogin.Sent { sends++; sendError?.let { throw it }; return PhoneLogin.Sent("138****0000", 60) }
         override fun verify(code: String): AccountCredentials { verifies++; return credentials() }
@@ -221,6 +223,40 @@ class AccountRepositoryTest {
         assertEquals(AccountSessionStatus.SIGNED_OUT, repo.state.value.sessionStatus)
         assertNull(repo.ownerKey)
         assertNotNull(repo.state.value.message)
+    }
+
+    @Test fun postLoginFailureShowsSafeStageAndNeverPersistsUnverifiedIdentity() = runTest {
+        val store = MemoryStore()
+        val api = Gateway().apply {
+            profileError = AccountProtocolException("官网登录会话已失效（错误码 13）", 13, true,
+                AccountVerificationStage.WEBSITE)
+        }
+        val repo = repository(store, api); runCurrent()
+        repo.completeWebLogin("sessionid=private-browser-session"); runCurrent()
+        assertEquals(AccountSessionStatus.SIGNED_OUT, repo.state.value.sessionStatus)
+        assertNull(store.value.credentials)
+        assertNull(repo.ownerKey)
+        assertTrue(repo.state.value.message.orEmpty().contains("官网登录验证"))
+        assertTrue(repo.state.value.message.orEmpty().contains("13"))
+        assertFalse(repo.state.value.message.orEmpty().contains("private-browser-session"))
+        api.profileError = IOException("https://provider.invalid?sessionid=private-browser-session")
+        repo.completeWebLogin("sessionid=private-browser-session"); runCurrent()
+        assertFalse(repo.state.value.message.orEmpty().contains("provider.invalid"))
+        assertFalse(repo.state.value.message.orEmpty().contains("private-browser-session"))
+    }
+
+    @Test fun smsAndQrUseTheSameSafePostLoginFailureDetails() = runTest {
+        val login = Login().apply { confirmed = true }
+        val api = Gateway().apply {
+            profileError = AccountProtocolException("未返回有效账号身份", verificationStage = AccountVerificationStage.PROFILE)
+        }
+        val repo = repository(MemoryStore(), api, login); runCurrent()
+        repo.sendSms("13800138000"); runCurrent()
+        repo.verifySms("123456"); runCurrent()
+        assertTrue(repo.state.value.message.orEmpty().contains("红果账号资料验证"))
+        repo.startQrLogin(); runCurrent(); advanceTimeBy(2_001); runCurrent()
+        assertTrue(repo.state.value.message.orEmpty().contains("红果账号资料验证"))
+        assertNull(repo.ownerKey)
     }
 
     @Test fun lateDiskLoadCannotResurrectAUserLoggedOutSession() = runTest {

@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '新增红果个人账号：支持官网登录、扫码与手机号验证码入口，登录后查看账号收藏、观看历史和预约。新增账号收藏操作与可选观看进度同步，默认不上传本机旧记录。入口：我的 → 红果账号与云片单。账号功能处于体验阶段，遇到平台验证可切换官网登录。覆盖升级保留本机收藏和历史。'
+        notes = '修复官网登录完成后返回应用被误判验证失败的问题，兼容官网不同登录状态返回格式。补齐账号校验请求与设备会话信息，统一官网登录、扫码和手机号登录的验证提示。若仍无法登录，将显示具体失败环节与错误码，便于定位。覆盖升级保留本机收藏和历史。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

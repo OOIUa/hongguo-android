@@ -44,7 +44,8 @@ class AccountSecurityDeviceTest {
             override fun getNoBackupFilesDir() = directory
         }
         val store = AccountStore(isolated)
-        val disk = AccountDisk(AccountCredentials("sessionid=synthetic-encryption-test", "123456789", "987654321"),
+        val disk = AccountDisk(AccountCredentials("sessionid=synthetic-encryption-test", "123456789", "987654321",
+            appDeviceCookie = "store-region=synthetic-device-cookie"),
             CloudProfile("18446744073709551615", "加密验证账号"))
         try {
             store.save(disk)
@@ -52,6 +53,7 @@ class AccountSecurityDeviceTest {
             assertEquals(disk.profile, store.load().profile)
             val encrypted = File(directory, "hongguo-account.enc")
             assertFalse(String(encrypted.readBytes(), Charsets.ISO_8859_1).contains("synthetic-encryption-test"))
+            assertFalse(String(encrypted.readBytes(), Charsets.ISO_8859_1).contains("synthetic-device-cookie"))
             val corrupted = encrypted.readBytes().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
             encrypted.writeBytes(corrupted)
             try { store.load(); fail("Authenticated encryption must reject modified ciphertext") }

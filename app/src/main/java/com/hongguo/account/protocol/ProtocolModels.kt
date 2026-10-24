@@ -17,7 +17,8 @@ data class Series(val id: String, val title: String, val cover: String = "", val
 data class RelatedWork(val series: Series, val season: String, val upcoming: Boolean)
 
 /** Contains only safe, locally generated messages; no raw provider response or signed URL. */
-class AccountProtocolException(message: String, val errorCode: Int? = null, val requiresLogin: Boolean = false) : IOException(message)
+class AccountProtocolException(message: String, val errorCode: Int? = null, val requiresLogin: Boolean = false,
+    val verificationStage: AccountVerificationStage? = null) : IOException(message)
 
 internal fun validIdentifier(value: String): Boolean = value.matches(Regex("[0-9]{1,30}")) && value.any { it != '0' }
 internal fun JSONArray.objects() = (0 until length()).mapNotNull { optJSONObject(it) }
@@ -64,10 +65,40 @@ internal fun checkCookie(value: String) {
     }) { "缺少有效登录态，请重新登录" }
 }
 
-internal fun websiteAccountId(data: JSONObject): String {
-    val candidates = listOfNotNull(data, data.optJSONObject("user_info"))
-    if (candidates.any { row -> listOf("is_auth", "is_login", "is_logged_in").any { row.has(it) && !row.isNull(it) && !row.optBoolean(it, true) } })
-        throw AccountProtocolException("官网登录态已失效，请重新登录", requiresLogin = true)
-    return candidates.asSequence().flatMap { row -> sequenceOf("user_id", "user_id_str", "uid", "uid_str").map(row::str) }
-        .firstOrNull(::validIdentifier) ?: throw AccountProtocolException("官网登录资料未能确认账号身份，请重新验证")
+/** The official checkLogin UI accepts has_login=true/1 without exposing a public user ID, and
+ * uses an envelope-level has_login when data does not expose that flag. Website session proof
+ * is separate from the App's required business identity. is_auth/is_login/is_logged_in do not
+ * participate in this response contract. We conservatively reject an explicit anonymous flag
+ * even with a stale ID or conflicting nested positive flag; that rejection is stricter than
+ * the official UI's positive-ID fallback.
+ */
+internal fun validateWebsiteSession(replyOrData: JSONObject) {
+    val data = replyOrData.optJSONObject("data") ?: replyOrData
+    val candidates = listOfNotNull(data, data.optJSONObject("user_info"), data.optJSONObject("user"))
+    // Presence matters: an explicit malformed data flag must not be rescued by the envelope.
+    val flagCandidates = if (data !== replyOrData && !data.has("has_login") && replyOrData.has("has_login"))
+        candidates + replyOrData else candidates
+    var loggedIn = false
+    var anonymous = false
+    var malformed = false
+    flagCandidates.forEach { row ->
+        if (row.has("has_login")) {
+            val signal = when (val value = row.opt("has_login")) {
+                is Boolean -> value
+                is Number -> when (value.toDouble()) { 0.0 -> false; 1.0 -> true; else -> null }
+                else -> null
+            }
+            when (signal) {
+                false -> anonymous = true
+                true -> loggedIn = true
+                null -> malformed = true
+            }
+        }
+    }
+    if (anonymous) throw AccountProtocolException("官网登录态已失效，请重新登录", requiresLogin = true)
+    if (malformed) throw AccountProtocolException("官网登录资料未能确认登录状态，请重新验证")
+    if (loggedIn || candidates.any { row ->
+            sequenceOf("user_id", "user_id_str", "uid", "uid_str").map(row::str).any(::validIdentifier)
+        }) return
+    throw AccountProtocolException("官网登录资料未能确认登录状态，请重新验证")
 }

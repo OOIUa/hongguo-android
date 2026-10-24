@@ -153,7 +153,7 @@ class OfficialLoginActivity : ComponentActivity() {
             cacheMode = WebSettings.LOAD_NO_CACHE
             saveFormData = false
             safeBrowsingEnabled = true
-            userAgentString = DESKTOP_USER_AGENT
+            userAgentString = com.hongguo.account.protocol.WebLogin.USER_AGENT
             useWideViewPort = true
             loadWithOverviewMode = true
             setSupportZoom(true)
@@ -370,10 +370,9 @@ class OfficialLoginActivity : ComponentActivity() {
         private const val RESULT_SESSION = "com.hongguo.android.OFFICIAL_LOGIN_SESSION"
         private const val HANDOFF_INTERFACE = "com.hongguo.android.OfficialLoginHandoff"
         private const val OFFICIAL_ORIGIN = "https://hongguoduanju.com/"
-        private const val MAX_COOKIE_CHARS = 32768
+        private const val MAX_COOKIE_CHARS = 65536
         // The official responsive hook treats Macintosh + touch points as iPad. A Windows desktop
         // UA keeps Android touch input usable while selecting the site's actual desktop login UI.
-        private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
         // Observed in the official t.d1c39a18e1.js PC account component on 2026-10-24.
         private const val OPEN_LOGIN_DIALOG_SCRIPT = "window.dispatchEvent(new CustomEvent('hongguo:pc-open-login',{detail:{}}));"
         // Fixed presentation-only script: no account DOM, form, cookie, or native bridge access.

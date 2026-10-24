@@ -29,7 +29,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import okhttp3.OkHttpClient
-import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
@@ -211,7 +210,8 @@ class AccountRepository internal constructor(
                 }
                 if (current(g)) state { it.copy(qrBytes = null, qrRemainingSeconds = 0, message = "二维码已过期，请手动重新获取") }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { if (current(g)) state { it.copy(busy = false, qrBytes = null, message = "扫码登录未完成，可重试或在官网完成验证") } }
+            catch (error: Exception) { if (current(g)) state { it.copy(busy = false, qrBytes = null,
+                message = loginFailureMessage(error, "扫码登录未完成，可重试或在官网完成验证")) } }
         }
     }
 
@@ -242,7 +242,8 @@ class AccountRepository internal constructor(
                         phoneMasked = sent.maskedMobile, message = "验证码已发送，请在本机输入；不会自动重发")
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { if (current(g)) state { it.copy(busy = false, message = "验证码发送未获确认，请等待后手动重试，或在官网完成验证") } }
+            catch (error: Exception) { if (current(g)) state { it.copy(busy = false,
+                message = loginFailureMessage(error, "验证码发送未获确认，请等待后手动重试，或在官网完成验证")) } }
         }
     }
 
@@ -258,8 +259,9 @@ class AccountRepository internal constructor(
         loginJob = scope.launch(io) {
             try { finishLogin(pair.first, runInterruptible(io) { pair.second.verify(value) }) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) {
-                if (current(pair.first)) state { it.copy(busy = false, message = "本次验证码验证未完成，请在官网完成验证，或等待后手动获取新验证码") }
+            catch (error: Exception) {
+                if (current(pair.first)) state { it.copy(busy = false,
+                    message = loginFailureMessage(error, "本次验证码验证未完成，请在官网完成验证，或等待后手动获取新验证码")) }
             }
         }
     }
@@ -277,7 +279,8 @@ class AccountRepository internal constructor(
         loginJob = scope.launch(io) {
             try { finishLogin(g, AccountCredentials(clean)) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { if (current(g)) state { it.copy(busy = false, message = "登录态未通过红果账号验证，请重新登录或检查网络") } }
+            catch (error: Exception) { if (current(g)) state { it.copy(busy = false,
+                message = loginFailureMessage(error, "账号验证请求未完成，请检查网络后重试")) } }
         }
     }
 
@@ -286,7 +289,8 @@ class AccountRepository internal constructor(
         val credentials = runInterruptible(io) { gateway.prepareCredentials(web) }
         if (!current(g)) return
         val profile = runInterruptible(io) { gateway.profile(credentials) }
-        if (!validAccountId(profile.id)) throw IOException("账号身份无效")
+        if (!validAccountId(profile.id)) throw AccountProtocolException("未取得有效的红果账号身份，请重新验证",
+            verificationStage = com.hongguo.account.protocol.AccountVerificationStage.PROFILE)
         synchronized(lock) {
             if (generation != g) return
             if (!saveLocked(disk.copy(credentials = credentials, profile = profile))) {
@@ -323,7 +327,7 @@ class AccountRepository internal constructor(
                 if (!current(g)) return@launch
                 if (requiresLogin(error)) invalidate(g)
                 else state { it.copy(sessionStatus = AccountSessionStatus.NEEDS_VERIFICATION, busy = false,
-                    message = "网络验证未完成，已保留本机登录态与片单；恢复网络后点击重试") }
+                    message = loginFailureMessage(error, "账号验证未完成") + "；已保留本机登录态与片单，可点击重新验证") }
             }
         }
     }
@@ -668,6 +672,14 @@ class AccountRepository internal constructor(
     }
 
     private fun requiresLogin(error: Exception) = error is AccountProtocolException && error.requiresLogin
+
+    private fun loginFailureMessage(error: Exception, fallback: String): String = when (error) {
+        // Only these two types contain locally generated, credential-free messages.
+        is AccountProtocolException -> error.verificationStage?.let { "${it.label}：" }.orEmpty() +
+            (error.message ?: fallback)
+        is PhoneLogin.Failure -> error.message ?: fallback
+        else -> fallback
+    }
 
     internal companion object {
         fun card(series: Series, count: Int = 0) = DramaCard(series.id, series.title, series.cover,

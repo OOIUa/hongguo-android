@@ -9,23 +9,67 @@ import okhttp3.Request
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl
+import okhttp3.Cookie
+import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.IOException
 
 data class AccountCredentials(val cookie: String, val deviceId: String = "", val installId: String = "",
-    val device: Map<String,String> = emptyMap()) {
-    fun toJson() = JSONObject().put("cookie",cookie).put("deviceId",deviceId).put("installId",installId).put("device",JSONObject(device)).toString()
+    val device: Map<String,String> = emptyMap(), val appDeviceCookie: String = "") {
+    fun toJson() = JSONObject().put("cookie",cookie).put("deviceId",deviceId).put("installId",installId)
+        .put("device",JSONObject(device)).put("appDeviceCookie", normalizeAppDeviceCookie(appDeviceCookie)).toString()
     override fun toString() = "AccountCredentials([redacted])"
     companion object {
         fun fromJson(value: String): AccountCredentials {
             require(value.length <= 131072) { "账号凭据过大" }
             val json=parseObject(value); val device=json.optJSONObject("device") ?: JSONObject()
             return AccountCredentials(json.str("cookie"),json.str("deviceId"),json.str("installId"),
-                device.keys().asSequence().associateWith { device.str(it) }).also { checkCookie(it.cookie) }
+                device.keys().asSequence().associateWith { device.str(it) }, normalizeAppDeviceCookie(json.str("appDeviceCookie")))
+                .also { checkCookie(it.cookie) }
         }
     }
+}
+
+private val APP_DEVICE_COOKIE_NAMES = listOf("install_id", "ttreq", "store-region", "store-region-src")
+
+/** Website cookies and app registration cookies have independent owners and persistence fields. */
+internal fun normalizeAppDeviceCookie(value: String): String {
+    require(value.length <= 16384 && value.none { it.code < 32 || it.code == 127 }) { "账号设备凭据格式无效" }
+    val pairs = linkedMapOf<String, String>()
+    value.split(';').forEach { part ->
+        val name = part.substringBefore('=').trim()
+        val token = part.substringAfter('=', "").trim()
+        if (name in APP_DEVICE_COOKIE_NAMES && token.isNotEmpty()) pairs[name] = token
+    }
+    return APP_DEVICE_COOKIE_NAMES.mapNotNull { name -> pairs[name]?.let { "$name=$it" } }.joinToString("; ")
+}
+
+/** Flatten only root-path cookies that can be reused across every app account endpoint. */
+internal fun registeredAppDeviceCookies(registrationUrl: HttpUrl, apiUrl: HttpUrl, headers: Headers): String {
+    val target = apiUrl.resolve("/reading/user/info/v1/") ?: return ""
+    return normalizeAppDeviceCookie(Cookie.parseAll(registrationUrl, headers).filter {
+        it.name in APP_DEVICE_COOKIE_NAMES && it.path == "/" && it.matches(target) && it.expiresAt > System.currentTimeMillis()
+    }.joinToString("; ") { "${it.name}=${it.value}" })
+}
+
+/** Keep the original session; registered device values replace stale names on app requests only. */
+internal fun appRequestCookie(credentials: AccountCredentials): String {
+    checkCookie(credentials.cookie)
+    val pairs = linkedMapOf<String, String>()
+    credentials.cookie.split(';').forEach { part ->
+        val name = part.substringBefore('=').trim()
+        val token = part.substringAfter('=', "").trim()
+        if (name.isNotEmpty() && token.isNotEmpty()) pairs.putIfAbsent(name, token)
+    }
+    normalizeAppDeviceCookie(credentials.appDeviceCookie).split(';').forEach { part ->
+        val name = part.substringBefore('=').trim()
+        if (name in APP_DEVICE_COOKIE_NAMES) pairs[name] = part.substringAfter('=', "").trim()
+    }
+    // Old encrypted snapshots did not keep registration cookies. Their stable iid is authoritative.
+    if (validIdentifier(credentials.installId)) pairs["install_id"] = credentials.installId
+    return pairs.entries.joinToString("; ") { "${it.key}=${it.value}" }
 }
 internal object AccountCredentialsParser {
     fun parseHeader(value: String) = AccountCredentials(value)
@@ -49,11 +93,12 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
     fun cancelAll() = transport.cancelAll()
 
     /** Reuse a persisted registered identity; never rotate an authenticated account's device. */
-    fun prepareCredentials(web: AccountCredentials): AccountCredentials {
+    fun prepareCredentials(web: AccountCredentials): AccountCredentials = verifyAccountStage(AccountVerificationStage.DEVICE) {
         checkCookie(web.cookie)
-        if (validIdentifier(web.deviceId) && validIdentifier(web.installId)) return web
+        if (validIdentifier(web.deviceId) && validIdentifier(web.installId)) return@verifyAccountStage web
         val registered = registerDevice() ?: throw AccountProtocolException("账号设备初始化失败，请稍后重试")
-        return web.copy(deviceId = registered.deviceId, installId = registered.installId, device = registered.device)
+        web.copy(deviceId = registered.deviceId, installId = registered.installId, device = registered.device,
+            appDeviceCookie = normalizeAppDeviceCookie(registered.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }))
     }
     fun registerDevice(): DeviceRegister.Registered? {
         val body=DeviceRegister.payload(registrationDevice)
@@ -61,7 +106,12 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
         DeviceRegister.headers(body,registrationDevice).forEach { (k,v) -> request.header(k,v) }
         request.post(body.toRequestBody("application/octet-stream".toMediaType()).oneShot())
         return transport.execute(request.build()) {
-            DeviceRegister.parse(cloudResponse(it),it.headers("Set-Cookie"))?.copy(device = registrationDevice)
+            val appCookies = registeredAppDeviceCookies(registrationUrl, apiBase, it.headers)
+            val cookieMap = appCookies.split(';').mapNotNull { part ->
+                val name = part.substringBefore('=').trim()
+                if (name in APP_DEVICE_COOKIE_NAMES) name to part.substringAfter('=', "").trim() else null
+            }.toMap()
+            DeviceRegister.parse(cloudResponse(it), emptyList())?.copy(device = registrationDevice, cookies = cookieMap)
         }
     }
     private fun json(credentials: AccountCredentials,path: String,params: Map<String,String> = emptyMap(),body: ByteArray? = null,gzip: Boolean=false): JSONObject {
@@ -77,7 +127,7 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
             java.util.zip.GZIPOutputStream(this).use { it.write(body) }
         }.toByteArray() else body
         val signed=Signer(device=device).sign(apiBase.resolve(path)!!.toString(),device+params,wireBody)
-        val request=Request.Builder().url(signed.url).header("Cookie",credentials.cookie)
+        val request=Request.Builder().url(signed.url).header("Cookie",appRequestCookie(credentials))
         signed.headers.forEach { (k,v)->request.header(k,v) }
         if(wireBody!=null) request.post(wireBody.toRequestBody("application/json; charset=utf-8".toMediaType()).oneShot())
         if(gzip) request.header("Content-Encoding","gzip")
@@ -88,32 +138,39 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
             json
         }
     }
-    private fun validateWebsite(credentials: AccountCredentials): String {
+    private fun validateWebsite(credentials: AccountCredentials) = verifyAccountStage(AccountVerificationStage.WEBSITE) {
         checkCookie(credentials.cookie)
         val url = websiteBase.resolve("/passport/account/info/v2/")!!.newBuilder()
             .addQueryParameter("aid", "513755").addQueryParameter("passport_jssdk_version", "3.4.10")
             .addQueryParameter("passport_jssdk_type", "normal").addQueryParameter("account_sdk_source", "web")
             .addQueryParameter("is_from_ttaccountsdk", "1").addQueryParameter("language", "zh").build()
         val request = Request.Builder().url(url).header("Cookie", credentials.cookie)
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/141.0.0.0 Safari/537.36")
-            .header("Referer", websiteBase.toString()).header("Origin", websiteBase.toString().trimEnd('/')).build()
-        return transport.execute(request) { response ->
+            .header("User-Agent", WebLogin.USER_AGENT)
+            .header("Referer", websiteBase.toString()).header("Origin", websiteBase.toString().trimEnd('/'))
+            .header("Accept", "application/json, text/javascript")
+        passportCsrfToken(credentials.cookie)?.let { request.header("x-tt-passport-csrf-token", it) }
+        transport.execute(request.build()) { response ->
             val reply = parseObject(cloudResponse(response))
-            val data = reply.optJSONObject("data") ?: throw AccountProtocolException("官网登录资料返回格式异常，请重新验证")
             if (reply.str("message") != "success") {
+                val data = reply.optJSONObject("data") ?: reply
                 val code = data.optInt("error_code", -1)
-                throw AccountProtocolException("官网登录态未通过验证（错误码 $code）", code, code == 1003)
+                val expired = code in setOf(13, 1003)
+                throw AccountProtocolException(if (expired) "官网登录会话已失效，请重新登录（错误码 $code）"
+                    else "官网登录态未通过验证（错误码 $code）", code, expired)
             }
-            websiteAccountId(data)
+            validateWebsiteSession(reply)
         }
     }
     fun profile(credentials: AccountCredentials): CloudProfile {
         validateWebsite(credentials)
-        val data=json(credentials,"/reading/user/info/v1/").optJSONObject("data") ?: throw IOException("账号资料为空")
-        val id=data.str("biz_user_id")
-        if(!validIdentifier(id) || id == credentials.deviceId || id == credentials.installId)
-            throw AccountProtocolException("账号资料未能确认真实身份，请重新验证")
-        return CloudProfile(id,data.str("user_name").ifBlank { "红果用户" })
+        return verifyAccountStage(AccountVerificationStage.PROFILE) {
+            val data=json(credentials,"/reading/user/info/v1/").optJSONObject("data")
+                ?: throw AccountProtocolException("官网登录已确认，但红果未返回账号资料，请稍后重试")
+            val id=data.str("biz_user_id")
+            if(!validIdentifier(id) || id == credentials.deviceId || id == credentials.installId)
+                throw AccountProtocolException("官网登录已确认，但红果未返回有效账号身份，请重新验证")
+            CloudProfile(id,data.str("user_name").ifBlank { "红果用户" })
+        }
     }
     fun history(credentials: AccountCredentials): List<CloudProgress> {
         val data=json(credentials,"/reading/bookapi/read_progress/list/v1/",mapOf("book_types" to "2","limit" to "50"))
