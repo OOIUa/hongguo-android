@@ -14,16 +14,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.1**（versionCode 12）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.2**（versionCode 13）· Android **8.0 / API 26** 及以上。
 
-本版采用轻薄贴底导航，统一线框图标与选中短线；修复播放器顶部信息与状态栏、刘海区域重叠，新增播放中长按左半屏临时2倍速，并修复启动检查被24小时限制阻断的问题。原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
+本版修复 2026-10-27 起出现的播放失败（“预热失败 / App 接口未返回播放数据”）：首次播放时向平台注册一个仅保存在内存中的匿名播放设备，播放取链改为无签名请求并兼容新版内联片源。原有界面、播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.1 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.1/hongguo-android-0.7.1.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.1/hongguo-android-0.7.1.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.1/hongguo-android-0.7.1.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.1 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.1/hongguo-android-0.7.1-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.1/SHA256SUMS-0.7.1.txt) |
+| GitHub 直连 | [下载 v0.7.2 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/hongguo-android-0.7.2.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/hongguo-android-0.7.2.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/hongguo-android-0.7.2.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.2 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/hongguo-android-0.7.2-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/SHA256SUMS-0.7.2.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -175,6 +175,10 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 **能离线保存剧集或同步收藏吗？**
 
 缓存仅用于播放加速，不提供永久离线保存。登录个人账号后可读取云端片单，并主动开启本次观看进度上报。本机旧记录不会自动上传，历史与预约按固定批次读取。卸载或清除应用数据会删除本机记录。
+
+**播放提示“匿名播放设备注册失败”或“空响应”？**
+
+0.7.2 起，首次播放会向平台注册一个匿名播放设备，身份只保存在内存里，与个人账号无关，重启应用后重新注册。注册失败多为网络问题，约 30 秒后再次播放会自动重试。0.7.1 及更早版本无法通过新的上游校验，请更新到 0.7.2 或以上。
 
 **更新下载失败怎么办？**
 

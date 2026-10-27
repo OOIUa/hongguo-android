@@ -1,3 +1,16 @@
+# 0.7.2 播放取链恢复
+
+验证日期：2026-10-27（Asia/Shanghai）。versionName 0.7.2、versionCode 13。
+
+- 背景：上游播放接口 `multi_video_model/v1` 自 2026-10-27 起拒绝每次随机合成的 iid/device_id，并不再接受签名请求，返回 HTTP 200 + 0 字节。0.7.1 的取链在同日实网对照中失败（“App 接口未返回播放数据”）。
+- 修复同步自 tsukiyo-zero/hongguoTV `3889318`、jackotom/hongguo-drama 3.9 `5febca2`、sunnysky123/hongguo-web 1.1.5 `79babdf`：新增 `PlaybackDevice` 匿名注册（ttEncrypt），播放请求改用注册身份（device_id / iid / cdid）且不带签名头，UA 换为 `com.phoenix.read/71532`；优先使用内联 `video_model.video_list`，仅旧模型回退 `fallback_api`；内联片源声明加密却缺少 `spade_a` 时拒绝，不当作明文播放；空响应单独提示。目录、搜索与账号模块不变。
+- 本地取舍：身份只存进程内存，与账号模块的注册设备隔离；成功注册由播放、预加载和重试共享；注册失败仅在 30 秒冷却内复用（上游 JS 实现缓存到重启），线程取消不计为失败。
+- JVM 回归：新增 `PlaybackSourceTest` 17 项，覆盖 ttEncrypt 解密往返与 SHA-512 摘要、注册头无签名、19 位 ID 精确保留及非法值拒绝、并发共享一次注册、失败冷却与恢复、播放 URL 身份字段与 python quote 编码、播放头无签名、空响应提示、内联数组模型、清晰度选择、缺密钥拒绝、CDN 白名单与只取所请求分集。
+- 发布机器本地构建（原签名密钥）：`:app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug` 通过，单元测试 231 项全部通过，Lint 无错误；aapt2 核对包名、versionCode 13、versionName 0.7.2；`apksigner` 证书指纹与 `release-signing.sha256` 一致。证据为上级 `qa/release072/gradle-build.log`、`step1-summary.log`、`step1-result.json`。
+- 实网对照（同一分集、同一时间）：0.7.1 原代码取链失败；0.7.2 取得 1080p 加密轨道。随后用推荐榜前 3 部剧各前 2 集走完整链路（取链 → 下载 → spade 解密 → 去加密信令）6/6 成功，ffprobe 均为 HEVC + AAC，时长 113–209 秒，其中一集完整解码无错误；渐进播放路径对 2 集实测首次读取在约 1.1–1.2 MB 已下载时即返回 `ftyp`，无需等待整集。所有取链复用同一进程内匿名身份，未逐集注册；身份、密钥与完整媒体 URL 未记录。
+- Android 16 模拟器（API 36）：在已装 0.7.1 并有本机记录的设备上覆盖安装 0.7.2，versionCode 12 → 13，安装身份、片单、本机设置、更新设置等 10 个私有数据文件逐字节一致，记录在上级 `qa/release072/upgrade-071-to-072-before.txt` / `upgrade-071-to-072-after.txt`。随后 `StandaloneFlowTest`（真实上游搜索 → 选集 → 渐进播放并实际渲染首帧）、`ProgressivePlaybackTest`（3 项）与 `VerticalPlayerFlowTest` 共 5 项通过，证据为 `qa/release072/device-tests.log`。
+- 范围与限制：云端实网对照在海外出口网络下进行，设备测试在本机模拟器完成；未覆盖实体手机及 Android 8–15 全部版本。平台接口可能再次变化，本次样本成功不代表长期可用。
+
 # 0.6.3 业务账号标识格式修复
 
 验证日期：2026-10-25（Asia/Shanghai）。versionName 0.6.3、versionCode 10。

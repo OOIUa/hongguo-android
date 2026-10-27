@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '底部导航改为轻薄贴底样式，统一线框图标并用短线标记当前页面；修复播放页顶部信息与状态栏、刘海区域重叠；新增播放中长按视频左半屏临时2倍速，松手恢复原速度且不改变默认倍速；修复启动更新检查被24小时限制阻断，改为每次重新启动后台检查，有新版才提醒。原有记录、播放、账号片单和更新功能继续保留。'
+        notes = '修复播放失败：红果播放接口自 2026-10-27 起拒绝随机合成的设备身份并返回空内容，表现为“预热失败 / App 接口未返回播放数据”。本版首次播放时向平台注册一个匿名播放设备（仅保存在内存，不涉及账号），播放取链改为无签名请求，并兼容直接内联的新版片源列表；加密片源缺少密钥时不再当作明文播放。原有记录、播放、账号片单和更新功能继续保留。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

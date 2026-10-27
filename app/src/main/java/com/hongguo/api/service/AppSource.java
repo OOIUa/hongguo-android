@@ -1,6 +1,5 @@
 package com.hongguo.api.service;
 
-import com.hongguo.api.core.PureSign;
 import com.hongguo.api.core.Spade;
 import com.hongguo.api.util.Crypto;
 import com.hongguo.api.util.Http;
@@ -13,23 +12,22 @@ import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * App 签名取直链，移植自 jackotom/hongguo-drama 的 src/native/app-source.js。
+ * App 取直链，移植自 jackotom/hongguo-drama 的 src/native/app-source.js。
  *
  * <p><b>为什么需要这个类</b>：老的 multi_video_model/preload/v1 链路对部分分集
  * （实测 vid=7693917197759958040）已不再返回 video_model 数据 —— data 为 null，
  * 表现为「预热失败：无直链 / video_model」。他的修复（提交
  * "Fix later-episode playback with signed App source"）是换一条路：
  * <ol>
- *   <li>自带一套完整的合成真机设备身份（DEVICE 常量 + 每请求随机 iid/device_id），
- *       改打 b 域名（api5-normal-sinfonlineb）的 multi_video_model/v1；</li>
- *   <li>响应里的 video_model 不再直接带 video_list，而是给一个
+ *   <li>改打 b 域名（api5-normal-sinfonlineb）的 multi_video_model/v1；
+ *       设备身份见下方「2026-10-27 上游变化」；</li>
+ *   <li>响应里的 video_model 可能直接内联 {@code video_list}（数组），也可能只给一个
  *       {@code fallback_api} 地址，二次 GET 才拿到 {@code video_info.data.video_list}；</li>
  *   <li>媒体 URL 可能被 {@code key_seed} 加密（AES-128-CBC），需先解密；</li>
  *   <li>spade_a -&gt; content key 的推导与既有 {@link Spade#unwrapV1} 等价
@@ -38,6 +36,20 @@ import java.util.Map;
  *
  * <p>与 {@link Client} 的 preload/v1 老路并存：老路先不动，取址时本类优先、
  * 失败再回落，保证其他分集不受影响。
+ *
+ * <p><b>2026-10-27 上游变化</b>（同步自 sunnysky123/hongguo-web 1.1.5 {@code 79babdf}、
+ * jackotom/hongguo-drama 3.9 {@code 5febca2}、tsukiyo-zero/hongguoTV {@code 3889318}）：
+ * 播放接口开始校验设备身份，每次随机合成、互不关联的 iid/device_id 会被软拦截
+ * （HTTP 200 + 0 字节）；该接口也不再接受签名请求。现改为：
+ * <ol>
+ *   <li>{@link PlaybackDevice} 向 device_register 注册匿名设备，进程内复用；</li>
+ *   <li>播放请求 query 使用注册身份的 device_id / iid / cdid，<b>不带任何签名头</b>；</li>
+ *   <li>UA 换为 {@link #PLAYBACK_UA}；</li>
+ *   <li>片源内联在 video_model.video_list 时直接使用，不再请求 fallback_api；
+ *       内联片源若声明加密却缺少 spade_a，按无效处理，不当作明文播放；</li>
+ *   <li>空响应不再笼统报「未返回数据」，单独提示疑似设备身份被拒。</li>
+ * </ol>
+ * 目录、搜索等其他接口不受影响，仍走 {@link Client} 原有签名链路。
  */
 public final class AppSource {
 
@@ -55,6 +67,11 @@ public final class AppSource {
             + "Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 "
             + "QuicVersion:c67e9834 2025-09-08)";
 
+    /** 播放请求 UA（与「注册身份 + 无签名」路径配套）。 */
+    static final String PLAYBACK_UA =
+            "com.phoenix.read/71532 (Linux; U; Android 9; SM-N9860; "
+            + "Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)";
+
     private static final String VERSION_NAME = "7.1.3.32";
 
     /** 请求域名白名单（他的 checkedUrl 域名表，防签名 body 被带往第三方）。 */
@@ -69,8 +86,6 @@ public final class AppSource {
             "4dd4c2e6b83162090e52b3c7a6733ba41cb2462b829ab58a196b39db57177524"
             + "f49baf7f08e8d68d26a72e37c1a95a2f1f05a51892aef2949732b62a38aadd58");
 
-    private static final SecureRandom RND = new SecureRandom();
-
     // ==================== 入口 ====================
 
     /**
@@ -84,9 +99,19 @@ public final class AppSource {
             throw new IllegalArgumentException("分集编号无效");
         }
 
-        // ---- 1. 签名 POST multi_video_model/v1 ----
+        // ---- 1. 无签名 POST multi_video_model/v1（使用注册的匿名身份）----
         byte[] body = Json.stringify(payload(vid)).getBytes(StandardCharsets.UTF_8);
-        Map<String, Object> j = postSigned(body);
+        PlaybackDevice.Identity identity = PlaybackDevice.get();
+        Map<String, Object> j = postPlayback(body, identity);
+        return parseModel(vid, j, quality);
+    }
+
+    /**
+     * 从播放接口响应解析出可播放轨道（包内可见，便于用离线响应做 JVM 测试）。
+     * 只取所请求的分集，不借用响应里其他分集的模型。
+     */
+    static Stream.VideoTrack parseModel(String vid, Map<String, Object> j, String quality)
+            throws Exception {
         if (Json.optInt(j.get("Code"), 0) != 0 || Json.optInt(j.get("code"), 0) != 0) {
             throw new IllegalStateException("App 接口暂未提供本集播放信息");
         }
@@ -100,23 +125,37 @@ public final class AppSource {
             throw new IllegalStateException("App 接口未返回 video_model");
         }
 
-        // ---- 2. 跟随 fallback_api 二次请求 ----
-        String fallback = parseFallback(model.get("fallback_api"));
-        if (fallback == null || fallback.isEmpty()) {
-            throw new IllegalStateException("App 接口未返回本集片源地址");
+        // ---- 2. 片源模型：新版直接内联 video_list，旧版跟随 fallback_api 二次请求 ----
+        List<Object> inlineList = Json.optArr(model.get("video_list"));
+        boolean inline = !inlineList.isEmpty();
+        Map<String, Object> info;
+        if (inline) {
+            info = model;
+        } else {
+            String fallback = parseFallback(model.get("fallback_api"));
+            if (fallback == null || fallback.isEmpty()) {
+                throw new IllegalStateException("App 接口未返回本集片源地址");
+            }
+            Map<String, Object> outer = getPlain(checkedUrl(fallback, API_DOMAINS));
+            Map<String, Object> outerInfo = Json.optObj(outer.get("video_info"));
+            if (Json.optInt(outer.get("Code"), 0) != 0
+                    || Json.optInt(outer.get("code"), 0) != 0
+                    || Json.optInt(outerInfo == null ? null : outerInfo.get("Code"), 0) != 0) {
+                throw new IllegalStateException("App 接口暂未提供本集播放信息");
+            }
+            info = outerInfo == null ? null : Json.optObj(outerInfo.get("data"));
         }
-        Map<String, Object> outer = getPlain(checkedUrl(fallback, API_DOMAINS));
-        Map<String, Object> outerInfo = Json.optObj(outer.get("video_info"));
-        if (Json.optInt(outer.get("Code"), 0) != 0
-                || Json.optInt(outer.get("code"), 0) != 0
-                || Json.optInt(outerInfo == null ? null : outerInfo.get("Code"), 0) != 0) {
-            throw new IllegalStateException("App 接口暂未提供本集播放信息");
-        }
-        Map<String, Object> info = outerInfo == null ? null : Json.optObj(outerInfo.get("data"));
         if (info == null || info.isEmpty()) {
             throw new IllegalStateException("App 接口未返回本集片源模型");
         }
-        Map<String, Object> videoList = Json.optObj(info.get("video_list"));
+        // video_list 可能是对象 map（fallback 模型），也可能是数组（内联模型）
+        List<Object> videoItems = new ArrayList<>();
+        Object rawList = info.get("video_list");
+        if (rawList instanceof Map) {
+            videoItems.addAll(((Map<?, ?>) rawList).values());
+        } else if (rawList instanceof List) {
+            videoItems.addAll((List<?>) rawList);
+        }
         // key_seed 存在说明媒体 URL 是密文，需 AES 解密
         byte[] seed = null;
         String seedStr = Json.optStr(info.get("key_seed"), "");
@@ -126,9 +165,9 @@ public final class AppSource {
 
         // ---- 3. 选流（H.264 优先，其次清晰度）----
         List<Row> rows = new ArrayList<>();
-        if (videoList == null) throw new IllegalStateException("本集未返回可用片源列表");
-        for (Map.Entry<String, Object> e : videoList.entrySet()) {
-            Row r = toRow(Json.optObj(e.getValue()));
+        if (videoItems.isEmpty()) throw new IllegalStateException("本集未返回可用片源列表");
+        for (Object item : videoItems) {
+            Row r = toRow(Json.optObj(item));
             if (r != null) rows.add(r);
         }
         boolean auto = quality == null || quality.isEmpty()
@@ -160,6 +199,10 @@ public final class AppSource {
             String spade = firstNonEmpty(r.item.get("spade_a"),
                     Json.optStr(child(r.item, "encrypt_info").get("spade_a"), ""));
             boolean keyOk = spade.isEmpty();
+            if (spade.isEmpty() && inline && !declaredPlain(r.item)) {
+                // 内联模型声明加密（或未声明）却缺少 spade_a：不能当作明文播放
+                keyOk = false;
+            }
             if (!spade.isEmpty()) {
                 keyOk = Spade.isValidKey(Spade.unwrapV1(Crypto.base64Decode(spade), 0));
             }
@@ -208,10 +251,11 @@ public final class AppSource {
     }
 
     /**
-     * 合成设备身份：DEVICE 常量 + 每请求随机 iid/device_id。
-     * 随机段与 localId() 同分布（1e15 + 48bit 随机）。
+     * 播放请求的基础设备参数（字段顺序固定 —— query 按插入序编码）。
+     * 不含 iid/device_id：播放身份由 {@link PlaybackDevice} 注册提供
+     * （2026-10-27 起随机合成的身份会被上游软拦截）。
      */
-    public static Map<String, Object> device() {
+    public static Map<String, Object> deviceBase() {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("ac", "wifi");
         d.put("channel", "update_64");
@@ -238,66 +282,46 @@ public final class AppSource {
         d.put("need_personal_recommend", "1");
         d.put("player_so_load", "1");
         d.put("is_android_pad_screen", "0");
-        d.put("iid", localId());
-        d.put("device_id", localId());
         return d;
     }
 
-    /** 1000000000000000 + 48bit 随机（对齐 localId() 的取值域）。 */
-    private static String localId() {
-        byte[] r = new byte[6];
-        RND.nextBytes(r);
-        long v = 0;
-        for (byte b : r) v = (v << 8) | (b & 0xFF);
-        return String.valueOf(1_000_000_000_000_000L + v);
+    /**
+     * 播放请求 URL：基础参数后依次追加注册身份的 device_id / iid / cdid 与 _rticket。
+     *
+     * <p>query 编码沿用 python urllib.parse.quote 的兜底行为：
+     * {@code !'()* } 也编成 %XX（resolution=1280*2772 里的 * 就在此列）。
+     */
+    static String playbackUrl(PlaybackDevice.Identity identity, long rticket) {
+        Map<String, Object> q = deviceBase();
+        q.put("device_id", identity.deviceId);
+        q.put("iid", identity.iid);
+        q.put("cdid", identity.cdid);
+        q.put("_rticket", String.valueOf(rticket));
+        StringBuilder qs = new StringBuilder();
+        for (Map.Entry<String, Object> e : q.entrySet()) {
+            if (qs.length() > 0) qs.append('&');
+            qs.append(pyEncode(e.getKey())).append('=')
+              .append(pyEncode(String.valueOf(e.getValue())));
+        }
+        return VIDEO_API + "?" + qs;
     }
 
-    /**
-     * 签名 POST。query 编码、_rticket 抖动避 branch==1、签名头集合均与
-     * app-source.js 的 signedVideoRequest 一致。
-     *
-     * <p>query 编码必须复刻 python 的 urllib.parse.quote 兜底行为：
-     * {@code !'()* } 也要编成 %XX（resolution=1280*2772 里的 * 就在此列），
-     * 否则签名校验用的 query 串与服务端收到的不一致。
-     */
-    private static Map<String, Object> postSigned(byte[] body) throws Exception {
-        long khronos = System.currentTimeMillis() / 1000L;
-        long ticketBase = System.currentTimeMillis();
-
-        String url = null;
-        long rticket = ticketBase;
-        for (int offset = 0; offset < 32; offset++) {
-            rticket = ticketBase + offset;
-            Map<String, Object> q = device();
-            q.put("ts", String.valueOf(khronos));
-            q.put("_rticket", String.valueOf(rticket));
-            StringBuilder qs = new StringBuilder();
-            for (Map.Entry<String, Object> e : q.entrySet()) {
-                if (qs.length() > 0) qs.append('&');
-                qs.append(pyEncode(e.getKey())).append('=')
-                  .append(pyEncode(String.valueOf(e.getValue())));
-            }
-            url = VIDEO_API + "?" + qs;
-            if (PureSign.branchOf(url, body, khronos) != 1) break;
-        }
-
+    /** 播放请求头：无任何签名头（x-gorgon / x-argus / x-medusa 等）。 */
+    static Map<String, String> playbackHeaders() {
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("User-Agent", VIDEO_UA);
+        headers.put("User-Agent", PLAYBACK_UA);
         headers.put("Accept", "application/json; charset=utf-8,application/x-protobuf");
         headers.put("Content-Type", "application/json; charset=UTF-8");
-        headers.put("x-xs-from-web", "0");
-        headers.put("x-ss-req-ticket", String.valueOf(rticket));
-        headers.put("x-tt-request-tag", "t=0;n=0");
-        headers.put("sdk-version", "2");
-        headers.put("passport-sdk-version", "50561");
-        headers.put("x-vc-bdturing-sdk-version", "3.7.2.cn");
-        headers.put("x-ss-stub", Crypto.md5HexUpper(body));
-        headers.putAll(PureSign.sign(url, body, khronos));
-        headers.put("x-tt-dt", "");
+        return headers;
+    }
 
+    /** 无签名 POST（2026-10-27 起该接口不再接受签名请求）。 */
+    private static Map<String, Object> postPlayback(byte[] body, PlaybackDevice.Identity identity)
+            throws Exception {
+        String url = playbackUrl(identity, System.currentTimeMillis());
         Http.Req req = new Http.Req(url).method("POST").timeout(15000);
         req.followRedirect = false;
-        for (Map.Entry<String, String> e : headers.entrySet()) {
+        for (Map.Entry<String, String> e : playbackHeaders().entrySet()) {
             req.header(e.getKey(), e.getValue());
         }
         req.body(body);
@@ -305,11 +329,19 @@ public final class AppSource {
         if (res.status != 200) {
             throw new IllegalStateException("App 接口 HTTP " + res.status);
         }
+        return parsePlaybackResponse(res.text());
+    }
+
+    /** 区分空响应（疑似设备身份被拒）与其他无效响应。空响应不值得重试同一请求。 */
+    static Map<String, Object> parsePlaybackResponse(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            throw new IllegalStateException("App 接口返回空响应，疑似播放设备身份被拒，请稍后重试");
+        }
         Map<String, Object> j;
-        try { j = Json.parseObject(res.text()); }
+        try { j = Json.parseObject(text); }
         catch (Exception ignored) { throw new IllegalStateException("播放信息格式无效"); }
         if (j == null || Json.optObj(j.get("data")) == null) {
-            // data 缺失：接口变更、设备身份被拒或 IP 风控。调试时打出原始响应。
+            // data 缺失：接口变更或 IP 风控。
             throw new IllegalStateException("App 接口未返回播放数据");
         }
         return j;
@@ -425,9 +457,9 @@ public final class AppSource {
         String quality = firstNonEmpty(
                 Json.optStr(item.get("quality_desc"), ""),
                 Json.optStr(item.get("definition"), ""),
+                Json.optStr(meta.get("definition"), ""),
                 Json.optStr(item.get("height"), ""),
-                Json.optStr(item.get("vheight"), ""),
-                Json.optStr(meta.get("definition"), ""));
+                Json.optStr(item.get("vheight"), ""));
         int px = pixelsOf(quality);
         int w = 0, h = 0;
         int[][] pairs = {
@@ -473,6 +505,18 @@ public final class AppSource {
 
     private static void addStr(List<String> out, Object v) {
         if (v instanceof String && !((String) v).isEmpty()) out.add((String) v);
+    }
+
+    /** encrypt_info.encrypt 明确为 false / 0 时才视为明文片源。 */
+    private static boolean declaredPlain(Map<String, Object> item) {
+        Object flag = child(item, "encrypt_info").get("encrypt");
+        if (flag instanceof Boolean) return !((Boolean) flag);
+        if (flag instanceof Number) return ((Number) flag).longValue() == 0;
+        if (flag instanceof String) {
+            String f = ((String) flag).trim();
+            return f.equals("0") || f.equalsIgnoreCase("false");
+        }
+        return false;
     }
 
     private static String firstNonEmpty(Object... vals) {
