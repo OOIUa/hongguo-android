@@ -14,16 +14,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.3**（versionCode 14）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.4**（versionCode 15）· Android **8.0 / API 26** 及以上。
 
-本版新增三套界面主题：暖白精修（原有样式）、沉浸暗场（全深色）和内容卡片。更新后首次打开会请你选择一套，之后可在「我的 › 设置 › 主题样式」随时切换，也可开启“深色模式时自动切换”。0.7.2 的播放修复、原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
+本版让三套主题各自拥有完整的页面布局：暖白精修是经典浅色布局（今日推荐、继续观看横滑、三列封面）；沉浸暗场的首页改为竖屏上下滑动刷剧，另有剧场榜单与追剧页；内容卡片提供频道切换、热度榜和双列瀑布流。更新后会再请你选择一次主题，之后可在「我的 › 设置 › 主题样式」随时切换。原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.3 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/hongguo-android-0.7.3.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/hongguo-android-0.7.3.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/hongguo-android-0.7.3.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.3 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/hongguo-android-0.7.3-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/SHA256SUMS-0.7.3.txt) |
+| GitHub 直连 | [下载 v0.7.4 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/hongguo-android-0.7.4.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/hongguo-android-0.7.4.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/hongguo-android-0.7.4.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.4 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/hongguo-android-0.7.4-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/SHA256SUMS-0.7.4.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -63,7 +63,7 @@
 | 可选进度上报 | 仅已确认的手机云账号可用，默认关闭；实际跨设备结果需本人验收 |
 | 边播边缓存 | 对支持的片源按需下载与处理，不兼容时回退完整缓存播放 |
 | 应用内更新 | 手动 / 启动检查，支持直连、两条加速线路及自动切换 |
-| 界面主题 | 暖白精修、沉浸暗场、内容卡片三套主题，点选即时生效；可在系统深色模式时自动使用沉浸暗场 |
+| 界面主题 | 暖白精修、沉浸暗场、内容卡片三套主题，各有独立的首页、发现/剧场、片单、详情与我的页面布局，点选即时生效；可在系统深色模式时自动使用沉浸暗场 |
 
 首页按热度、上新及榜单展示内容；收藏和观看历史各最多保存 **200 部**，两份列表独立管理。
 
@@ -183,7 +183,7 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 
 **怎么切换界面主题？**
 
-打开「我的」，点右上角齿轮或「设置」，进入「主题样式」即可切换，选择即时生效并会记住。0.7.3 首次打开时的主题选择只出现一次，选“暂不选择”会保留原有的暖白精修。播放页始终为深色，不受主题影响。
+打开「我的」，点右上角齿轮或「设置」，进入「主题样式」即可切换，选择即时生效并会记住。三套主题的页面布局不同：暖白精修为经典布局，沉浸暗场首页可上下滑动刷剧，内容卡片以热度榜和瀑布流为主。主题选择只在首次打开 0.7.4 时出现一次，选“暂不选择”会保留当前主题。播放页始终为深色，三套主题共用。
 
 **更新下载失败怎么办？**
 

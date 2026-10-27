@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,6 +34,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Settings
@@ -63,22 +68,36 @@ private const val PAGE_THEME = "theme"
 internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
                       updateState: UpdateUiState, updateModel: UpdateViewModel,
                       accountName: String? = null, accountStatus: String = "登录后查看手机片单",
+                      style: AppThemeStyle = AppThemeStyle.WARM,
                       onAccount: () -> Unit = { model.selectTab(AppTab.ACCOUNT) }) {
     // "" = 我的, PAGE_SETTINGS = 设置, PAGE_THEME = 主题样式. Saved so rotation keeps the page.
     var page by rememberSaveable { mutableStateOf("") }
-    BackHandler(enabled = page.isNotEmpty()) { page = if (page == PAGE_THEME) PAGE_SETTINGS else "" }
+    // The theme page can be opened from 设置 or (沉浸暗场) straight from 我的; back returns to where it came from.
+    var themeReturn by rememberSaveable { mutableStateOf(PAGE_SETTINGS) }
+    BackHandler(enabled = page.isNotEmpty()) { page = if (page == PAGE_THEME) themeReturn else "" }
     when (page) {
         PAGE_SETTINGS -> {
             SystemSettingsScreen(state, model, updateState, updateModel,
-                onTheme = { page = PAGE_THEME }, onBack = { page = "" })
+                onTheme = { themeReturn = PAGE_SETTINGS; page = PAGE_THEME }, onBack = { page = "" })
             return
         }
         PAGE_THEME -> {
-            ThemeStyleScreen(state, model) { page = PAGE_SETTINGS }
+            ThemeStyleScreen(state, model) { page = themeReturn }
             return
         }
     }
     val openSettings = { page = PAGE_SETTINGS }
+    when (style) {
+        AppThemeStyle.IMMERSIVE -> {
+            ImmersiveMine(state, model, updateModel, accountName, accountStatus, onAccount, openSettings) { themeReturn = ""; page = PAGE_THEME }
+            return
+        }
+        AppThemeStyle.CARDS -> {
+            CardsMine(state, model, updateModel, accountName, accountStatus, onAccount, openSettings)
+            return
+        }
+        AppThemeStyle.WARM -> Unit
+    }
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -363,5 +382,140 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, tag
         Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.testTag(tag),
             colors = SwitchDefaults.colors(uncheckedThumbColor = Muted, uncheckedBorderColor = Muted,
                 uncheckedTrackColor = Cream))
+    }
+}
+
+/** B · 沉浸暗场: avatar header, four shortcuts and one grouped list. */
+@Composable
+private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, updateModel: UpdateViewModel,
+                          accountName: String?, accountStatus: String, onAccount: () -> Unit,
+                          openSettings: () -> Unit, openTheme: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = openSettings, modifier = Modifier.testTag("my_settings_icon")) {
+                    Icon(Icons.Outlined.Settings, "设置", tint = Ink)
+                }
+            }
+            Row(Modifier.fillMaxWidth().clickable(onClick = onAccount).testTag("my_account_card").padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.size(64.dp).clip(CircleShape).background(Cream), Alignment.Center) {
+                    Icon(Icons.Outlined.PersonOutline, null, Modifier.size(32.dp), tint = Ink)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(accountName ?: "登录红果账号", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(accountStatus, color = Muted, fontSize = 13.sp)
+                }
+                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(22.dp), tint = Muted)
+            }
+        }
+        item {
+            Surface(color = CardSurface, shape = RoundedCornerShape(16.dp)) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                    listOf(
+                        Triple(Icons.Outlined.History, "历史 ${state.history.size}") { model.selectTab(AppTab.HISTORY) },
+                        Triple(Icons.Outlined.StarBorder, "追剧 ${state.favorites.size}") { model.selectTab(AppTab.FAVORITES) },
+                        Triple(Icons.Outlined.CloudQueue, "云片单") { model.selectTab(AppTab.FAVORITES); model.selectLibrarySource(true) },
+                        Triple(Icons.Outlined.Palette, "主题", openTheme),
+                    ).forEachIndexed { index, (icon, label, action) ->
+                        Column(Modifier.weight(1f).clickable(onClick = action).heightIn(min = 56.dp).testTag("my_shortcut_$index"),
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(icon, null, tint = Ink, modifier = Modifier.size(24.dp))
+                            Text(label, color = Ink, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Surface(color = CardSurface, shape = RoundedCornerShape(16.dp)) {
+                Column {
+                    MyMenuRow("账号与隐私", "登录方式、云片单与账号管理", "my_account", onClick = onAccount)
+                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
+                    MyMenuRow("设置", "主题、播放与更新", "my_settings", trailing = state.themeStyle.label, onClick = openSettings)
+                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
+                    MyMenuRow("检查更新", "当前版本 ${BuildConfig.VERSION_NAME}", "update_check") { updateModel.checkForUpdates() }
+                }
+            }
+        }
+        item {
+            Text("红果独立版 ${BuildConfig.VERSION_NAME} · 本机数据仅保存在这台设备", color = Muted, fontSize = 12.sp,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp))
+        }
+    }
+}
+
+/** C · 内容卡片: compact header, two stat cards and two grouped cards. */
+@Composable
+private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateModel: UpdateViewModel,
+                      accountName: String?, accountStatus: String, onAccount: () -> Unit, openSettings: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = openSettings, modifier = Modifier.testTag("my_settings_icon")) {
+                    Icon(Icons.Outlined.Settings, "设置", tint = Ink)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.size(60.dp).clip(CircleShape).background(CardSurface).border(1.dp, Line, CircleShape), Alignment.Center) {
+                    Icon(Icons.Outlined.PersonOutline, null, Modifier.size(28.dp), tint = Muted)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(accountName ?: "未登录", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Black,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(accountStatus, color = Muted, fontSize = 13.sp)
+                }
+                Surface(onClick = onAccount, shape = RoundedCornerShape(50), color = Ink,
+                    modifier = Modifier.heightIn(min = 36.dp).testTag("my_account_card")) {
+                    Text(if (accountName == null) "登录" else "账号", color = Canvas, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(Triple("本机看过", state.history.size, AppTab.HISTORY), Triple("本机收藏", state.favorites.size, AppTab.FAVORITES))
+                    .forEach { (label, count, tab) ->
+                        Surface(onClick = { model.selectTab(tab) }, color = CardSurface, shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f).testTag(if (tab == AppTab.HISTORY) "my_history_count" else "my_favorites")) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(label, color = Muted, fontSize = 12.sp)
+                                Row(verticalAlignment = Alignment.Bottom) {
+                                    Text("$count", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                                    Text(" 部", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp))
+                                }
+                            }
+                        }
+                    }
+            }
+        }
+        item {
+            Surface(color = CardSurface, shape = RoundedCornerShape(14.dp)) {
+                Column {
+                    MyMenuRow("播放历史", "继续上次看到的地方", "my_history") { model.selectTab(AppTab.HISTORY) }
+                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
+                    MyMenuRow("云片单", "账号收藏、历史与预约", "my_cloud") { model.selectTab(AppTab.FAVORITES); model.selectLibrarySource(true) }
+                }
+            }
+        }
+        item {
+            Surface(color = CardSurface, shape = RoundedCornerShape(14.dp)) {
+                Column {
+                    MyMenuRow("设置", "主题样式、自动连播、预加载与更新", "my_settings", trailing = state.themeStyle.label, onClick = openSettings)
+                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
+                    MyMenuRow("账号与隐私", "登录方式与账号管理", "my_account", onClick = onAccount)
+                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
+                    MyMenuRow("检查更新", "当前版本 ${BuildConfig.VERSION_NAME}", "update_check") { updateModel.checkForUpdates() }
+                }
+            }
+        }
+        item {
+            Text("本机收藏与观看记录仅保存在这台设备。", color = Muted, fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 24.dp))
+        }
     }
 }

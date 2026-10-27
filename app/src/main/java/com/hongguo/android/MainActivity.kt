@@ -41,8 +41,10 @@ class MainActivity : ComponentActivity() {
             val model: HongguoViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
             val snackbar = remember { SnackbarHostState() }
+            // The theme in effect picks both the colors and each page's layout.
+            val layout = resolveThemeStyle(state.themeStyle, state.darkFollowsSystem)
             // The player owns the system bars while open; the theme re-applies them when it closes.
-            HongguoTheme(resolveThemeStyle(state.themeStyle, state.darkFollowsSystem), applyToWindow = !state.playerOpen) {
+            HongguoTheme(layout, applyToWindow = !state.playerOpen) {
                 val pageStates = rememberSaveableStateHolder()
                 val accountModel: AccountViewModel = viewModel()
                 val accountState by accountModel.state.collectAsStateWithLifecycle()
@@ -63,19 +65,36 @@ class MainActivity : ComponentActivity() {
                     Scaffold(containerColor = Canvas,
                         snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")) }, bottomBar = {
                         if (state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.ACCOUNT))
-                            AppNavigation(state.tab, model::selectTab)
+                            AppNavigation(state.tab, model::selectTab, layout)
                     }) { insets ->
                         pageStates.SaveableStateProvider(state.selectedCard?.let { "detail_${it.id}" } ?: "tab_${state.tab.name}") {
                         Column(Modifier.fillMaxSize().padding(insets).semantics { testTagsAsResourceId = true }) {
-                            if (state.selectedCard != null) DetailScreen(state, model, accountModel)
+                            if (state.selectedCard != null) when (layout) {
+                                AppThemeStyle.IMMERSIVE -> ImmersiveDetail(state, model, accountModel)
+                                AppThemeStyle.CARDS -> CardsDetail(state, model, accountModel)
+                                AppThemeStyle.WARM -> DetailScreen(state, model, accountModel)
+                            }
                             else when (state.tab) {
-                                AppTab.HOME -> {
-                                    BrandHeader()
-                                    HomeScreen(state, model)
+                                AppTab.HOME -> when (layout) {
+                                    AppThemeStyle.IMMERSIVE -> ImmersiveHome(state, model)
+                                    AppThemeStyle.CARDS -> CardsHome(state, model)
+                                    AppThemeStyle.WARM -> {
+                                        BrandHeader()
+                                        HomeScreen(state, model)
+                                    }
                                 }
-                                AppTab.CATEGORY -> CategoryScreen(state, model)
-                                AppTab.SEARCH -> SearchScreen(state, model)
-                                AppTab.FAVORITES, AppTab.HISTORY -> LibraryScreen(state, model, accountModel)
+                                AppTab.CATEGORY -> when (layout) {
+                                    AppThemeStyle.IMMERSIVE -> ImmersiveTheater(state, model)
+                                    AppThemeStyle.CARDS -> CardsDiscover(state, model)
+                                    AppThemeStyle.WARM -> CategoryScreen(state, model)
+                                }
+                                AppTab.SEARCH -> SearchScreen(state, model,
+                                    trending = if (layout == AppThemeStyle.CARDS) state.home.items.take(10) else emptyList())
+                                AppTab.FAVORITES, AppTab.HISTORY -> when (layout) {
+                                    AppThemeStyle.IMMERSIVE -> ImmersiveLibrary(state, model, accountModel)
+                                    AppThemeStyle.CARDS -> CardsLibrary(state, model, accountModel)
+                                    AppThemeStyle.WARM -> LibraryScreen(state, model, accountModel)
+                                }
                                 AppTab.MINE -> MyScreen(state, model, updateState, updateModel,
                                     accountName = if (accountState.sessionStatus == AccountSessionStatus.WEBSITE_ONLY)
                                         "官网登录已保存" else accountState.profile?.nickname,
@@ -84,7 +103,7 @@ class MainActivity : ComponentActivity() {
                                         AccountSessionStatus.LOGGED_IN -> "查看账号收藏、历史与预约"
                                         AccountSessionStatus.NEEDS_VERIFICATION -> "已保存账号，等待重新验证"
                                         else -> "登录后查看手机片单"
-                                    })
+                                    }, style = layout)
                                 AppTab.ACCOUNT -> AccountScreen(accountModel, onBack = model::closeAccount,
                                     onOpenLibrary = model::openLibrary)
                             }

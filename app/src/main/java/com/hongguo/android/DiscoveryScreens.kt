@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Tune
@@ -56,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -69,16 +71,21 @@ import java.util.Locale
 @Composable
 internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
     CatalogGrid(
-        feed = state.home, tagPrefix = "home", emptyTitle = "这一页暂时没有剧集",
+        feed = state.home, tagPrefix = "home", emptyTitle = "这一页暂时没有剧集", columns = warmColumns(),
         emptyHint = "可以刷新，或切换上方内容类型。", onOpen = model::openDrama,
         onRefresh = model::refreshHome, onMore = model::loadMoreHome,
         header = {
             item(key = "home_search", span = { GridItemSpan(maxLineSpan) }) {
                 CatalogSearchEntry("搜索剧名，发现好故事", "home_search") { model.selectTab(AppTab.SEARCH) }
             }
-            state.history.firstOrNull()?.let { entry ->
+            state.home.items.firstOrNull()?.let { featured ->
+                item(key = "home_featured", span = { GridItemSpan(maxLineSpan) }) {
+                    WarmFeaturedBanner(featured, onOpen = { model.openDrama(featured) }, onPlay = { model.playDrama(featured) })
+                }
+            }
+            if (state.history.isNotEmpty()) {
                 item(key = "home_continue", span = { GridItemSpan(maxLineSpan) }) {
-                    HomeContinueWatching(entry, onOpen = { model.openLibrary(entry) },
+                    WarmContinueRail(state.history, onOpen = model::openLibrary,
                         onHistory = { model.selectTab(AppTab.HISTORY) })
                 }
             }
@@ -102,37 +109,79 @@ internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
     )
 }
 
+/** 3 columns like the A design; falls back to 2 on narrow screens or large text so titles stay readable. */
 @Composable
-private fun HomeContinueWatching(entry: LibraryEntry, onOpen: () -> Unit, onHistory: () -> Unit) {
-    val stackedAction = LocalDensity.current.fontScale >= 1.3f || LocalConfiguration.current.screenWidthDp < 360
-    Column(Modifier.fillMaxWidth().testTag("home_continue"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("继续观看", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
-            Text(" · 本机", fontSize = 15.sp, color = Muted, modifier = Modifier.weight(1f))
-            Box(Modifier.size(24.dp).clickable(onClick = onHistory).testTag("home_continue_history"), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.ChevronRight, "查看本机观看历史", tint = Muted, modifier = Modifier.size(24.dp))
+private fun warmColumns(): Int {
+    val width = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp().value.toInt() }
+    val narrow = LocalDensity.current.fontScale >= 1.3f || width < 360
+    // Phones get 3 (or 2) columns; tablets and landscape keep posters near phone size instead of stretching them.
+    return if (narrow) (width / 170).coerceIn(2, 6) else (width / 120).coerceIn(3, 8)
+}
+
+@Composable
+private fun WarmFeaturedBanner(card: DramaCard, onOpen: () -> Unit, onPlay: () -> Unit) {
+    Box(Modifier.fillMaxWidth().height(188.dp).clip(RoundedCornerShape(20.dp))
+        .clickable(role = Role.Button, onClick = onOpen).testTag("home_featured")) {
+        Cover(card.cover, card.title, Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(
+             0f to Color.Black.copy(alpha = .12f), .35f to Color.Black.copy(alpha = .38f), 1f to Color.Black.copy(alpha = .82f))))
+        Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("今日推荐", color = Color.White.copy(alpha = .85f), fontSize = 12.sp)
+                Text(card.title, color = Color.White, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (card.episodeCount > 0) Text("全 ${card.episodeCount} 集", color = Color.White.copy(alpha = .85f), fontSize = 12.sp)
             }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Cover(entry.card.cover, entry.card.title, Modifier.size(if (stackedAction) 64.dp else 80.dp).clip(RoundedCornerShape(16.dp)))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(entry.card.title, fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, color = Ink)
-                Text("第 ${entry.episodeIndex.coerceAtLeast(1)} 集 · ${catalogPosition(entry.positionMs)}",
-                    fontSize = 13.sp, lineHeight = 20.sp, color = Muted)
-                if (stackedAction) ContinueWatchingButton(onOpen)
+            Button(onClick = onPlay, shape = RoundedCornerShape(50),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1F1A17)),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier.heightIn(min = 44.dp).testTag("home_featured_play")) {
+                Icon(Icons.Outlined.PlayArrow, null, Modifier.size(18.dp))
+                Text("播放", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
-            if (!stackedAction) ContinueWatchingButton(onOpen)
         }
     }
 }
 
 @Composable
-private fun ContinueWatchingButton(onOpen: () -> Unit) {
-    Button(onClick = onOpen, shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                modifier = Modifier.widthIn(min = 76.dp).heightIn(min = 48.dp).testTag("home_continue_play")) {
-                Text("继续看", fontSize = 14.sp, maxLines = 1)
+private fun WarmContinueRail(entries: List<LibraryEntry>, onOpen: (LibraryEntry) -> Unit, onHistory: () -> Unit) {
+    Column(Modifier.fillMaxWidth().testTag("home_continue"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("继续观看", fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+            TextButton(onClick = onHistory, modifier = Modifier.testTag("home_continue_history")) {
+                Text("全部", color = Muted, fontSize = 13.sp)
+                Icon(Icons.Outlined.ChevronRight, "查看本机观看历史", tint = Muted, modifier = Modifier.size(18.dp))
+            }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(entries.take(8), key = { it.card.id }) { entry ->
+                Surface(onClick = { onOpen(entry) }, color = CardSurface, shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.width(250.dp).testTag(if (entry == entries.first()) "home_continue_play" else "home_continue_${entry.card.id}")) {
+                    Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Cover(entry.card.cover, entry.card.title, Modifier.width(54.dp).height(72.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(entry.card.title, color = Ink, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("看到第 ${entry.episodeIndex.coerceAtLeast(1)} 集 · ${catalogPosition(entry.positionMs)}",
+                                color = Muted, fontSize = 12.sp, maxLines = 1)
+                            WatchProgress(entry)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Thin progress bar: how far into the series the saved episode is. */
+@Composable
+internal fun WatchProgress(entry: LibraryEntry, modifier: Modifier = Modifier, track: Color = Line, fill: Color = Orange) {
+    val total = entry.card.episodeCount
+    val fraction = if (total > 0) (entry.episodeIndex.coerceAtLeast(1).toFloat() / total).coerceIn(.03f, 1f) else .05f
+    Box(modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(track)) {
+        Box(Modifier.fillMaxWidth(fraction).height(3.dp).clip(RoundedCornerShape(2.dp)).background(fill))
     }
 }
 
@@ -261,20 +310,20 @@ private fun SelectorChip(label: String, selected: Boolean, tag: String, onClick:
 private fun CatalogGrid(
     feed: FeedState, tagPrefix: String, emptyTitle: String, emptyHint: String,
     onOpen: (DramaCard) -> Unit, onRefresh: () -> Unit, onMore: () -> Unit,
-    canLoadMore: Boolean = true, header: LazyGridScope.() -> Unit,
+    canLoadMore: Boolean = true, columns: Int = 0, header: LazyGridScope.() -> Unit,
 ) {
     val minimumCardWidth = if (LocalDensity.current.fontScale >= 1.5f) 184.dp else 148.dp
-    LazyVerticalGrid(columns = GridCells.Adaptive(minimumCardWidth),
+    LazyVerticalGrid(columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(minimumCardWidth),
         modifier = Modifier.fillMaxSize().testTag("${tagPrefix}_results"),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        horizontalArrangement = Arrangement.spacedBy(if (columns >= 3) 10.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         header()
         if (feed.loading && feed.items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { CatalogLoading("正在读取剧集…") }
         if (feed.loaded && !feed.loading && feed.items.isEmpty() && feed.error == null) {
             item(span = { GridItemSpan(maxLineSpan) }) { EmptyPrompt(emptyTitle, emptyHint) }
         }
         itemsIndexed(feed.items, key = { _, card -> card.id }) { index, card ->
-            CatalogPoster(card, "${tagPrefix}_result_$index") { onOpen(card) }
+            CatalogPoster(card, "${tagPrefix}_result_$index", tall = columns >= 3) { onOpen(card) }
         }
         feed.error?.let { error ->
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -295,12 +344,13 @@ private fun CatalogGrid(
 }
 
 @Composable
-private fun CatalogPoster(card: DramaCard, tag: String, onClick: () -> Unit) {
+private fun CatalogPoster(card: DramaCard, tag: String, tall: Boolean = false, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).testTag(tag),
         verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(.95f).clip(RoundedCornerShape(16.dp)))
-        Text(card.title, color = Ink, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(if (tall) .75f else .95f)
+            .clip(RoundedCornerShape(if (tall) 12.dp else 16.dp)))
+        Text(card.title, color = Ink, fontSize = if (tall) 13.sp else 14.sp, lineHeight = if (tall) 18.sp else 20.sp,
+            fontWeight = FontWeight.Medium, maxLines = if (tall) 2 else 1, overflow = TextOverflow.Ellipsis)
         Text(if (card.episodeCount > 0) "${card.episodeCount} 集" else "查看剧集", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
     }
 }

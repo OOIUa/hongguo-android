@@ -58,7 +58,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 
 @Composable
-internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel) {
+internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel, trending: List<DramaCard> = emptyList()) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val submit = { keyboard?.hide(); focus.clearFocus(); model.search() }
@@ -104,7 +104,10 @@ internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel) {
         }
         LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("search_results"),
             contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (state.results.isEmpty() && !state.searching && state.searchError == null) {
+            if (state.results.isEmpty() && !state.searching && state.searchError == null &&
+                state.searchedQuery.isBlank() && trending.isNotEmpty()) {
+                item { TrendingList(trending) { card -> keyboard?.hide(); focus.clearFocus(); model.openDrama(card) } }
+            } else if (state.results.isEmpty() && !state.searching && state.searchError == null) {
                 item {
                     EmptyPrompt(if (state.searchedQuery.isBlank()) "搜索你想看的短剧" else "没有找到相关剧集",
                         if (state.searchedQuery.isBlank()) "输入剧名或关键词，查看完整选集。" else "试试缩短关键词，或换个剧名再搜索。")

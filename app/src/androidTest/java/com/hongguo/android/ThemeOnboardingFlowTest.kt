@@ -35,7 +35,7 @@ class ThemeOnboardingFlowTest {
         savedStyle = preferences.getString(ThemePreferences.STYLE, null)
         savedFollow = preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false)
         preferences.edit().remove(ThemePreferences.STYLE).putBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false)
-            .putBoolean(ThemePreferences.ONBOARDING_DONE, false).commit()
+            .putBoolean(ThemePreferences.ONBOARDING_DONE, false).remove(ThemePreferences.ONBOARDING_VERSION).commit()
     }
 
     @After fun restorePreferences() {
@@ -43,6 +43,7 @@ class ThemeOnboardingFlowTest {
             if (savedStyle == null) remove(ThemePreferences.STYLE) else putString(ThemePreferences.STYLE, savedStyle)
             putBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, savedFollow)
             putBoolean(ThemePreferences.ONBOARDING_DONE, true)
+            putInt(ThemePreferences.ONBOARDING_VERSION, ThemePreferences.CURRENT_ONBOARDING_VERSION)
         }.commit()
     }
 
@@ -77,6 +78,22 @@ class ThemeOnboardingFlowTest {
             assertFalse(state.themeOnboardingPending)
             assertEquals("immersive", preferences.getString(ThemePreferences.STYLE, null))
             assertTrue(preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, false))
+        }
+        ActivityScenario.launch(MainActivity::class.java).use {
+            compose.onNodeWithTag("nav_home").assertExists()
+            compose.onNodeWithTag("theme_onboarding").assertDoesNotExist()
+        }
+    }
+
+    @Test fun answerFrom073IsAskedAgainOnceWithItsChoicePreselected() {
+        preferences.edit().putBoolean(ThemePreferences.ONBOARDING_DONE, true).putString(ThemePreferences.STYLE, "cards")
+            .remove(ThemePreferences.ONBOARDING_VERSION).commit()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            awaitPicker()
+            compose.onNodeWithTag("theme_option_cards").assertIsSelected()
+            compose.onNodeWithTag("theme_onboarding_confirm").performScrollTo().performClick()
+            compose.onNodeWithTag("theme_onboarding").assertDoesNotExist()
+            assertEquals(ThemePreferences.CURRENT_ONBOARDING_VERSION, preferences.getInt(ThemePreferences.ONBOARDING_VERSION, 0))
         }
         ActivityScenario.launch(MainActivity::class.java).use {
             compose.onNodeWithTag("nav_home").assertExists()

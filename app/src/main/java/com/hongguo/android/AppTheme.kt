@@ -32,9 +32,9 @@ import androidx.core.graphics.drawable.toDrawable
 
 /** User-selectable interface styles. The key is what is persisted, so never rename an existing key. */
 enum class AppThemeStyle(val key: String, val label: String, val summary: String) {
-    WARM("warm", "暖白精修", "温暖浅色，延续经典界面，适合日常找剧。"),
-    IMMERSIVE("immersive", "沉浸暗场", "全深色界面，夜间观看更舒适，封面与画面更突出。"),
-    CARDS("cards", "内容卡片", "浅灰底白卡片，层次清晰，信息更紧凑。");
+    WARM("warm", "暖白精修", "温暖浅色的经典布局：推荐位、继续观看横滑和三列封面，适合日常找剧。"),
+    IMMERSIVE("immersive", "沉浸暗场", "全深色竖屏布局：首页上下滑动刷剧，剧场看榜单，追剧页接着看。"),
+    CARDS("cards", "内容卡片", "浅灰底白卡片布局：频道切换、热度榜和双列瀑布流，信息更紧凑。");
 
     companion object {
         fun fromKey(key: String?): AppThemeStyle = entries.firstOrNull { it.key == key } ?: WARM
@@ -48,6 +48,9 @@ internal object ThemePreferences {
     const val DARK_FOLLOWS_SYSTEM = "theme_dark_follows_system"
     /** Set once the user has answered the first-launch theme picker (0.7.3+). */
     const val ONBOARDING_DONE = "theme_onboarding_done"
+    /** Which picker the user answered. 0.7.4 gave each theme its own layout, so 0.7.3 answers are asked again once. */
+    const val ONBOARDING_VERSION = "theme_onboarding_version"
+    const val CURRENT_ONBOARDING_VERSION = 2
 }
 
 /** Every color the screens read. Screens use the named accessors below instead of literal colors. */

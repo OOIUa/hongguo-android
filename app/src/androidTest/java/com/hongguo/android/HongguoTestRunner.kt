@@ -10,7 +10,8 @@ import androidx.test.runner.AndroidJUnitRunner
 class HongguoTestRunner : AndroidJUnitRunner() {
     override fun callApplicationOnCreate(app: Application) {
         app.getSharedPreferences(ThemePreferences.FILE, 0).edit()
-            .putBoolean(ThemePreferences.ONBOARDING_DONE, true).commit()
+            .putBoolean(ThemePreferences.ONBOARDING_DONE, true)
+            .putInt(ThemePreferences.ONBOARDING_VERSION, ThemePreferences.CURRENT_ONBOARDING_VERSION).commit()
         super.callApplicationOnCreate(app)
     }
 }

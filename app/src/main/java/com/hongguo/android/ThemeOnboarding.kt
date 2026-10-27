@@ -55,7 +55,7 @@ internal fun ThemeOnboardingDialog(current: AppThemeStyle, onConfirm: (AppThemeS
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("选择你喜欢的界面风格", color = Ink, fontSize = 21.sp, lineHeight = 28.sp,
                         fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-                    Text("0.7.3 新增三套主题，点选即可预览。之后也可以在${THEME_SETTINGS_PATH}中随时切换。",
+                    Text("三套主题的页面布局各不相同，点选即可预览配色。之后也可以在${THEME_SETTINGS_PATH}中随时切换。",
                         color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
                     Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AppThemeStyle.entries.forEach { style ->

@@ -11,8 +11,8 @@ android {
         applicationId = "com.hongguo.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("appVersionCode").orElse("14").get().toInt()
-        versionName = providers.gradleProperty("appVersionName").orElse("0.7.3").get()
+        versionCode = providers.gradleProperty("appVersionCode").orElse("15").get().toInt()
+        versionName = providers.gradleProperty("appVersionName").orElse("0.7.4").get()
         buildConfigField("String", "UPDATE_REPOSITORY", "\"OOIUa/hongguo-android\"")
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json\"")
         testInstrumentationRunner = "com.hongguo.android.HongguoTestRunner"

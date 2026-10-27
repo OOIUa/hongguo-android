@@ -89,7 +89,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             .takeIf { it in PlaybackSpeeds } ?: 1f,
         themeStyle = AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
         darkFollowsSystem = preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false),
-        themeOnboardingPending = !preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, false)))
+        themeOnboardingPending = !preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, false) ||
+            preferences.getInt(ThemePreferences.ONBOARDING_VERSION, 1) < ThemePreferences.CURRENT_ONBOARDING_VERSION))
     val state = mutableState.asStateFlow()
     private var searchJob: Job? = null
     private var detailJob: Job? = null
@@ -109,6 +110,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var categoryJob: Job? = null
     private var filtersJob: Job? = null
     private var pendingLibrary: LibraryEntry? = null
+    private var pendingAutoPlay = false
     private data class ResumeTarget(val card: DramaCard, val index: Int)
     private val resumeTargets = ConcurrentHashMap<String, ResumeTarget>()
     private data class AccountPlayback(
@@ -238,6 +240,14 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         applyBrowse()
     }
 
+    /** Drops unapplied filter choices (e.g. a filter sheet dismissed without 查看结果). */
+    fun discardBrowseDraft() {
+        mutableState.update {
+            if (it.browseDraft == it.browseApplied) it
+            else it.copy(browseDraft = it.browseApplied.copy(options = it.browseApplied.options.toMap()))
+        }
+    }
+
     fun loadMoreBrowse() {
         if (state.value.browseDraft != state.value.browseApplied) return
         requestBrowse(true)
@@ -303,6 +313,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         preferences.edit {
             if (choice != null) putString(ThemePreferences.STYLE, choice.key)
             putBoolean(ThemePreferences.ONBOARDING_DONE, true)
+            putInt(ThemePreferences.ONBOARDING_VERSION, ThemePreferences.CURRENT_ONBOARDING_VERSION)
         }
         mutableState.update {
             val style = choice ?: it.themeStyle
@@ -380,9 +391,12 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openDrama(card: DramaCard) = openDramaInternal(card, null)
+    /** Opens the drama and starts its last-watched (or first) episode as soon as the episode list arrives. */
+    fun playDrama(card: DramaCard) = openDramaInternal(card, null, autoPlay = true)
 
-    private fun openDramaInternal(card: DramaCard, resume: LibraryEntry?) {
+    private fun openDramaInternal(card: DramaCard, resume: LibraryEntry?, autoPlay: Boolean = false) {
         pendingLibrary = resume
+        pendingAutoPlay = autoPlay
         cancelSearch()
         cancelDetailAndMedia()
         val version = ++detailVersion
@@ -405,7 +419,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
                     val target = detail.episodes[selected]
                     val position = if (target.id == resume.episodeId || target.index == resume.episodeIndex) resume.positionMs else 0
                     playEpisode(selected, resumeOverrideMs = position)
-                }
+                } else if (autoPlay && detail.episodes.isNotEmpty()) playEpisode(selected)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -416,7 +430,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun retryDetails() { state.value.selectedCard?.let { openDramaInternal(it, pendingLibrary) } }
+    fun retryDetails() { state.value.selectedCard?.let { openDramaInternal(it, pendingLibrary, pendingAutoPlay) } }
 
     fun playEpisode(position: Int, restart: Boolean = false, resumeOverrideMs: Long? = null) {
         val current = state.value
@@ -643,6 +657,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     fun backToSearch() {
         pendingLibrary = null
+        pendingAutoPlay = false
         cancelDetailAndMedia()
         mutableState.update { it.copy(selectedCard = null, detail = null, loadingDetail = false, detailError = null,
             preparing = false, video = null, playbackError = null, episodePosition = -1, playbackStatus = "", firstFrameRendered = false, playerOpen = false) }

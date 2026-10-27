@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '新增三套界面主题：暖白精修（原有样式）、沉浸暗场（全深色）和内容卡片。更新后首次打开会请你选择一套主题，选择后可在“我的 › 设置 › 主题样式”随时切换，也可开启“深色模式时自动切换”。“我的”页新增设置入口，播放、更新等开关集中在设置中。0.7.2 的播放修复及原有记录、播放、账号片单和更新功能继续保留。'
+        notes = '三套主题现在各有完整的页面布局：暖白精修是经典浅色布局（今日推荐、继续观看横滑、三列封面）；沉浸暗场首页改为竖屏上下滑动刷剧，另有剧场榜单与追剧页；内容卡片提供频道切换、热度榜和双列瀑布流。更新后会再请你选择一次主题，之后可在“我的 › 设置 › 主题样式”随时切换。原有记录、播放、账号片单和更新功能继续保留。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)
