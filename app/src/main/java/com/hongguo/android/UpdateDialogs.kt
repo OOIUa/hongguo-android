@@ -53,7 +53,7 @@ import java.util.Locale
 
 /** Installation and download remain owned by the update model, including return from Settings. */
 @Composable
-internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activity: Activity) {
+internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activity: Activity, deferred: Boolean = false) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, model, activity) {
         val observer = LifecycleEventObserver { _, event ->
@@ -63,7 +63,8 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) model.onResume(activity)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    if (!state.visible) return
+    // Lifecycle handling above always runs; only the window waits while another first-launch dialog is open.
+    if (!state.visible || deferred) return
 
     var showErrorDetails by rememberSaveable(state.error) { mutableStateOf(false) }
     val update = state.update
@@ -77,7 +78,7 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Cream), Alignment.Center) {
-                        Icon(Icons.Outlined.SystemUpdate, null, Modifier.size(24.dp), tint = Orange)
+                        Icon(Icons.Outlined.SystemUpdate, null, Modifier.size(24.dp), tint = AccentInk)
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(if (update != null) "发现新版本" else "检查更新", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
@@ -103,7 +104,7 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
                     }
                     Text(if (state.source == UpdateSource.AUTO) "直连失败时自动尝试两条加速线路。" else "连接不畅时，可切换其他线路后重试。",
                         color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
-                    state.activeSource?.let { Text("当前线路：${it.label}", color = Orange, fontSize = 12.sp) }
+                    state.activeSource?.let { Text("当前线路：${it.label}", color = AccentInk, fontSize = 12.sp) }
                     if (state.checking) {
                         Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(11.dp)) {
@@ -116,7 +117,7 @@ internal fun UpdateDialogs(state: UpdateUiState, model: UpdateViewModel, activit
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Surface(color = Cream, shape = RoundedCornerShape(8.dp)) {
                                 Text("新版 ${update.versionName}", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    color = Orange, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                    color = AccentInk, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             }
                             Spacer(Modifier.weight(1f))
                             if (update.sizeBytes > 0) Text(updateSize(update.sizeBytes), fontSize = 12.sp, color = Muted)

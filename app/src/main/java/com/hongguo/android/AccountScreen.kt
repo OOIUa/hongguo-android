@@ -174,7 +174,7 @@ internal fun AccountScreen(
                 }
             }
             item {
-                Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+                Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         AccountAdvancedImport(state, accountModel)
                     }
@@ -194,7 +194,7 @@ internal fun AccountScreen(
             }
             if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION || localResetRequired) {
                 item {
-                    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(if (localResetRequired) "恢复本机账号登录" else "已保存的账号等待验证",
                                 color = Ink, fontWeight = FontWeight.Medium, fontSize = 15.sp)
@@ -267,14 +267,14 @@ internal fun AccountScreen(
 @Composable
 private fun AccountProfileCard(state: AccountState, onLogout: () -> Unit) {
     val profile = state.profile ?: return
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Outlined.PersonOutline, null, Modifier.size(32.dp), tint = Muted)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(profile.nickname.ifBlank { "红果用户" }, color = Ink, fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("account_profile"))
-                    Text("账号已连接", color = Orange, fontSize = 12.sp)
+                    Text("账号已连接", color = AccentInk, fontSize = 12.sp)
                 }
             }
             Text("账号 ${profile.id}", color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -289,7 +289,7 @@ private fun AccountProfileCard(state: AccountState, onLogout: () -> Unit) {
 
 @Composable
 private fun AccountProgressSync(state: AccountState, onChange: (Boolean) -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -312,20 +312,20 @@ private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
     // Phone number and one-time code deliberately stay in memory, outside saved instance state.
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !smsSelected, onClick = {
                     if (smsSelected) model.cancelLogin()
                     smsSelected = false; code = ""
                 }, label = { Text("扫码登录") },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = Orange),
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = AccentInk),
                     modifier = Modifier.testTag("account_method_qr"))
                 FilterChip(selected = smsSelected, onClick = {
                     if (!smsSelected) model.cancelLogin()
                     smsSelected = true
                 }, label = { Text("手机号登录") },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = Orange),
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = AccentInk),
                     modifier = Modifier.testTag("account_method_sms"))
             }
             if (!smsSelected) {
@@ -401,13 +401,13 @@ private fun AccountAdvancedImport(state: AccountState, model: AccountViewModel) 
                 appCookieSelected = false
                 importedCookie = ""
             }, enabled = !state.busy, label = { Text("官网登录态") },
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = Orange),
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = AccentInk),
                 modifier = Modifier.testTag("account_cookie_source_web"))
             FilterChip(selected = appCookieSelected, onClick = {
                 appCookieSelected = true
                 importedCookie = ""
             }, enabled = !state.busy, label = { Text("红果 App 登录态") },
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = Orange),
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = AccentInk),
                 modifier = Modifier.testTag("account_cookie_source_app"))
         }
         if (appCookieSelected) Text("请确认输入来自你本人的红果 App 账号。通过手机云账号验证后才能使用云片单。",

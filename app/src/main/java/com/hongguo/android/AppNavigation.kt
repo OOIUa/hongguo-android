@@ -39,10 +39,10 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit) {
         AppTab.ACCOUNT -> AppTab.MINE
         else -> selected
     }
-    val secondary = Color(0xFF827970)
+    val secondary = NavMuted
     Surface(color = Canvas, tonalElevation = 0.dp, shadowElevation = 0.dp) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().semantics { testTagsAsResourceId = true }) {
-            HorizontalDivider(thickness = .5.dp, color = Color(0xFFEAE3DD))
+            HorizontalDivider(thickness = .5.dp, color = NavDivider)
             Row(Modifier.fillMaxWidth().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
                 listOf(
                     Triple(AppTab.HOME, "首页", Icons.Outlined.Home),
@@ -51,7 +51,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit) {
                     Triple(AppTab.MINE, "我的", Icons.Outlined.PersonOutline),
                 ).forEach { (tab, label, icon) ->
                     val isSelected = active == tab
-                    val color = if (isSelected) Orange else secondary
+                    val color = if (isSelected) AccentInk else secondary
                     Column(Modifier.weight(1f).heightIn(min = 64.dp)
                         .selectable(selected = isSelected, role = Role.Tab, onClick = {
                             keyboard?.hide()

@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复播放失败：红果播放接口自 2026-10-27 起拒绝随机合成的设备身份并返回空内容，表现为“预热失败 / App 接口未返回播放数据”。本版首次播放时向平台注册一个匿名播放设备（仅保存在内存，不涉及账号），播放取链改为无签名请求，并兼容直接内联的新版片源列表；加密片源缺少密钥时不再当作明文播放。原有记录、播放、账号片单和更新功能继续保留。'
+        notes = '新增三套界面主题：暖白精修（原有样式）、沉浸暗场（全深色）和内容卡片。更新后首次打开会请你选择一套主题，选择后可在“我的 › 设置 › 主题样式”随时切换，也可开启“深色模式时自动切换”。“我的”页新增设置入口，播放、更新等开关集中在设置中。0.7.2 的播放修复及原有记录、播放、账号片单和更新功能继续保留。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

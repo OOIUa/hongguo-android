@@ -60,7 +60,7 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
                 }
             }
             item {
-                Surface(color = Color.White, shape = RoundedCornerShape(16.dp)) {
+                Surface(color = CardSurface, shape = RoundedCornerShape(16.dp)) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text("红果账号", fontSize = 14.sp, color = Muted, modifier = Modifier.weight(1f))
@@ -99,10 +99,10 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
                                 val selected = state.episodePosition == index
                                 Surface(onClick = { model.playEpisode(index) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                                     .testTag("episode_$index"), shape = RoundedCornerShape(12.dp),
-                                    color = if (selected) Orange else Color.White) {
+                                    color = if (selected) Orange else CardSurface) {
                                     Box(Modifier.padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
                                         Text("${episode.index}", fontSize = 15.sp,
-                                            color = if (selected) Color.White else Ink,
+                                            color = if (selected) OnOrange else Ink,
                                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                                     }
                                 }

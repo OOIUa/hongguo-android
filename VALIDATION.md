@@ -1,3 +1,14 @@
+# 0.7.3 界面主题与首次启动主题选择
+
+验证日期：2026-10-27（Asia/Shanghai）。versionName 0.7.3、versionCode 14。
+
+- 范围：新增暖白精修 / 沉浸暗场 / 内容卡片三套主题；颜色改由主题调色板提供（`AppTheme.kt`），暖白精修数值与 0.7.2 一致。我的页新增齿轮与「设置」入口，设置新增 外观 › 主题样式；主题样式页点选即时生效并保存在 `hongguo_local`（`theme_style`、`theme_dark_follows_system`）。0.7.3 首次启动弹出主题选择，仅在弹窗内预览，确认或“暂不选择”/返回后写入 `theme_onboarding_done`，并以 Snackbar 提示可在设置中切换；启动更新提示在主题选择完成前只延迟显示，其生命周期回调照常运行。播放取链与 0.7.2 相同。
+- 云端构建（与发布签名无关）：`:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 通过，单元测试 235 项全部通过，Lint 无错误、无新增警告。新增 `AppThemeStyleTest`：持久化键稳定、未知值回退暖白、只有沉浸暗场为深色、暖白关键色值与 0.7.2 一致，三套主题正文、次要文字、按钮文字、强调文字与提示条对比度均不低于 4.5:1。
+- 界面流程（Robolectric 模拟，非真机，在代码审查修复前运行）：`ThemeOnboardingFlowTest`（选择并保存、不再出现；返回键保留默认）、`ThemeSettingsFlowTest`（设置入口、三选一、深色跟随开关、重建 ViewModel 后保持）与原有 `MyPageFlowTest` 分别单独运行通过；三套主题下首页、发现、我的、设置、主题样式和首次选择弹窗已截图检查。同一进程连续运行多个 Robolectric 用例时存在用例间状态串扰，原有 `NavigationFlowTest` 在未修改的 0.7.2 上同样失败，不计入本版结论。
+- 独立代码审查后修复：播放页内旋转后返回时系统栏图标颜色与主题不符（播放期间主题不接管系统栏，关闭后重新应用）；系统栏改经 enableEdgeToEdge 按主题设置，使 Android 8–9 导航栏底色同样跟随主题；“可在设置中切换”提示保存在 ViewModel，等更新弹窗关闭后显示，旋转不丢失；账号页筛选标签、云片单标签与更新弹窗版本标签在深色主题下改用高对比强调色。修复后重新执行构建、单元测试与 Lint 通过，界面流程未重跑。
+- 有意变化与已知限制：设置开关关闭态的滑块与描边改用次要文字色，三套主题（含暖白精修）都更易辨认，是相对 0.7.2 唯一的可见差异；冷启动时系统启动窗口仍为浅色（themes.xml），沉浸暗场用户可能看到短暂浅色闪屏。
+- 待发布机器补充：原签名构建与指纹核对、`connectedDebugAndroidTest`（含新增两项，测试 runner 改为 `HongguoTestRunner` 以便既有用例跳过首次选择）、从 0.7.2 覆盖安装后本机数据保留与首次主题选择、深色模式自动切换，以及实体手机检查。
+
 # 0.7.2 播放取链恢复
 
 验证日期：2026-10-27（Asia/Shanghai）。versionName 0.7.2、versionCode 13。

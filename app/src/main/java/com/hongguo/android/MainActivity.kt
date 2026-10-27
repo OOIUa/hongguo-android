@@ -1,23 +1,28 @@
 package com.hongguo.android
 
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
@@ -31,12 +36,14 @@ import com.hongguo.account.AccountViewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        applyThemeWindow(storedThemeStyle().palette())
         setContent {
-            HongguoTheme {
+            val model: HongguoViewModel = viewModel()
+            val state by model.state.collectAsStateWithLifecycle()
+            val snackbar = remember { SnackbarHostState() }
+            // The player owns the system bars while open; the theme re-applies them when it closes.
+            HongguoTheme(resolveThemeStyle(state.themeStyle, state.darkFollowsSystem), applyToWindow = !state.playerOpen) {
                 val pageStates = rememberSaveableStateHolder()
-                val model: HongguoViewModel = viewModel()
-                val state by model.state.collectAsStateWithLifecycle()
                 val accountModel: AccountViewModel = viewModel()
                 val accountState by accountModel.state.collectAsStateWithLifecycle()
                 val updateModel: UpdateViewModel = viewModel()
@@ -53,7 +60,8 @@ class MainActivity : ComponentActivity() {
                 }
                 if (state.playerOpen && state.detail != null) EpisodePlayerScreen(state, model, accountModel)
                 else {
-                    Scaffold(containerColor = Canvas, bottomBar = {
+                    Scaffold(containerColor = Canvas,
+                        snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")) }, bottomBar = {
                         if (state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.ACCOUNT))
                             AppNavigation(state.tab, model::selectTab)
                     }) { insets ->
@@ -84,10 +92,36 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                UpdateDialogs(updateState, updateModel, this@MainActivity)
+                if (state.themeOnboardingPending) {
+                    ThemeOnboardingDialog(current = state.themeStyle,
+                        onConfirm = { choice -> model.completeThemeOnboarding(choice) },
+                        onSkip = { model.completeThemeOnboarding(null) })
+                }
+                // The "change it in settings" hint waits for any update dialog, and survives rotation: it is only
+                // cleared after it has been shown. A dialog appearing mid-way cancels it and it is shown again later.
+                val themeHint = state.themeHint
+                LaunchedEffect(themeHint, updateState.visible, state.themeOnboardingPending) {
+                    if (themeHint == null || updateState.visible || state.themeOnboardingPending) return@LaunchedEffect
+                    snackbar.showSnackbar(themeHint, withDismissAction = true, duration = SnackbarDuration.Long)
+                    model.consumeThemeHint()
+                }
+                // A startup update prompt waits until the theme picker has been answered, so two dialogs never stack.
+                UpdateDialogs(updateState, updateModel, this@MainActivity, deferred = state.themeOnboardingPending)
             }
         }
     }
+}
+
+/**
+ * The saved theme, read before composition so the window and system bars match it from the first Compose frame.
+ * The system's starting window (themes.xml) is drawn earlier and stays light; a dark splash would need a
+ * separate starting theme.
+ */
+private fun ComponentActivity.storedThemeStyle(): AppThemeStyle {
+    val preferences = getSharedPreferences(ThemePreferences.FILE, android.content.Context.MODE_PRIVATE)
+    val systemDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+    return resolveThemeStyle(AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
+        preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false), systemDark)
 }
 
 @Composable
@@ -96,7 +130,7 @@ private fun BrandHeader() {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         // The established typographic brand mark remains native, with no rasterized screen chrome.
         Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Orange), Alignment.Center) {
-            Text("果", color = Color.White, fontSize = 24.sp / LocalDensity.current.fontScale, fontWeight = FontWeight.Bold)
+            Text("果", color = OnOrange, fontSize = 24.sp / LocalDensity.current.fontScale, fontWeight = FontWeight.Bold)
         }
         Text("红果剧场", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = Ink)
     }

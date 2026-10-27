@@ -4,7 +4,7 @@
 
 - GitHub 仓库：[OOIUa/hongguo-android](https://github.com/OOIUa/hongguo-android)。
 - 首个支持在线更新的版本：`0.3.0`，`versionCode=3`，tag 为 `v0.3.0`。
-- 当前源码版本：`0.7.2`，`versionCode=13`，tag 为 `v0.7.2`；恢复播放取链（匿名播放设备注册 + 无签名播放请求 + 内联片源模型），详见 `VALIDATION.md`。发布资产与 `latest` 更新清单须与之保持一致。
+- 当前源码版本：`0.7.3`，`versionCode=14`，tag 为 `v0.7.3`；新增三套可选界面主题与首次启动主题选择，播放取链沿用 0.7.2，详见 `VALIDATION.md`。发布资产与 `latest` 更新清单须与之保持一致。
 - 账号功能仍处于测试阶段。发行说明需简要说明官网验证、固定批次片单及可选进度上报的使用范围，实际登录与同步结果需用本人账号核对。
 - 应用 ID：`com.hongguo.android`；当前最低系统为 API 26。
 - 固定清单地址：`https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json`。
@@ -24,19 +24,19 @@
 
 ## 构建与验证
 
-在保有原签名密钥的机器上构建。例如准备 0.7.2：
+在保有原签名密钥的机器上构建。例如准备 0.7.3：
 
 ```powershell
-.\gradlew.bat -PappVersionCode=13 -PappVersionName=0.7.2 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+.\gradlew.bat -PappVersionCode=14 -PappVersionName=0.7.3 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-当前版本 APK 来自 `app/build/outputs/apk/debug/app-debug.apk`。后续版本应严格增加 `appVersionCode`，例如 0.7.3 使用 14；不要通过提高 `versionName`、修改 tag 或替换清单来绕过 versionCode 检查。
+当前版本 APK 来自 `app/build/outputs/apk/debug/app-debug.apk`。后续版本应严格增加 `appVersionCode`，例如 0.7.4 使用 15；不要通过提高 `versionName`、修改 tag 或替换清单来绕过 versionCode 检查。
 
 发布前核对最终 APK 的真实包名、versionCode、versionName、minSdk 和签名证书。清单中的版本名称和最低系统版本必须与 APK 完全一致。若构建后又重新签名或改动 APK，必须重新计算文件大小及 SHA-256。
 
 设备可用时还应运行 `:app:connectedDebugAndroidTest`，并验证同签名旧版本覆盖安装后的收藏、历史和续播数据。每次发布的实际测试结果记录在 `VALIDATION.md`，不要将 JVM 校验通过等同于真实系统安装已完成。
 
-每次发布还需检查全屏上下滑切集、选集、首末集、暂停后的短拖动、进度拖动和前后台恢复，确认切集时只有当前页持有播放器。渐进播放应分别验证首帧早于整集下载、跳到未缓存位置后的继续解码，以及不支持布局的完整缓存回退；受控片源测试与真实上游回归分开记录。“我的”需检查历史返回、设置持久化和更新入口，关闭预加载或进入后台后不能继续预热下一集。账号页面需检查官网登录窗口、取消与退出、片单分区及进度上报开关；尚未完成的本人账号验证不得写成通过。
+每次发布还需检查全屏上下滑切集、选集、首末集、暂停后的短拖动、进度拖动和前后台恢复，确认切集时只有当前页持有播放器。渐进播放应分别验证首帧早于整集下载、跳到未缓存位置后的继续解码，以及不支持布局的完整缓存回退；受控片源测试与真实上游回归分开记录。“我的”需检查历史返回、设置持久化和更新入口；主题需检查首次启动选择只出现一次、三套主题切换与重启保留、深色模式自动切换，以及主题选择期间启动更新提示不会叠加弹出，关闭预加载或进入后台后不能继续预热下一集。账号页面需检查官网登录窗口、取消与退出、片单分区及进度上报开关；尚未完成的本人账号验证不得写成通过。
 
 ## 生成 update.json
 
@@ -79,7 +79,7 @@ pwsh -File scripts/prepare-release.ps1
 1. 将本次对应的应用源码、Gradle wrapper、构建配置、许可证和改动说明提交至仓库，再创建对应 tag。
 2. 在该 tag 创建 release，可先保留为草稿，上传脚本生成的 APK、源码 ZIP、`update.json` 和 `SHA256SUMS-<版本>.txt`。签名公开指纹与版本说明也可一并提供，私钥始终留在本地。
 3. 确认该 tag 可以取得对应完整源码。应用按 GPL-3.0-only 分发，不能只上传 APK 而遗漏该版本的对应源码；来源和通知见 `THIRD_PARTY_NOTICES.md`。
-4. 发布为**非草稿、非 prerelease** 的正式 release，并使其成为 Latest。0.7.2 对应 tag 为 `v0.7.2`；prerelease 不用于本应用固定的 latest 清单入口。
+4. 发布为**非草稿、非 prerelease** 的正式 release，并使其成为 Latest。0.7.3 对应 tag 为 `v0.7.3`；prerelease 不用于本应用固定的 latest 清单入口。
 5. 匿名访问固定的 `latest/download/update.json`，确认可经 HTTPS 重定向取得新清单；再校验清单指向的 tag、APK 文件名、真实文件大小及哈希。此过程不应需要 GitHub 账号或 token。
 6. 在已装旧版本且签名一致的测试设备上，手动检查更新，核对显示版本、下载进度、安装来源权限、系统安装交接与安装后的数据保留。
 

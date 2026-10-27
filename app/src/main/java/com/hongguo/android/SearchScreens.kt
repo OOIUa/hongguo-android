@@ -146,8 +146,8 @@ internal fun DramaResult(card: DramaCard, index: Int, tag: String = "result_$ind
                 if (card.summary.isNotBlank()) Text(card.summary, color = Muted, fontSize = 13.sp, lineHeight = 20.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("查看选集", color = Color(0xFFB84428), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Icon(Icons.Outlined.ChevronRight, null, tint = Color(0xFFB84428), modifier = Modifier.size(16.dp))
+                    Text("查看选集", color = AccentText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Outlined.ChevronRight, null, tint = AccentText, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -165,10 +165,10 @@ internal fun Cover(url: String, title: String, modifier: Modifier) {
 
 @Composable
 internal fun FailurePanel(message: String, onRetry: () -> Unit, tag: String = "retry_request") {
-    Surface(color = Color(0xFFFFEFE7), shape = RoundedCornerShape(16.dp)) {
+    Surface(color = NoticeBackground, shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(message, modifier = Modifier.weight(1f), color = Color(0xFF96492F), fontSize = 14.sp, lineHeight = 22.sp)
+            Text(message, modifier = Modifier.weight(1f), color = NoticeText, fontSize = 14.sp, lineHeight = 22.sp)
             TextButton(onClick = onRetry, modifier = Modifier.testTag(tag)) { Text("重试", fontSize = 14.sp) }
         }
     }

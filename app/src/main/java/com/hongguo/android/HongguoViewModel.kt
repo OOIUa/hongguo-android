@@ -71,17 +71,25 @@ data class HongguoUiState(
     val autoPlayNext: Boolean = true,
     val preloadNext: Boolean = true,
     val playbackSpeed: Float = 1f,
+    val themeStyle: AppThemeStyle = AppThemeStyle.WARM,
+    val darkFollowsSystem: Boolean = false,
+    val themeOnboardingPending: Boolean = false,
+    /** Confirmation after the first-launch picker; cleared only once the snackbar has been shown. */
+    val themeHint: String? = null,
 )
 
 class HongguoViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = DramaRepository()
     private val library = LibraryStore(application)
     private val accounts = (application as HongguoApplication).accountRepository
-    private val preferences = application.getSharedPreferences("hongguo_local", 0)
+    private val preferences = application.getSharedPreferences(ThemePreferences.FILE, 0)
     private val mutableState = MutableStateFlow(HongguoUiState(query = preferences.getString("last_query", "").orEmpty(),
         autoPlayNext = preferences.getBoolean("auto_play_next", true), preloadNext = preferences.getBoolean("preload_next", true),
         playbackSpeed = runCatching { preferences.getFloat("playback_speed", 1f) }.getOrDefault(1f)
-            .takeIf { it in PlaybackSpeeds } ?: 1f))
+            .takeIf { it in PlaybackSpeeds } ?: 1f,
+        themeStyle = AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
+        darkFollowsSystem = preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false),
+        themeOnboardingPending = !preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, false)))
     val state = mutableState.asStateFlow()
     private var searchJob: Job? = null
     private var detailJob: Job? = null
@@ -281,6 +289,28 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         mutableState.update { it.copy(preloadNext = enabled) }
         if (enabled) { prefetchAttemptedFor = -1; prefetchNext() } else takePrefetch(null)
     }
+
+    fun setThemeStyle(style: AppThemeStyle) {
+        preferences.edit { putString(ThemePreferences.STYLE, style.key) }
+        mutableState.update { it.copy(themeStyle = style) }
+    }
+    fun setDarkFollowsSystem(enabled: Boolean) {
+        preferences.edit { putBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, enabled) }
+        mutableState.update { it.copy(darkFollowsSystem = enabled) }
+    }
+    /** Answers the first-launch picker. A null [choice] keeps the current style ("暂不选择"). Shown only once. */
+    fun completeThemeOnboarding(choice: AppThemeStyle?) {
+        preferences.edit {
+            if (choice != null) putString(ThemePreferences.STYLE, choice.key)
+            putBoolean(ThemePreferences.ONBOARDING_DONE, true)
+        }
+        mutableState.update {
+            val style = choice ?: it.themeStyle
+            it.copy(themeStyle = style, themeOnboardingPending = false,
+                themeHint = themeAppliedMessage(style, chosen = choice != null))
+        }
+    }
+    fun consumeThemeHint() = mutableState.update { it.copy(themeHint = null) }
 
     fun setPlaybackSpeed(speed: Float) {
         if (speed !in PlaybackSpeeds) return

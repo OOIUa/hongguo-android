@@ -53,13 +53,13 @@ internal fun AccountFavoriteAction(card: DramaCard, model: AccountViewModel, dar
                 !signedIn -> "账号收藏"
                 present -> "账号已收藏"
                 else -> "账号收藏"
-            }, color = if (dark) Color.White else Orange, fontSize = if (dark) 12.sp else 14.sp)
+            }, color = if (dark) Color.White else AccentInk, fontSize = if (dark) 12.sp else 14.sp)
         }
     }
     confirmation?.let { add ->
         AlertDialog(onDismissRequest = { confirmation = null },
             title = { Text(if (add) "加入账号收藏" else "取消账号收藏") },
-            icon = { Icon(if (add) Icons.Outlined.CloudQueue else Icons.Outlined.CloudDone, null, tint = Orange) },
+            icon = { Icon(if (add) Icons.Outlined.CloudQueue else Icons.Outlined.CloudDone, null, tint = AccentInk) },
             text = { Text("${if (add) "将《${card.title}》加入" else "将《${card.title}》移出"}红果账号「${state.profile?.nickname.orEmpty()}」的收藏。本机收藏单独保留。", fontSize = 14.sp) },
             confirmButton = {
                 TextButton(onClick = {

@@ -14,16 +14,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.2**（versionCode 13）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.3**（versionCode 14）· Android **8.0 / API 26** 及以上。
 
-本版修复 2026-10-27 起出现的播放失败（“预热失败 / App 接口未返回播放数据”）：首次播放时向平台注册一个仅保存在内存中的匿名播放设备，播放取链改为无签名请求并兼容新版内联片源。原有界面、播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
+本版新增三套界面主题：暖白精修（原有样式）、沉浸暗场（全深色）和内容卡片。更新后首次打开会请你选择一套，之后可在「我的 › 设置 › 主题样式」随时切换，也可开启“深色模式时自动切换”。0.7.2 的播放修复、原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.2 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/hongguo-android-0.7.2.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/hongguo-android-0.7.2.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/hongguo-android-0.7.2.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.2 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/hongguo-android-0.7.2-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.2/SHA256SUMS-0.7.2.txt) |
+| GitHub 直连 | [下载 v0.7.3 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/hongguo-android-0.7.3.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/hongguo-android-0.7.3.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/hongguo-android-0.7.3.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.3 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/hongguo-android-0.7.3-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.3/SHA256SUMS-0.7.3.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -63,6 +63,7 @@
 | 可选进度上报 | 仅已确认的手机云账号可用，默认关闭；实际跨设备结果需本人验收 |
 | 边播边缓存 | 对支持的片源按需下载与处理，不兼容时回退完整缓存播放 |
 | 应用内更新 | 手动 / 启动检查，支持直连、两条加速线路及自动切换 |
+| 界面主题 | 暖白精修、沉浸暗场、内容卡片三套主题，点选即时生效；可在系统深色模式时自动使用沉浸暗场 |
 
 首页按热度、上新及榜单展示内容；收藏和观看历史各最多保存 **200 部**，两份列表独立管理。
 
@@ -179,6 +180,10 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 **播放提示“匿名播放设备注册失败”或“空响应”？**
 
 0.7.2 起，首次播放会向平台注册一个匿名播放设备，身份只保存在内存里，与个人账号无关，重启应用后重新注册。注册失败多为网络问题，约 30 秒后再次播放会自动重试。0.7.1 及更早版本无法通过新的上游校验，请更新到 0.7.2 或以上。
+
+**怎么切换界面主题？**
+
+打开「我的」，点右上角齿轮或「设置」，进入「主题样式」即可切换，选择即时生效并会记住。0.7.3 首次打开时的主题选择只出现一次，选“暂不选择”会保留原有的暖白精修。播放页始终为深色，不受主题影响。
 
 **更新下载失败怎么办？**
 

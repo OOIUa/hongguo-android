@@ -161,14 +161,14 @@ internal fun CategoryScreen(state: HongguoUiState, model: HongguoViewModel) {
                 }
             }
             item(key = "category_filters", span = { GridItemSpan(maxLineSpan) }) {
-                Surface(color = Color.White, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = CardSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Outlined.Tune, null, tint = Muted, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text(if (dirty) "筛选已更改，尚未应用" else "筛选条件", fontSize = 14.sp, lineHeight = 21.sp,
-                                    fontWeight = FontWeight.Medium, color = if (dirty) Orange else Ink)
+                                    fontWeight = FontWeight.Medium, color = if (dirty) AccentInk else Ink)
                                 val selectedCount = state.browseDraft.options.values.count { it.isNotBlank() }
                                 Text(if (state.filtersLoading) "正在读取可选条件…"
                                     else if (selectedCount > 0) "已选 $selectedCount 项条件" else "按题材、排序等条件查找",
@@ -240,7 +240,7 @@ internal fun CatalogTextTab(label: String, isSelected: Boolean, tag: String, onC
     Column(Modifier.heightIn(min = 36.dp).semantics { selected = isSelected }
         .clickable(role = Role.Tab, onClick = onClick).testTag(tag).padding(top = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = if (isSelected) Orange else Muted, fontSize = 16.sp, lineHeight = 24.sp,
+        Text(label, color = if (isSelected) AccentInk else Muted, fontSize = 16.sp, lineHeight = 24.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
         Box(Modifier.width(32.dp).height(2.dp).clip(RoundedCornerShape(2.dp))
             .background(if (isSelected) Orange else Color.Transparent))
@@ -251,10 +251,10 @@ internal fun CatalogTextTab(label: String, isSelected: Boolean, tag: String, onC
 private fun SelectorChip(label: String, selected: Boolean, tag: String, onClick: () -> Unit) {
     FilterChip(selected = selected, onClick = onClick, modifier = Modifier.heightIn(min = 48.dp).testTag(tag),
         label = { Text(label, fontSize = 14.sp, maxLines = 1) }, shape = RoundedCornerShape(12.dp),
-        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = Color(0xFFB84428),
-            containerColor = Color.White, labelColor = Muted),
+        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = AccentText,
+            containerColor = CardSurface, labelColor = Muted),
         border = FilterChipDefaults.filterChipBorder(enabled = true, selected = selected,
-            borderColor = Cream, selectedBorderColor = Color(0xFFE6B6A5)))
+            borderColor = Cream, selectedBorderColor = AccentBorder))
 }
 
 @Composable

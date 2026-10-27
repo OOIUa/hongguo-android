@@ -27,7 +27,7 @@ internal fun AccountConfirmationDialogs(
     if (logoutRequested) {
         AlertDialog(
             onDismissRequest = onDismissLogout,
-            icon = { Icon(if (localReset) Icons.Outlined.DeleteOutline else Icons.Outlined.PersonOutline, null, tint = Orange) },
+            icon = { Icon(if (localReset) Icons.Outlined.DeleteOutline else Icons.Outlined.PersonOutline, null, tint = AccentInk) },
             title = { Text(if (localReset) "清除本机保存的登录态？" else "退出红果账号？") },
             text = {
                 Text(if (localReset) "将清除这台设备保存的红果登录信息，之后需要重新登录。本机收藏和观看记录保留。"
@@ -44,7 +44,7 @@ internal fun AccountConfirmationDialogs(
     removeTarget?.let { entry ->
         AlertDialog(
             onDismissRequest = onDismissRemove,
-            icon = { Icon(Icons.Outlined.DeleteOutline, null, tint = Orange) },
+            icon = { Icon(Icons.Outlined.DeleteOutline, null, tint = AccentInk) },
             title = { Text("取消账号收藏？") },
             text = { Text("将从当前红果账号移除《${entry.card.title}》。本机收藏保留。", fontSize = 14.sp) },
             confirmButton = {

@@ -2,29 +2,40 @@ package com.hongguo.android
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,32 +44,53 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+private const val PAGE_SETTINGS = "settings"
+private const val PAGE_THEME = "theme"
 
 @Composable
 internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
                       updateState: UpdateUiState, updateModel: UpdateViewModel,
                       accountName: String? = null, accountStatus: String = "登录后查看手机片单",
                       onAccount: () -> Unit = { model.selectTab(AppTab.ACCOUNT) }) {
-    var settingsOpen by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = settingsOpen) { settingsOpen = false }
-    if (settingsOpen) {
-        SystemSettingsScreen(state, model, updateState, updateModel) { settingsOpen = false }
-        return
+    // "" = 我的, PAGE_SETTINGS = 设置, PAGE_THEME = 主题样式. Saved so rotation keeps the page.
+    var page by rememberSaveable { mutableStateOf("") }
+    BackHandler(enabled = page.isNotEmpty()) { page = if (page == PAGE_THEME) PAGE_SETTINGS else "" }
+    when (page) {
+        PAGE_SETTINGS -> {
+            SystemSettingsScreen(state, model, updateState, updateModel,
+                onTheme = { page = PAGE_THEME }, onBack = { page = "" })
+            return
+        }
+        PAGE_THEME -> {
+            ThemeStyleScreen(state, model) { page = PAGE_SETTINGS }
+            return
+        }
     }
+    val openSettings = { page = PAGE_SETTINGS }
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Text("我的", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Ink,
-                modifier = Modifier.padding(top = 12.dp, bottom = 8.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("我的", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+                IconButton(onClick = openSettings, modifier = Modifier.testTag("my_settings_icon")) {
+                    Icon(Icons.Outlined.Settings, "设置", tint = Ink)
+                }
+            }
         }
         item {
-            Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
                 Row(Modifier.fillMaxWidth().testTag("my_account_card").clickable(onClick = onAccount).padding(16.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Cream), Alignment.Center) {
@@ -84,13 +116,14 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
             }
         }
         item {
-            Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
                 Column {
-                    MyMenuRow("账号与隐私", "登录方式、云片单与账号管理", "my_account", onAccount)
+                    MyMenuRow("账号与隐私", "登录方式、云片单与账号管理", "my_account", onClick = onAccount)
                     HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
                     MyMenuRow("播放历史", "继续上次看到的地方", "my_history") { model.selectTab(AppTab.HISTORY) }
                     HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("播放设置", "自动连播、预加载与更新偏好", "my_settings") { settingsOpen = true }
+                    MyMenuRow("设置", "主题样式、自动连播、预加载与更新", "my_settings",
+                        trailing = state.themeStyle.label, onClick = openSettings)
                     HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
                     MyMenuRow("检查更新", "当前版本 ${BuildConfig.VERSION_NAME}", "update_check") {
                         updateModel.checkForUpdates()
@@ -109,7 +142,7 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
 
 @Composable
 private fun MyStat(label: String, count: Int, modifier: Modifier, onClick: () -> Unit) {
-    Surface(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(16.dp), color = Color.White) {
+    Surface(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(16.dp), color = CardSurface) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(label, color = Muted, fontSize = 14.sp)
             Text(count.toString(), color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
@@ -118,33 +151,45 @@ private fun MyStat(label: String, count: Int, modifier: Modifier, onClick: () ->
 }
 
 @Composable
-private fun MyMenuRow(title: String, subtitle: String, tag: String, onClick: () -> Unit) {
+private fun MyMenuRow(title: String, subtitle: String, tag: String, trailing: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().testTag(tag).clickable(onClick = onClick).padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically) {
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
         }
+        if (trailing != null) Text(trailing, color = Muted, fontSize = 13.sp, maxLines = 1)
         Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = Muted)
     }
 }
 
 @Composable
+private fun PageHeader(title: String, backLabel: String, backTag: String, onBack: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack, modifier = Modifier.testTag(backTag)) {
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, backLabel, tint = Ink)
+        }
+        Text(title, color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
 private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
-                                 updateState: UpdateUiState, updateModel: UpdateViewModel, onBack: () -> Unit) {
+                                 updateState: UpdateUiState, updateModel: UpdateViewModel,
+                                 onTheme: () -> Unit, onBack: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("settings_screen").padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { PageHeader("设置", "返回我的", "settings_back", onBack) }
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack, modifier = Modifier.testTag("settings_back")) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回我的", tint = Ink)
-                }
-                Text("播放设置", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("外观", color = Muted, fontSize = 14.sp)
+            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface, modifier = Modifier.padding(top = 12.dp)) {
+                MyMenuRow("主题样式", "暖白精修、沉浸暗场、内容卡片", "settings_theme",
+                    trailing = state.themeStyle.label, onClick = onTheme)
             }
         }
         item {
             Text("播放偏好", color = Muted, fontSize = 14.sp)
-            Surface(shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.padding(top = 12.dp)) {
+            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface, modifier = Modifier.padding(top = 12.dp)) {
                 Column {
                     SettingSwitch("自动连播下一集", "本集结束后继续播放，也可上下滑动切集", state.autoPlayNext,
                         "settings_autoplay", model::setAutoPlayNext)
@@ -156,7 +201,7 @@ private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
         }
         item {
             Text("软件更新", color = Muted, fontSize = 14.sp)
-            Surface(shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.padding(top = 12.dp)) {
+            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface, modifier = Modifier.padding(top = 12.dp)) {
                 SettingSwitch("启动时检查更新", "每次重新启动应用时检查，下载和安装仍需确认", updateState.automaticChecksEnabled,
                     "settings_auto_update", updateModel::setAutomaticChecksEnabled)
             }
@@ -169,6 +214,144 @@ private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
 }
 
 @Composable
+private fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, onBack: () -> Unit) {
+    val systemDark = isSystemInDarkTheme()
+    val overridden = state.darkFollowsSystem && systemDark && state.themeStyle != AppThemeStyle.IMMERSIVE
+    LazyColumn(Modifier.fillMaxSize().testTag("theme_screen").padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { PageHeader("主题样式", "返回设置", "theme_back", onBack) }
+        item {
+            Text("选择喜欢的界面风格，点选后立即生效。收藏、历史与播放设置不受影响。",
+                color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
+        }
+        item {
+            Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppThemeStyle.entries.forEach { style ->
+                    ThemeOption(style, selected = state.themeStyle == style, modifier = Modifier.weight(1f)) {
+                        model.setThemeStyle(style)
+                    }
+                }
+            }
+        }
+        item {
+            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(state.themeStyle.palette().accent))
+                        Text(state.themeStyle.label, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Text(state.themeStyle.summary, color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
+                    if (overridden) Text("系统当前为深色模式，正在临时使用「沉浸暗场」。", color = AccentText,
+                        fontSize = 12.sp, lineHeight = 19.sp, modifier = Modifier.testTag("theme_dark_override_note"))
+                }
+            }
+        }
+        item {
+            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
+                SettingSwitch("深色模式时自动切换", "系统进入深色模式时使用「沉浸暗场」，退出后恢复所选主题",
+                    state.darkFollowsSystem, "settings_theme_dark_follow", model::setDarkFollowsSystem)
+            }
+        }
+        item { Spacer(Modifier.height(28.dp)) }
+    }
+}
+
+@Composable
+internal fun ThemeOption(style: AppThemeStyle, selected: Boolean, modifier: Modifier, onSelect: () -> Unit) {
+    val ring = if (selected) Orange else Color.Transparent
+    Column(modifier.clip(RoundedCornerShape(16.dp))
+        .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+        .semantics { contentDescription = "${style.label}主题" }
+        .testTag("theme_option_${style.key}")
+        .border(2.dp, ring, RoundedCornerShape(16.dp))
+        .background(CardSurface)
+        .padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ThemePreview(style)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)) {
+            if (selected) Box(Modifier.size(18.dp).clip(CircleShape).background(Orange), Alignment.Center) {
+                Icon(Icons.Outlined.Check, null, Modifier.size(13.dp), tint = OnOrange)
+            } else Box(Modifier.size(18.dp).padding(1.dp).border(2.dp, Muted, CircleShape))
+            // Wraps instead of clipping on narrow screens or large font scales.
+            Text(style.label, color = Ink, fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
+        }
+    }
+}
+
+private val PreviewTones = listOf(Color(0xFF7B3B2C), Color(0xFF8A4F62), Color(0xFF5B4636), Color(0xFF3E4A61),
+    Color(0xFF2F5D50), Color(0xFF7A5C2E), Color(0xFF4B3F6B))
+
+/** A miniature of each theme's home screen, always drawn in that theme's own colors. */
+@Composable
+private fun ThemePreview(style: AppThemeStyle) {
+    val p = style.palette()
+    Box(Modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(10.dp)).background(p.canvas)
+        .border(1.dp, p.line, RoundedCornerShape(10.dp))) {
+        when (style) {
+            AppThemeStyle.IMMERSIVE -> {
+                Box(Modifier.fillMaxSize().background(PreviewTones[0]))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                    0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = .85f))))
+                Column(Modifier.align(Alignment.CenterEnd).padding(end = 5.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    repeat(3) { Box(Modifier.size(8.dp).clip(CircleShape).background(Color.White.copy(alpha = .85f))) }
+                }
+                Column(Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Box(Modifier.width(44.dp).height(5.dp).clip(CircleShape).background(Color.White))
+                    Box(Modifier.width(30.dp).height(3.dp).clip(CircleShape).background(Color.White.copy(alpha = .6f)))
+                }
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(12.dp).background(p.canvas))
+            }
+            AppThemeStyle.WARM -> Column(Modifier.fillMaxSize().padding(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(p.cream))
+                Box(Modifier.fillMaxWidth().height(26.dp).clip(RoundedCornerShape(4.dp)).background(PreviewTones[5]))
+                repeat(2) { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        repeat(3) { col ->
+                            Box(Modifier.weight(1f).aspectRatio(.75f).clip(RoundedCornerShape(2.dp))
+                                .background(PreviewTones[(row * 3 + col) % PreviewTones.size]))
+                        }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                PreviewNav(p)
+            }
+            AppThemeStyle.CARDS -> Column(Modifier.fillMaxSize().padding(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(p.card))
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(p.card).padding(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Box(Modifier.fillMaxWidth(.7f).height(3.dp).background(p.accent))
+                    Box(Modifier.fillMaxWidth(.85f).height(3.dp).background(p.line))
+                    Box(Modifier.fillMaxWidth(.6f).height(3.dp).background(p.line))
+                }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Box(Modifier.fillMaxWidth().weight(1.4f).clip(RoundedCornerShape(3.dp)).background(PreviewTones[5]))
+                        Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(3.dp)).background(PreviewTones[2]))
+                    }
+                    Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(3.dp)).background(PreviewTones[1]))
+                        Box(Modifier.fillMaxWidth().weight(1.4f).clip(RoundedCornerShape(3.dp)).background(PreviewTones[6]))
+                    }
+                }
+                PreviewNav(p)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewNav(p: HongguoPalette) {
+    Row(Modifier.fillMaxWidth().height(9.dp).clip(RoundedCornerShape(2.dp)).background(p.card),
+        horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        repeat(4) { i -> Box(Modifier.size(width = 6.dp, height = 3.dp).clip(CircleShape)
+            .background(if (i == 0) p.accent else p.line)) }
+    }
+}
+
+@Composable
 private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, tag: String, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -176,6 +359,9 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, tag
             Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
         }
-        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.testTag(tag))
+        // Off state uses the secondary text color so the control stays visible on every theme.
+        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.testTag(tag),
+            colors = SwitchDefaults.colors(uncheckedThumbColor = Muted, uncheckedBorderColor = Muted,
+                uncheckedTrackColor = Cream))
     }
 }

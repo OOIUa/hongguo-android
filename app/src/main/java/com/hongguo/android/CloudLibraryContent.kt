@@ -121,12 +121,12 @@ internal fun LazyListScope.cloudLibraryItems(
                 Text("刷新", fontSize = 14.sp)
             }
         }
-        TabRow(selectedTabIndex = state.selectedSection.ordinal, containerColor = Canvas, contentColor = Orange,
+        TabRow(selectedTabIndex = state.selectedSection.ordinal, containerColor = Canvas, contentColor = AccentInk,
             divider = { HorizontalDivider(color = Cream) }) {
             listOf(AccountSection.HISTORY to "历史", AccountSection.FAVORITES to "收藏", AccountSection.RESERVATIONS to "预约").forEach { (section, title) ->
                 Tab(selected = state.selectedSection == section, onClick = { accountModel.selectSection(section) },
                     modifier = Modifier.testTag("account_section_${section.name.lowercase(Locale.ROOT)}"),
-                    selectedContentColor = Orange, unselectedContentColor = Muted,
+                    selectedContentColor = AccentInk, unselectedContentColor = Muted,
                     text = { Text(title, fontSize = 16.sp, fontWeight = if (state.selectedSection == section) FontWeight.SemiBold else FontWeight.Normal) })
             }
         }
@@ -177,10 +177,10 @@ private fun AccountLibraryRow(entry: LibraryEntry, section: AccountSection, canO
                     AccountSection.HISTORY -> "第 ${entry.episodeIndex.coerceAtLeast(1)} 集 · ${accountPosition(entry.positionMs)}"
                     AccountSection.FAVORITES -> if (entry.card.episodeCount > 0) "${entry.card.episodeCount} 集 · 账号收藏" else "账号收藏"
                     AccountSection.RESERVATIONS -> if (canOpen) "已上线，可以观看" else "等待上线"
-                }, color = if (canOpen) Muted else Orange, fontSize = 12.sp)
+                }, color = if (canOpen) Muted else AccentInk, fontSize = 12.sp)
                 if (canOpen) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (section == AccountSection.HISTORY) "继续观看" else "查看剧集", color = Orange, fontSize = 14.sp)
-                    Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp), tint = Orange)
+                    Text(if (section == AccountSection.HISTORY) "继续观看" else "查看剧集", color = AccentInk, fontSize = 14.sp)
+                    Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp), tint = AccentInk)
                 }
             }
         }

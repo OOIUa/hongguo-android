@@ -56,12 +56,13 @@ internal fun PlayerSeekBar(
             }
         },
         track = { slider ->
+            val accent = Orange
             Canvas(Modifier.fillMaxWidth().height(if (dragging) 5.dp else 3.dp)) {
                 val corners = CornerRadius(size.height / 2)
                 drawRoundRect(Color.White.copy(alpha = .22f), cornerRadius = corners)
                 drawRoundRect(Color.White.copy(alpha = if (enabled) .42f else .18f),
                     size = Size(size.width * bufferedFraction.coerceIn(0f, 1f), size.height), cornerRadius = corners)
-                drawRoundRect(if (enabled) Orange else Color.White.copy(alpha = .3f),
+                drawRoundRect(if (enabled) accent else Color.White.copy(alpha = .3f),
                     size = Size(size.width * slider.value.coerceIn(0f, 1f), size.height), cornerRadius = corners)
             }
         },

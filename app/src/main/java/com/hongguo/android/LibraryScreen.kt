@@ -52,7 +52,7 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
                     .selectable(selected, role = Role.Tab, onClick = { model.selectLibrarySource(cloud) })
                     .testTag(if (cloud) "library_source_account" else "library_source_local"),
                     contentAlignment = Alignment.Center) {
-                    Text(label, color = if (selected) Orange else Muted, fontSize = 16.sp,
+                    Text(label, color = if (selected) AccentInk else Muted, fontSize = 16.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp))
                 }
@@ -71,7 +71,7 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
                         .testTag(if (isHistory) "library_history" else "library_favorites"),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(label, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                            color = if (history == isHistory) Orange else Muted,
+                            color = if (history == isHistory) AccentInk else Muted,
                             modifier = Modifier.padding(vertical = 12.dp))
                         Box(Modifier.width(30.dp).height(2.dp).background(if (history == isHistory) Orange else Color.Transparent))
                     }
