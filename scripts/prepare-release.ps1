@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '三套主题现在各有完整的页面布局：暖白精修是经典浅色布局（今日推荐、继续观看横滑、三列封面）；沉浸暗场首页改为竖屏上下滑动刷剧，另有剧场榜单与追剧页；内容卡片提供频道切换、热度榜和双列瀑布流。更新后会再请你选择一次主题，之后可在“我的 › 设置 › 主题样式”随时切换。原有记录、播放、账号片单和更新功能继续保留。'
+        notes = '修正竖屏播放被系统当作全屏的问题：竖屏看剧时保留状态栏和导航栏，时间、电量和通知照常显示，下拉通知栏和返回手势一次即可；横屏时仍为全屏播放。三套主题布局、记录、续播、账号片单和更新功能保持不变。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

@@ -14,16 +14,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.4**（versionCode 15）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.5**（versionCode 16）· Android **8.0 / API 26** 及以上。
 
-本版让三套主题各自拥有完整的页面布局：暖白精修是经典浅色布局（今日推荐、继续观看横滑、三列封面）；沉浸暗场的首页改为竖屏上下滑动刷剧，另有剧场榜单与追剧页；内容卡片提供频道切换、热度榜和双列瀑布流。更新后会再请你选择一次主题，之后可在「我的 › 设置 › 主题样式」随时切换。原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
+本版修正竖屏播放被系统当作全屏的问题：竖屏看剧时保留状态栏与导航栏（透明背景、白色图标），时间、电量和通知照常显示，下拉通知栏与返回手势一次即可；横屏时仍为全屏播放。0.7.4 起三套主题各自拥有完整的页面布局：暖白精修是经典浅色布局，沉浸暗场首页可竖屏上下滑动刷剧，内容卡片提供频道切换、热度榜和双列瀑布流，可在「我的 › 设置 › 主题样式」随时切换。原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.4 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/hongguo-android-0.7.4.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/hongguo-android-0.7.4.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/hongguo-android-0.7.4.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.4 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/hongguo-android-0.7.4-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.4/SHA256SUMS-0.7.4.txt) |
+| GitHub 直连 | [下载 v0.7.5 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.5/hongguo-android-0.7.5.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.5/hongguo-android-0.7.5.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.5/hongguo-android-0.7.5.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.5 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.5/hongguo-android-0.7.5-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.5/SHA256SUMS-0.7.4.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -52,7 +52,7 @@
 | --- | --- |
 | 首页与续看 | 本机最新观看记录一键续播；热度精选、最新短剧和漫剧榜单双列展示，支持继续翻页 |
 | 发现与搜索 | 浏览短剧、漫剧、AI 剧，按上游提供的条件筛选；从首页或发现进入独立搜索页 |
-| 全屏播放 | 上划下一集、下划上一集，也可打开选集面板跳转 |
+| 竖屏播放 | 上划下一集、下划上一集，也可打开选集面板跳转；竖屏保留状态栏，横屏为全屏 |
 | 播放控制 | 暂停 / 继续、拖动进度、缓冲进度显示、播放失败重试 |
 | 长按临时加速 | 播放中长按视频左半屏临时以2倍速播放；松手、取消、离开页面后恢复原速度，不改变保存的倍速 |
 | 六档倍速 | 0.5×、0.75×、1×、1.25×、1.5×、2×，自动记住选择 |

@@ -2,7 +2,11 @@ package com.hongguo.android
 
 import com.hongguo.account.AccountViewModel
 
+import android.content.res.Configuration
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -98,16 +102,21 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val view = LocalView.current
     val activity = LocalActivity.current
+    // Portrait is the normal vertical-drama view: system bars stay visible (transparent, white icons), so the
+    // system does not treat the app as full screen. Only landscape hides them for full-screen viewing.
+    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation)
+    val currentFullScreen by rememberUpdatedState(fullScreen)
     DisposableEffect(lifecycle, model, activity, view) {
         val controller = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
         val lightStatus = controller?.isAppearanceLightStatusBars
         val lightNavigation = controller?.isAppearanceLightNavigationBars
         val barBehavior = controller?.systemBarsBehavior
-        controller?.let(::restorePlayerImmersive)
+        (activity as? ComponentActivity)?.applyPlayerBarStyle()
+        controller?.let { applyPlayerSystemBars(it, currentFullScreen) }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> model.onPlayerForeground(true)
-                Lifecycle.Event.ON_RESUME -> controller?.let(::restorePlayerImmersive)
+                Lifecycle.Event.ON_RESUME -> controller?.let { applyPlayerSystemBars(it, currentFullScreen) }
                 Lifecycle.Event.ON_STOP -> model.onPlayerForeground(false)
                 else -> Unit
             }
@@ -125,8 +134,14 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
             }
         }
     }
+    LaunchedEffect(activity, view, fullScreen) {
+        activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
+    }
     key(detail.id) { EpisodePager(state, model, detail, accountModel) }
 }
+
+/** Full screen (hidden status and navigation bars) only in landscape; portrait keeps the system bars. */
+internal fun playerHidesSystemBars(orientation: Int): Boolean = orientation == Configuration.ORIENTATION_LANDSCAPE
 
 private data class PagerMovement(val scrolling: Boolean, val settled: Int, val synchronizing: Int?)
 
@@ -178,9 +193,10 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     }
     val activity = LocalActivity.current
     val view = LocalView.current
-    // A sheet owns another window and can reveal system bars without resuming the Activity.
-    LaunchedEffect(sheetOpen, activity, view) {
-        if (!sheetOpen) activity?.window?.let { restorePlayerImmersive(WindowCompat.getInsetsController(it, view)) }
+    // A sheet owns another window and can reveal system bars or change their icons without resuming the Activity.
+    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation)
+    LaunchedEffect(sheetOpen, activity, view, fullScreen) {
+        if (!sheetOpen) activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
     }
     val visibleIndex = pager.currentPage.coerceIn(detail.episodes.indices)
     val visibleEpisode = detail.episodes[visibleIndex]
@@ -426,11 +442,22 @@ internal fun PlayerTopBar(
     }
 }
 
-private fun restorePlayerImmersive(controller: WindowInsetsControllerCompat) {
+private fun applyPlayerSystemBars(controller: WindowInsetsControllerCompat, fullScreen: Boolean) {
     controller.isAppearanceLightStatusBars = false
     controller.isAppearanceLightNavigationBars = false
     controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-    controller.hide(WindowInsetsCompat.Type.systemBars())
+    if (fullScreen) controller.hide(WindowInsetsCompat.Type.systemBars())
+    else controller.show(WindowInsetsCompat.Type.systemBars())
+}
+
+/**
+ * Transparent bars with light icons over the black player, including the API 26-28 / three-button navigation
+ * bar, which would otherwise keep the light theme's white scrim. The app theme re-applies its own style when the
+ * player closes (HongguoTheme regains the window).
+ */
+private fun ComponentActivity.applyPlayerBarStyle() {
+    val transparent = android.graphics.Color.TRANSPARENT
+    enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(transparent), navigationBarStyle = SystemBarStyle.dark(transparent))
 }
 
 private fun playerTime(positionMs: Long): String {

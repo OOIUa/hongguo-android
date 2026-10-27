@@ -1,3 +1,12 @@
+# 0.7.5 竖屏播放不再全屏
+
+验证日期：2026-10-27（Asia/Shanghai）。versionName 0.7.5、versionCode 16。
+
+- 问题：自最早的竖屏播放实现起，播放页打开时不分方向隐藏状态栏与导航栏（`hide(systemBars)`），竖屏看剧也被系统当作全屏：可能出现“正在全屏查看”提示，时间、电量和手势条不可见，部分系统收起悬浮通知，下拉通知栏与返回手势需先唤出系统栏。
+- 修复：`EpisodePlayerScreen.kt` 改为按方向处理（`playerHidesSystemBars`）：竖屏显示系统栏，横屏才隐藏；回到前台、旋转和关闭选集/倍速/收藏面板后按当前方向重新应用。播放期间系统栏为透明背景、白色图标（含 Android 8–9 与三键导航的导航栏），关闭播放页后由当前主题重新接管。顶部控件原本就按状态栏忽略可见性的安全区排布，位置不变；底部控件按导航栏留出空间。
+- 云端构建（与发布签名无关）：`:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 通过，结果见下一条。新增 `PlayerSystemBarsTest`（竖屏不隐藏、仅横屏全屏）。Robolectric 中打开播放页逐步核对窗口请求的系统栏状态：竖屏可见且为浅色图标，横屏隐藏，转回竖屏重新可见，关闭播放页后恢复暖白主题的深色图标。
+- 待发布机器补充：原签名构建与指纹核对、`connectedDebugAndroidTest`，以及实体手机竖屏/横屏观看检查。
+
 # 0.7.4 三套主题各自的页面布局
 
 验证日期：2026-10-27（Asia/Shanghai）。versionName 0.7.4、versionCode 15。
