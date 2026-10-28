@@ -417,7 +417,7 @@ internal fun ImmersiveLibrary(state: HongguoUiState, model: HongguoViewModel, ac
                     modifier = Modifier.padding(horizontal = 16.dp))
                 else LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(state.history, key = { it.card.id }) { entry ->
-                        Column(Modifier.width(132.dp).clickable { model.openLibrary(entry) }.testTag("immersive_history_${entry.card.id}"),
+                        Column(Modifier.animateItem().width(132.dp).clickable { model.openLibrary(entry) }.testTag("immersive_history_${entry.card.id}"),
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Box(Modifier.fillMaxWidth().height(176.dp).clip(RoundedCornerShape(10.dp))) {
                                 PosterImage(entry.card.cover, Modifier.fillMaxSize())

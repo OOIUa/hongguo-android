@@ -22,6 +22,16 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,11 +91,15 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
                 tabs.forEach { item ->
                     val tab = item.tab
                     val isSelected = active == tab
-                    val color = when {
+                    val color by animateColorAsState(when {
                         !isSelected -> secondary
                         style == AppThemeStyle.WARM -> AccentInk
                         else -> Ink
-                    }
+                    }, tween(180), label = "nav_color_${tab.name}")
+                    // Selection marks grow in rather than switching on and off.
+                    // Read only while drawing, so the spring redraws the mark without recomposing the bar.
+                    val mark = animateFloatAsState(if (isSelected) 1f else 0f,
+                        spring(dampingRatio = .7f, stiffness = Spring.StiffnessMediumLow), label = "nav_mark_${tab.name}")
                     Column(Modifier.weight(1f).heightIn(min = 64.dp)
                         .selectable(selected = isSelected, role = Role.Tab, onClick = {
                             keyboard?.hide()
@@ -97,8 +111,13 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
                         verticalArrangement = Arrangement.Center) {
                         val icon = if (isSelected) item.selectedIcon else item.icon
                         if (style == AppThemeStyle.CARDS) {
-                            Box(Modifier.width(56.dp).height(30.dp).clip(RoundedCornerShape(15.dp))
-                                .background(if (isSelected) Cream else Color.Transparent), contentAlignment = Alignment.Center) {
+                            val pill = Cream
+                            Box(Modifier.width(56.dp).height(30.dp).drawBehind {
+                                val m = mark.value
+                                val w = size.width * (.6f + .4f * m)
+                                drawRoundRect(pill.copy(alpha = pill.alpha * m.coerceIn(0f, 1f)), topLeft = Offset((size.width - w) / 2, 0f),
+                                    size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2))
+                            }, contentAlignment = Alignment.Center) {
                                 Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(23.dp))
                             }
                         } else Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(23.dp))
@@ -108,8 +127,13 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
                             fontWeight = if (isSelected) (if (style == AppThemeStyle.WARM) FontWeight.SemiBold else FontWeight.Bold) else FontWeight.Medium)
                         if (style == AppThemeStyle.WARM) {
                             Spacer(Modifier.height(4.dp))
-                            Box(Modifier.width(14.dp).height(2.dp).clip(RoundedCornerShape(1.dp))
-                                .background(if (isSelected) Orange else Color.Transparent))
+                            val line = Orange
+                            Box(Modifier.width(17.dp).height(2.dp).drawBehind {
+                                val m = mark.value
+                                val w = 14.dp.toPx() * m.coerceIn(0f, 1.2f)
+                                drawRoundRect(line.copy(alpha = m.coerceIn(0f, 1f)), topLeft = Offset((size.width - w) / 2, 0f),
+                                    size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2))
+                            })
                         }
                     }
                 }

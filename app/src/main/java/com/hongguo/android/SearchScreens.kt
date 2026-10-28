@@ -63,7 +63,7 @@ internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel, trendi
     val focus = LocalFocusManager.current
     val submit = { keyboard?.hide(); focus.clearFocus(); model.search() }
     val close = { keyboard?.hide(); focus.clearFocus(); model.closeSearch() }
-    BackHandler(onBack = close)
+    BackHandler(enabled = LocalPageActive.current, onBack = close)
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).testTag("search_screen")) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -6,13 +6,32 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.animation.EnterExitState
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -21,8 +40,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -62,7 +79,16 @@ class MainActivity : ComponentActivity() {
                         else -> model.selectTab(AppTab.HOME)
                     }
                 }
-                if (state.playerOpen && state.detail != null) EpisodePlayerScreen(state, model, accountModel)
+                // The player rises over the detail page and fades away when closed.
+                AnimatedContent(targetState = state.playerOpen && state.detail != null, label = "player_transition",
+                    transitionSpec = {
+                        if (targetState) (slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 8 } + fadeIn(tween(220)))
+                            .togetherWith(fadeOut(tween(180)))
+                        else fadeIn(tween(220)).togetherWith(slideOutVertically(tween(260)) { it / 10 } + fadeOut(tween(200)))
+                    }) { playerShown ->
+                // False as soon as the player starts closing (or the page starts leaving), not when the fade ends.
+                val playerActive = transition.targetState == EnterExitState.Visible
+                if (playerShown) EpisodePlayerScreen(state, model, accountModel, active = playerActive)
                 else {
                     val showNav = state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.ACCOUNT)
                     // 悬浮玻璃: the bar floats as a liquid-glass capsule and the page runs underneath it.
@@ -80,16 +106,37 @@ class MainActivity : ComponentActivity() {
                             end = insets.calculateEndPadding(direction), bottom = 0.dp)
                         Box(Modifier.fillMaxSize()) {
                         CompositionLocalProvider(LocalNavClearance provides navClearance) {
-                        pageStates.SaveableStateProvider(state.selectedCard?.let { "detail_${it.id}" } ?: "tab_${state.tab.name}") {
+                        // A detail page keeps drawing its last state while it slides out after 返回.
+                        val lastDetail = remember { LastDetailState() }
+                        SideEffect { state.selectedCard?.let { lastDetail.key = "detail_${it.id}"; lastDetail.state = state } }
+                        val screenKey = state.selectedCard?.let { "detail_${it.id}" } ?: "tab_${state.tab.name}"
                         Column(Modifier.fillMaxSize()
                             .then(if (floatingNav) Modifier.glassBackdropSource(backdrop).background(Canvas) else Modifier)
                             .padding(pagePadding).semantics { testTagsAsResourceId = true }) {
-                            if (state.selectedCard != null) when (layout) {
-                                AppThemeStyle.IMMERSIVE -> ImmersiveDetail(state, model, accountModel)
-                                AppThemeStyle.CARDS -> CardsDetail(state, model, accountModel)
-                                AppThemeStyle.WARM -> DetailScreen(state, model, accountModel)
+                        AnimatedContent(targetState = screenKey, label = "page_transition", modifier = Modifier.fillMaxSize(),
+                            transitionSpec = { pageTransition(initialState, targetState) }) { key ->
+                        val pageActive = transition.targetState == EnterExitState.Visible
+                        CompositionLocalProvider(LocalPageActive provides pageActive) {
+                        pageStates.SaveableStateProvider(key) {
+                        Box(Modifier.fillMaxSize()) {
+                        Column(Modifier.fillMaxSize().background(Canvas)) {
+                            // Each page draws its own state: a leaving detail page keeps its drama, never the next one.
+                            val detailState = when {
+                                !key.startsWith("detail_") -> null
+                                state.selectedCard?.let { "detail_${it.id}" } == key -> state
+                                lastDetail.key == key -> lastDetail.state
+                                else -> null
                             }
-                            else when (state.tab) {
+                            if (detailState != null) when (layout) {
+                                AppThemeStyle.IMMERSIVE -> ImmersiveDetail(detailState, model, accountModel)
+                                AppThemeStyle.CARDS -> CardsDetail(detailState, model, accountModel)
+                                AppThemeStyle.WARM -> DetailScreen(detailState, model, accountModel)
+                            }
+                            else if (key.startsWith("detail_")) Unit
+                            else {
+                            val keyTab = AppTab.valueOf(key.removePrefix("tab_"))
+                            val tabState = if (state.tab == keyTab) state else state.copy(tab = keyTab)
+                            when (keyTab) {
                                 AppTab.HOME -> when (layout) {
                                     AppThemeStyle.IMMERSIVE -> ImmersiveHome(state, model)
                                     AppThemeStyle.CARDS -> CardsHome(state, model)
@@ -106,9 +153,9 @@ class MainActivity : ComponentActivity() {
                                 AppTab.SEARCH -> SearchScreen(state, model,
                                     trending = if (layout == AppThemeStyle.CARDS) state.home.items.take(10) else emptyList())
                                 AppTab.FAVORITES, AppTab.HISTORY -> when (layout) {
-                                    AppThemeStyle.IMMERSIVE -> ImmersiveLibrary(state, model, accountModel)
-                                    AppThemeStyle.CARDS -> CardsLibrary(state, model, accountModel)
-                                    AppThemeStyle.WARM -> LibraryScreen(state, model, accountModel)
+                                    AppThemeStyle.IMMERSIVE -> ImmersiveLibrary(tabState, model, accountModel)
+                                    AppThemeStyle.CARDS -> CardsLibrary(tabState, model, accountModel)
+                                    AppThemeStyle.WARM -> LibraryScreen(tabState, model, accountModel)
                                 }
                                 AppTab.MINE -> MyScreen(state, model, updateState, updateModel,
                                     accountName = if (accountState.sessionStatus == AccountSessionStatus.WEBSITE_ONLY)
@@ -122,6 +169,15 @@ class MainActivity : ComponentActivity() {
                                 AppTab.ACCOUNT -> AccountScreen(accountModel, onBack = model::closeAccount,
                                     onOpenLibrary = model::openLibrary)
                             }
+                            }
+                        }
+                        // A leaving page still shows for a moment; it must not take taps meant for the new page.
+                        if (!pageActive) Box(Modifier.matchParentSize().pointerInput(Unit) {
+                            awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } }
+                        })
+                        }
+                        }
+                        }
                         }
                         }
                         }
@@ -129,6 +185,7 @@ class MainActivity : ComponentActivity() {
                             style = layout, backdrop = backdrop)
                         }
                     }
+                }
                 }
                 if (state.themeOnboardingPending) {
                     ThemeOnboardingDialog(current = state.themeStyle,
@@ -166,10 +223,37 @@ private fun ComponentActivity.storedThemeStyle(): AppThemeStyle {
 private fun BrandHeader() {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        // The established typographic brand mark remains native, with no rasterized screen chrome.
-        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Orange), Alignment.Center) {
-            Text("果", color = OnOrange, fontSize = 24.sp / LocalDensity.current.fontScale, fontWeight = FontWeight.Bold)
-        }
+        // Minimal red-fruit brand mark, shared with the launcher icon (res/drawable/ic_logo.xml, vector).
+        Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(34.dp))
         Text("红果剧场", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = Ink)
     }
+}
+
+/** Pages opened on top (detail, 搜索, 账号) slide in from the right and back out; switching tabs cross-fades. */
+private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, to: String): ContentTransform {
+    fun depth(key: String) = when {
+        key.startsWith("detail_") -> 2
+        key == "tab_${AppTab.SEARCH.name}" || key == "tab_${AppTab.ACCOUNT.name}" -> 1
+        else -> 0
+    }
+    val forward = depth(to) > depth(from)
+    val back = depth(to) < depth(from)
+    val slide = tween<IntOffset>(280, easing = FastOutSlowInEasing)
+    return when {
+        forward -> (slideInHorizontally(slide) { it / 3 } + fadeIn(tween(220)))
+            .togetherWith(fadeOut(tween(160)))
+        back -> fadeIn(tween(200))
+            .togetherWith(slideOutHorizontally(slide) { it / 3 } + fadeOut(tween(200)))
+            .apply { targetContentZIndex = -1f }
+        else -> fadeIn(tween(180, delayMillis = 60)).togetherWith(fadeOut(tween(120)))
+    }
+}
+
+/** False while a page is animating out, so its back handlers and taps stand down. */
+internal val LocalPageActive = compositionLocalOf { true }
+
+/** The detail page last shown, so it can keep drawing its drama while it slides out. Not observable state. */
+private class LastDetailState {
+    var key: String? = null
+    var state: HongguoUiState? = null
 }

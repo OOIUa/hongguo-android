@@ -90,10 +90,13 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
                         if (history) "开始播放后，这里会记住集数和进度。" else "在剧集详情或播放器中收藏，喜欢的故事就会留在这里。")
                 }
                 itemsIndexed(entries, key = { _, entry -> entry.card.id }) { index, entry ->
+                    // Removing an entry lets the rows below slide up instead of jumping.
+                    Column(Modifier.animateItem()) {
                     LibraryRow(entry, history, index, managing,
                         onOpen = { model.openLibrary(entry) },
                         onRemove = { if (history) model.removeHistory(entry.card.id) else model.toggleFavorite(entry.card) })
                     if (index < entries.lastIndex) HorizontalDivider(color = Line.copy(alpha = .6f))
+                    }
                 }
                 item {
                     Text("本机记录仅保存在这台设备。", fontSize = 12.sp, color = Muted,

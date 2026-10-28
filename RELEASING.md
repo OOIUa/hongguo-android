@@ -4,7 +4,7 @@
 
 - GitHub 仓库：[OOIUa/hongguo-android](https://github.com/OOIUa/hongguo-android)。
 - 首个支持在线更新的版本：`0.3.0`，`versionCode=3`，tag 为 `v0.3.0`。
-- 当前源码版本：`0.7.6`，`versionCode=17`，tag 为 `v0.7.6`；新增底栏样式设置（经典 / 悬浮玻璃），播放页去掉背景封面，竖屏播放保留系统栏、仅横屏全屏沿用 0.7.5，三套主题布局沿用 0.7.4，播放取链沿用 0.7.2，详见 `VALIDATION.md`。发布资产与 `latest` 更新清单须与之保持一致。
+- 当前源码版本：`0.7.7`，`versionCode=18`，tag 为 `v0.7.7`；换用简约红果自适应图标，补齐播放切集与页面过渡动画，新增底栏样式设置（经典 / 悬浮玻璃），播放页去掉背景封面，竖屏播放保留系统栏、仅横屏全屏沿用 0.7.5，三套主题布局沿用 0.7.4，播放取链沿用 0.7.2，详见 `VALIDATION.md`。发布资产与 `latest` 更新清单须与之保持一致。
 - 账号功能仍处于测试阶段。发行说明需简要说明官网验证、固定批次片单及可选进度上报的使用范围，实际登录与同步结果需用本人账号核对。
 - 应用 ID：`com.hongguo.android`；当前最低系统为 API 26。
 - 固定清单地址：`https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json`。
@@ -24,13 +24,13 @@
 
 ## 构建与验证
 
-在保有原签名密钥的机器上构建。例如准备 0.7.6：
+在保有原签名密钥的机器上构建。例如准备 0.7.7：
 
 ```powershell
-.\gradlew.bat -PappVersionCode=17 -PappVersionName=0.7.6 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+.\gradlew.bat -PappVersionCode=18 -PappVersionName=0.7.7 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-当前版本 APK 来自 `app/build/outputs/apk/debug/app-debug.apk`。后续版本应严格增加 `appVersionCode`，例如 0.7.7 使用 18；版本名可为三段或四段数字（如 0.7.5.1）；不要通过提高 `versionName`、修改 tag 或替换清单来绕过 versionCode 检查。
+当前版本 APK 来自 `app/build/outputs/apk/debug/app-debug.apk`。后续版本应严格增加 `appVersionCode`，例如 0.7.8 使用 19；版本名可为三段或四段数字（如 0.7.5.1）；不要通过提高 `versionName`、修改 tag 或替换清单来绕过 versionCode 检查。
 
 发布前核对最终 APK 的真实包名、versionCode、versionName、minSdk 和签名证书。清单中的版本名称和最低系统版本必须与 APK 完全一致。若构建后又重新签名或改动 APK，必须重新计算文件大小及 SHA-256。
 
@@ -79,7 +79,7 @@ pwsh -File scripts/prepare-release.ps1
 1. 将本次对应的应用源码、Gradle wrapper、构建配置、许可证和改动说明提交至仓库，再创建对应 tag。
 2. 在该 tag 创建 release，可先保留为草稿，上传脚本生成的 APK、源码 ZIP、`update.json` 和 `SHA256SUMS-<版本>.txt`。签名公开指纹与版本说明也可一并提供，私钥始终留在本地。
 3. 确认该 tag 可以取得对应完整源码。应用按 GPL-3.0-only 分发，不能只上传 APK 而遗漏该版本的对应源码；来源和通知见 `THIRD_PARTY_NOTICES.md`。
-4. 发布为**非草稿、非 prerelease** 的正式 release，并使其成为 Latest。0.7.6 对应 tag 为 `v0.7.6`；prerelease 不用于本应用固定的 latest 清单入口。
+4. 发布为**非草稿、非 prerelease** 的正式 release，并使其成为 Latest。0.7.7 对应 tag 为 `v0.7.7`；prerelease 不用于本应用固定的 latest 清单入口。
 5. 匿名访问固定的 `latest/download/update.json`，确认可经 HTTPS 重定向取得新清单；再校验清单指向的 tag、APK 文件名、真实文件大小及哈希。此过程不应需要 GitHub 账号或 token。
 6. 在已装旧版本且签名一致的测试设备上，手动检查更新，核对显示版本、下载进度、安装来源权限、系统安装交接与安装后的数据保留。
 

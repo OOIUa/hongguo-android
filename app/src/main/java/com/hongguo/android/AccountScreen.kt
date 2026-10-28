@@ -96,7 +96,7 @@ internal fun AccountScreen(
             else webError = "登录确认已过期，请重新打开官网登录"
         }
     }
-    BackHandler { accountModel.cancelLogin(); onBack() }
+    BackHandler(enabled = LocalPageActive.current) { accountModel.cancelLogin(); onBack() }
     DisposableEffect(accountModel) { onDispose { accountModel.cancelLogin() } }
     LaunchedEffect(state.message, state.sessionStatus, state.localClearFailed) {
         if (state.localClearFailed) {

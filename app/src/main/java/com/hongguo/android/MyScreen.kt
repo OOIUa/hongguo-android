@@ -75,7 +75,7 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
     var page by rememberSaveable { mutableStateOf("") }
     // The theme page can be opened from 设置 or (沉浸暗场) straight from 我的; back returns to where it came from.
     var themeReturn by rememberSaveable { mutableStateOf(PAGE_SETTINGS) }
-    BackHandler(enabled = page.isNotEmpty()) { page = if (page == PAGE_THEME) themeReturn else "" }
+    BackHandler(enabled = page.isNotEmpty() && LocalPageActive.current) { page = if (page == PAGE_THEME) themeReturn else "" }
     when (page) {
         PAGE_SETTINGS -> {
             SystemSettingsScreen(state, model, updateState, updateModel,

@@ -7,7 +7,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -94,7 +99,8 @@ import androidx.media3.common.Player
 import java.util.Locale
 
 @Composable
-internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel, accountModel: AccountViewModel? = null) {
+internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel, accountModel: AccountViewModel? = null,
+                                 active: Boolean = true) {
     val detail = state.detail ?: return
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val view = LocalView.current
@@ -103,7 +109,10 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
     // system does not treat the app as full screen. Only landscape hides them for full-screen viewing.
     val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation)
     val currentFullScreen by rememberUpdatedState(fullScreen)
-    DisposableEffect(lifecycle, model, activity, view) {
+    // [active] is false while the closing player fades out: the bars and foreground state are handed back at once,
+    // and taken again if the player is reopened before the fade ends.
+    DisposableEffect(lifecycle, model, activity, view, active) {
+        if (!active) return@DisposableEffect onDispose { }
         val controller = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
         val lightStatus = controller?.isAppearanceLightStatusBars
         val lightNavigation = controller?.isAppearanceLightNavigationBars
@@ -131,10 +140,10 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
             }
         }
     }
-    LaunchedEffect(activity, view, fullScreen) {
-        activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
+    LaunchedEffect(activity, view, fullScreen, active) {
+        if (active) activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
     }
-    key(detail.id) { EpisodePager(state, model, detail, accountModel) }
+    key(detail.id) { EpisodePager(state, model, detail, accountModel, active) }
 }
 
 /** Full screen (hidden status and navigation bars) only in landscape; portrait keeps the system bars. */
@@ -144,7 +153,8 @@ private data class PagerMovement(val scrolling: Boolean, val settled: Int, val s
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail, accountModel: AccountViewModel?) {
+private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail, accountModel: AccountViewModel?,
+                         active: Boolean) {
     if (detail.episodes.isEmpty()) return
     val selected = state.episodePosition.coerceIn(detail.episodes.indices)
     val pager = rememberPagerState(initialPage = selected, pageCount = { detail.episodes.size })
@@ -157,11 +167,14 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     var seeking by remember(state.video?.requestId) { mutableStateOf(false) }
     var seekFraction by remember(state.video?.requestId) { mutableStateOf<Float?>(null) }
 
-    // Model-driven changes (continue, sheet selection and autoplay) never count as a user swipe.
+    // Model-driven changes (continue, sheet selection and autoplay) never count as a user swipe. They slide like a
+    // swipe. User scrolling is off until the slide ends, so a touch cannot stop it half-way on another episode.
     LaunchedEffect(selected, detail.id) {
         if (pager.currentPage != selected || pager.settledPage != selected) {
             synchronizing = selected
-            try { pager.scrollToPage(selected) } finally { synchronizing = null }
+            // animateScrollToPage itself jumps close first when the target is several pages away.
+            try { pager.animateScrollToPage(selected, animationSpec = tween(EpisodeSlideMillis, easing = FastOutSlowInEasing)) }
+            finally { synchronizing = null }
         }
     }
     LaunchedEffect(pager, detail.id) {
@@ -176,9 +189,10 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         }
     }
 
-    // Releasing at drag start also prevents the old episode ending while the next page is settling.
+    // The current episode stays attached while the user drags, so its picture slides away with the page instead of
+    // vanishing at drag start. It is released once another page settles (or a model-driven slide starts).
     val activeVideo = state.video?.takeIf {
-        !pager.isScrollInProgress && pager.currentPage == selected && it.episodeId == detail.episodes[selected].id
+        pager.settledPage == selected && synchronizing == null && it.episodeId == detail.episodes[selected].id
     }
     // A temporary drag disables the owner without discarding this request's pause/resume intent.
     val sheetOpen = showEpisodes || showSpeed || showFavorites
@@ -188,12 +202,29 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     LaunchedEffect(activeVideo?.requestId, playback.playWhenReady, playback.ended, sheetOpen) {
         if (activeVideo == null || !playback.playWhenReady || playback.ended || sheetOpen) doubleSpeedHeld = false
     }
+    // Pause while a swipe is in progress (the episode must not end and autoplay mid-drag); a swipe that comes back to
+    // the same episode resumes it, a swipe to another episode leaves the release to the settled page change.
+    // The hold starts on the drag's first event (not a frame later) and never changes the user's pause intent.
+    val hold = rememberUpdatedState(playback.holdForGesture)
+    LaunchedEffect(pager) {
+        pager.interactionSource.interactions.collect { if (it is DragInteraction.Start) hold.value(true) }
+    }
+    val dragging = pager.isScrollInProgress && synchronizing == null
+    LaunchedEffect(dragging, playback.player) {
+        if (playback.player == null) return@LaunchedEffect
+        if (dragging) hold.value(true)
+        else if (pager.settledPage == latestSelected.value) hold.value(false)
+    }
+    // Fade the picture in once its first frame is on screen, instead of popping from black. Read only in the draw
+    // layer, so the fade does not recompose the page.
+    val pictureCover = animateFloatAsState(if (state.firstFrameRendered) 0f else 1f,
+        tween(if (state.firstFrameRendered) 240 else 0), label = "first_frame_fade")
     val activity = LocalActivity.current
     val view = LocalView.current
     // A sheet owns another window and can reveal system bars or change their icons without resuming the Activity.
     val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation)
-    LaunchedEffect(sheetOpen, activity, view, fullScreen) {
-        if (!sheetOpen) activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
+    LaunchedEffect(sheetOpen, activity, view, fullScreen, active) {
+        if (active && !sheetOpen) activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
     }
     val visibleIndex = pager.currentPage.coerceIn(detail.episodes.indices)
     val visibleEpisode = detail.episodes[visibleIndex]
@@ -215,10 +246,11 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     Box(Modifier.fillMaxSize().background(Color.Black).semantics { testTagsAsResourceId = true }) {
         VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("episode_pager"),
             key = { detail.episodes[it].id }, beyondViewportPageCount = 1,
-            userScrollEnabled = !showEpisodes && !showSpeed && !showFavorites && !seeking) { page ->
+            userScrollEnabled = active && synchronizing == null && !showEpisodes && !showSpeed && !showFavorites && !seeking) { page ->
             Box(Modifier.fillMaxSize().testTag("episode_page_$page"), Alignment.Center) {
                 if (page == selected && activeVideo != null && playback.player != null) {
                     VideoSurface(playback, Modifier.fillMaxSize())
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = pictureCover.value }.background(Color.Black))
                     PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),
                         enabled = !sheetOpen, onTap = togglePlayback, onHoldSpeedChange = { holding ->
                             // Holding a paused video must not resume it or change the saved speed.
@@ -226,7 +258,11 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                         })
                 }
                 when {
-                    page != selected || pager.isScrollInProgress -> Unit
+                    // Neighbouring episodes carry their number, so a swipe visibly brings the next one in.
+                    page != selected -> EpisodePlaceholder(detail.episodes[page].index, detail.title)
+                    // While sliding to an episode that has no picture yet, show its number rather than an empty frame.
+                    pager.isScrollInProgress -> if (activeVideo == null || playback.player == null)
+                        EpisodePlaceholder(detail.episodes[page].index, detail.title)
                     state.playbackError != null -> Column(Modifier.padding(horizontal = 34.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(state.playbackError, color = Color.White, fontSize = 14.sp, lineHeight = 23.sp,
@@ -454,6 +490,17 @@ private fun applyPlayerSystemBars(controller: WindowInsetsControllerCompat, full
 private fun ComponentActivity.applyPlayerBarStyle() {
     val transparent = android.graphics.Color.TRANSPARENT
     enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(transparent), navigationBarStyle = SystemBarStyle.dark(transparent))
+}
+
+private const val EpisodeSlideMillis = 320
+
+@Composable
+private fun EpisodePlaceholder(index: Int, title: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(horizontal = 40.dp)) {
+        Text("第 $index 集", color = Color.White.copy(alpha = .78f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(title, color = Color.White.copy(alpha = .45f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 private fun playerTime(positionMs: Long): String {

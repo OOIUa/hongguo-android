@@ -35,6 +35,8 @@ internal data class VideoPlaybackUi(
     val durationMs: Long = 0,
     val bufferedPositionMs: Long = 0,
     val playWhenReady: Boolean = true,
+    /** Pauses for a gesture (a page swipe) without touching the user's play/pause intent, status or forced saves. */
+    val holdForGesture: (Boolean) -> Unit = {},
 )
 
 /** One player owner above the pager; page composition only attaches its surface. */
@@ -49,6 +51,22 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
     var lastPosition by remember(video?.requestId) { mutableStateOf(initialPositionMs.coerceAtLeast(0)) }
     var wantedPlaying by rememberSaveable(video?.requestId) { mutableStateOf(true) }
     val latestSpeed = rememberUpdatedState(playbackSpeed)
+    // Set while a swipe holds the video paused: listeners then leave intent, status and saves alone.
+    val gestureHold = remember(video?.requestId) { booleanArrayOf(false) }
+    val holdForGesture: (Boolean) -> Unit = remember(video?.requestId) { { hold ->
+        val active = player
+        if (active != null) {
+            if (hold) {
+                if (!gestureHold[0] && active.playWhenReady && active.playbackState != Player.STATE_ENDED) {
+                    gestureHold[0] = true
+                    active.pause()
+                }
+            } else if (gestureHold[0]) {
+                active.play()
+                gestureHold[0] = false
+            }
+        } else gestureHold[0] = false
+    } }
 
     DisposableEffect(video?.requestId, lifecycle, enabled) {
         var pinned = false
@@ -59,7 +77,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
             val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
             ui = VideoPlaybackUi(active, active.isPlaying, active.playbackState == Player.STATE_BUFFERING,
                 active.playbackState == Player.STATE_ENDED, active.currentPosition.coerceAtLeast(0), duration,
-                active.bufferedPosition.coerceAtLeast(0), active.playWhenReady)
+                active.bufferedPosition.coerceAtLeast(0), active.playWhenReady || gestureHold[0], holdForGesture)
         }
 
         fun releasePlayer() {
@@ -68,7 +86,8 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
             val ownedSource = sourceHandle
             sourceHandle = null
             if (active != null) {
-                wantedPlaying = active.playWhenReady
+                wantedPlaying = active.playWhenReady || gestureHold[0]
+                gestureHold[0] = false
                 lastPosition = if (active.playbackState == Player.STATE_ENDED) 0 else active.currentPosition.coerceAtLeast(0)
                 if (video != null) model.savePosition(video.episodeId, lastPosition, video.requestId,
                     active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0,
@@ -115,6 +134,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         if (!isCurrent(active)) return
                         updateSnapshot(active)
+                        if (gestureHold[0]) return
                         if (!isPlaying && active.playbackState != Player.STATE_ENDED)
                             model.savePosition(video.episodeId, active.currentPosition, video.requestId,
                                 active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0, force = true)
@@ -124,6 +144,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
 
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                         if (!isCurrent(active)) return
+                        if (gestureHold[0]) { updateSnapshot(active); return }
                         wantedPlaying = playWhenReady
                         updateSnapshot(active)
                         model.onPlaybackStatus(video.episodeId, video.requestId,
@@ -186,7 +207,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
             val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
             ui = VideoPlaybackUi(active, active.isPlaying, active.playbackState == Player.STATE_BUFFERING,
                 active.playbackState == Player.STATE_ENDED, active.currentPosition.coerceAtLeast(0), duration,
-                active.bufferedPosition.coerceAtLeast(0), active.playWhenReady)
+                active.bufferedPosition.coerceAtLeast(0), active.playWhenReady || gestureHold[0], holdForGesture)
             val now = android.os.SystemClock.elapsedRealtime()
             if (active.isPlaying) model.onPlaybackBuffered(currentVideo.episodeId, currentVideo.requestId,
                 active.bufferedPosition - active.currentPosition)

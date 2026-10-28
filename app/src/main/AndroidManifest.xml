@@ -6,7 +6,8 @@
     <application
         android:name=".HongguoApplication"
         android:allowBackup="false"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="红果独立版"
         android:supportsRtl="true"
         android:theme="@style/Theme.Hongguo"

@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/images/logo.png" width="112" alt="红果独立版 logo">
+
 # 红果独立版
 
 **在手机上发现好剧，随时接着看。**
@@ -14,16 +16,16 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.6**（versionCode 17）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.7**（versionCode 18）· Android **8.0 / API 26** 及以上。
 
-本版播放页不再在视频后方显示半透明剧集封面，加载和切集时为纯黑背景；并新增「我的 › 设置 › 底栏样式」，可在经典底栏与悬浮玻璃胶囊之间切换：悬浮玻璃让页面在半透明胶囊下滚动，Android 12 及以上有模糊效果，Android 13 及以上带玻璃边缘折射；澎湃OS（小米、红米、POCO）默认悬浮玻璃，其他手机默认经典底栏。0.7.5 修正了竖屏播放被系统当作全屏的问题：竖屏看剧时保留状态栏与导航栏（透明背景、白色图标），时间、电量和通知照常显示，下拉通知栏与返回手势一次即可；横屏时仍为全屏播放。0.7.4 起三套主题各自拥有完整的页面布局：暖白精修是经典浅色布局，沉浸暗场首页可竖屏上下滑动刷剧，内容卡片提供频道切换、热度榜和双列瀑布流，可在「我的 › 设置 › 主题样式」随时切换。原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
+本版换用简约版红果图标（自适应启动图标，Android 13 起支持主题图标），首页标题旁同步使用新 logo；并补齐过渡动画：播放页上下滑动切集时当前画面随手指滑走、下一集带集数滑入，自动连播与选集跳转也以滑动切换，画面首帧淡入；进入详情、搜索与账号页从右侧滑入，返回时滑出，底栏切换淡入淡出，播放器打开时上滑出现、关闭时淡出。0.7.6 起播放页不再在视频后方显示半透明剧集封面，加载和切集时为纯黑背景；并新增「我的 › 设置 › 底栏样式」，可在经典底栏与悬浮玻璃胶囊之间切换：悬浮玻璃让页面在半透明胶囊下滚动，Android 12 及以上有模糊效果，Android 13 及以上带玻璃边缘折射；澎湃OS（小米、红米、POCO）默认悬浮玻璃，其他手机默认经典底栏。0.7.5 修正了竖屏播放被系统当作全屏的问题：竖屏看剧时保留状态栏与导航栏（透明背景、白色图标），时间、电量和通知照常显示，下拉通知栏与返回手势一次即可；横屏时仍为全屏播放。0.7.4 起三套主题各自拥有完整的页面布局：暖白精修是经典浅色布局，沉浸暗场首页可竖屏上下滑动刷剧，内容卡片提供频道切换、热度榜和双列瀑布流，可在「我的 › 设置 › 主题样式」随时切换。原有播放、倍速、续播、筛选和账号能力继续保留。实际账号片单与同步结果仍请用本人账号核对，详情见 [接入说明](docs/ACCOUNT_INTEGRATION.md)。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.6 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.6/hongguo-android-0.7.6.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.6/hongguo-android-0.7.6.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.6/hongguo-android-0.7.6.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.6 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.6/hongguo-android-0.7.6-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.6/SHA256SUMS-0.7.6.txt) |
+| GitHub 直连 | [下载 v0.7.7 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.7/hongguo-android-0.7.7.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.7/hongguo-android-0.7.7.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.7/hongguo-android-0.7.7.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.7 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.7/hongguo-android-0.7.7-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.7/SHA256SUMS-0.7.7.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
