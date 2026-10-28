@@ -185,7 +185,7 @@ private fun ImmersiveFeedPage(card: DramaCard, page: Int, total: Int, favorite: 
             listOf(Color.Transparent, Color.Black.copy(alpha = .88f)))))
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val roomy = maxHeight >= 520.dp
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 10.dp, bottom = 16.dp),
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 10.dp, bottom = 16.dp + LocalNavClearance.current),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -237,7 +237,7 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
     val items = state.category.items
     val ranked = items.take(3)
     LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize().testTag("theater_results"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp).plusNavClearance(),
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -406,7 +406,7 @@ internal fun ImmersiveLibrary(state: HongguoUiState, model: HongguoViewModel, ac
             }
             return@Column
         }
-        LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(bottom = 24.dp),
+        LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(bottom = 24.dp).plusNavClearance(),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item {
                 SectionTitle("继续看", if (canManage) (if (managing) "完成" else "管理") else null,

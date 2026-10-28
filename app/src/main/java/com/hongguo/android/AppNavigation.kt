@@ -40,7 +40,8 @@ import androidx.compose.ui.unit.sp
 import java.util.Locale
 
 @Composable
-internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, style: AppThemeStyle = AppThemeStyle.WARM) {
+internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifier: Modifier = Modifier,
+                           style: AppThemeStyle = AppThemeStyle.WARM, backdrop: GlassBackdrop? = null) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val active = when (selected) {
@@ -51,20 +52,26 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, style: 
     // Same four destinations in every theme; labels, icons and the selection mark differ per layout.
     val tabs = when (style) {
         AppThemeStyle.IMMERSIVE -> listOf(
-            NavItem(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Filled.Home),
-            NavItem(AppTab.CATEGORY, "剧场", Icons.Outlined.LiveTv, Icons.Filled.LiveTv),
-            NavItem(AppTab.FAVORITES, "追剧", Icons.Outlined.StarBorder, Icons.Filled.Star),
-            NavItem(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Filled.Person))
+            AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Filled.Home),
+            AppNavTab(AppTab.CATEGORY, "剧场", Icons.Outlined.LiveTv, Icons.Filled.LiveTv),
+            AppNavTab(AppTab.FAVORITES, "追剧", Icons.Outlined.StarBorder, Icons.Filled.Star),
+            AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Filled.Person))
         AppThemeStyle.CARDS -> listOf(
-            NavItem(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Filled.Home),
-            NavItem(AppTab.CATEGORY, "发现", Icons.Outlined.Explore, Icons.Filled.Explore),
-            NavItem(AppTab.FAVORITES, "片单", Icons.Outlined.VideoLibrary, Icons.Filled.VideoLibrary),
-            NavItem(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Filled.Person))
+            AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Filled.Home),
+            AppNavTab(AppTab.CATEGORY, "发现", Icons.Outlined.Explore, Icons.Filled.Explore),
+            AppNavTab(AppTab.FAVORITES, "片单", Icons.Outlined.VideoLibrary, Icons.Filled.VideoLibrary),
+            AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Filled.Person))
         AppThemeStyle.WARM -> listOf(
-            NavItem(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Outlined.Home),
-            NavItem(AppTab.CATEGORY, "发现", Icons.Outlined.Explore, Icons.Outlined.Explore),
-            NavItem(AppTab.FAVORITES, "片单", Icons.Outlined.VideoLibrary, Icons.Outlined.VideoLibrary),
-            NavItem(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Outlined.PersonOutline))
+            AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Outlined.Home),
+            AppNavTab(AppTab.CATEGORY, "发现", Icons.Outlined.Explore, Icons.Outlined.Explore),
+            AppNavTab(AppTab.FAVORITES, "片单", Icons.Outlined.VideoLibrary, Icons.Outlined.VideoLibrary),
+            AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Outlined.PersonOutline))
+    }
+    // 悬浮玻璃 (设置 › 底栏样式): a liquid-glass capsule over the page. The caller passes [backdrop] only when it has
+    // laid the page out underneath the capsule; otherwise the themed classic bar below is used.
+    if (backdrop != null) {
+        LiquidGlassNavigationBar(active, onSelect, tabs, style, backdrop, modifier)
+        return
     }
     val secondary = NavMuted
     Surface(color = if (style == AppThemeStyle.CARDS) CardSurface else Canvas, tonalElevation = 0.dp, shadowElevation = 0.dp) {
@@ -111,4 +118,4 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, style: 
     }
 }
 
-private data class NavItem(val tab: AppTab, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
+internal data class AppNavTab(val tab: AppTab, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)

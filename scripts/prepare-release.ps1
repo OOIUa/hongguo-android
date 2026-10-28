@@ -18,7 +18,7 @@ try {
     }
     $code = [long]$Matches[1]
     $version = $Matches[2]
-    if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Only a regular release version can be published.' }
+    if ($version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') { throw 'Only a regular release version can be published.' }
     if ($badging -notmatch "sdkVersion:'(\d+)'") { throw 'Missing minSdk.' }
     $minimum = [int]$Matches[1]
     $signature = (& (Join-Path $buildTools 'apksigner.bat') verify --print-certs $apkPath) -join "`n"
@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修正竖屏播放被系统当作全屏的问题：竖屏看剧时保留状态栏和导航栏，时间、电量和通知照常显示，下拉通知栏和返回手势一次即可；横屏时仍为全屏播放。三套主题布局、记录、续播、账号片单和更新功能保持不变。'
+        notes = '播放页不再在视频后方显示半透明剧集封面，加载和切集时为纯黑背景。新增「我的 › 设置 › 底栏样式」，可选经典底栏或悬浮玻璃：悬浮玻璃让页面在半透明胶囊下滚动，Android 12 及以上有模糊效果，Android 13 及以上带玻璃边缘折射。小米、红米等澎湃OS 手机默认使用悬浮玻璃，其他手机默认经典底栏，可随时切换。播放、主题、记录、续播、账号片单和更新功能保持不变。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

@@ -315,7 +315,7 @@ private fun CatalogGrid(
     val minimumCardWidth = if (LocalDensity.current.fontScale >= 1.5f) 184.dp else 148.dp
     LazyVerticalGrid(columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(minimumCardWidth),
         modifier = Modifier.fillMaxSize().testTag("${tagPrefix}_results"),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp).plusNavClearance(),
         horizontalArrangement = Arrangement.spacedBy(if (columns >= 3) 10.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         header()
         if (feed.loading && feed.items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { CatalogLoading("正在读取剧集…") }

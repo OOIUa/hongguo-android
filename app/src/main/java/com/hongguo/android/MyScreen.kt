@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -99,6 +100,7 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
         AppThemeStyle.WARM -> Unit
     }
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 20.dp),
+        contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -197,13 +199,18 @@ private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
                                  updateState: UpdateUiState, updateModel: UpdateViewModel,
                                  onTheme: () -> Unit, onBack: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("settings_screen").padding(horizontal = 20.dp),
+        contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { PageHeader("设置", "返回我的", "settings_back", onBack) }
         item {
             Text("外观", color = Muted, fontSize = 14.sp)
             Surface(shape = RoundedCornerShape(16.dp), color = CardSurface, modifier = Modifier.padding(top = 12.dp)) {
-                MyMenuRow("主题样式", "暖白精修、沉浸暗场、内容卡片", "settings_theme",
-                    trailing = state.themeStyle.label, onClick = onTheme)
+                Column {
+                    MyMenuRow("主题样式", "暖白精修、沉浸暗场、内容卡片", "settings_theme",
+                        trailing = state.themeStyle.label, onClick = onTheme)
+                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
+                    NavBarStyleSetting(state.navBarStyle, model::setNavBarStyle)
+                }
             }
         }
         item {
@@ -237,6 +244,7 @@ private fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, onB
     val systemDark = isSystemInDarkTheme()
     val overridden = state.darkFollowsSystem && systemDark && state.themeStyle != AppThemeStyle.IMMERSIVE
     LazyColumn(Modifier.fillMaxSize().testTag("theme_screen").padding(horizontal = 20.dp),
+        contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { PageHeader("主题样式", "返回设置", "theme_back", onBack) }
         item {
@@ -370,6 +378,29 @@ private fun PreviewNav(p: HongguoPalette) {
     }
 }
 
+/** 底栏样式: two-way choice, applied immediately so the bar below changes while the user watches. */
+@Composable
+private fun NavBarStyleSetting(selected: NavBarStyle, onSelect: (NavBarStyle) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("底栏样式", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text("悬浮玻璃：页面在半透明胶囊下滚动，Android 12 及以上有模糊效果", color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
+        }
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Cream).padding(3.dp).selectableGroup()) {
+            NavBarStyle.entries.forEach { style ->
+                val isSelected = style == selected
+                Box(Modifier.weight(1f).heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp))
+                    .background(if (isSelected) CardSurface else Color.Transparent)
+                    .selectable(selected = isSelected, role = Role.RadioButton) { onSelect(style) }
+                    .testTag("settings_navbar_${style.key}"), contentAlignment = Alignment.Center) {
+                    Text(style.label, color = if (isSelected) Ink else Muted, fontSize = 14.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, tag: String, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
@@ -391,6 +422,7 @@ private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, update
                           accountName: String?, accountStatus: String, onAccount: () -> Unit,
                           openSettings: () -> Unit, openTheme: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
@@ -452,6 +484,7 @@ private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, update
 private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateModel: UpdateViewModel,
                       accountName: String?, accountStatus: String, onAccount: () -> Unit, openSettings: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 12.dp),
+        contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {

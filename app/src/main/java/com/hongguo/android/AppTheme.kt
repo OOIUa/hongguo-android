@@ -51,6 +51,20 @@ internal object ThemePreferences {
     /** Which picker the user answered. 0.7.4 gave each theme its own layout, so 0.7.3 answers are asked again once. */
     const val ONBOARDING_VERSION = "theme_onboarding_version"
     const val CURRENT_ONBOARDING_VERSION = 2
+    /** 底栏样式; absent until the user picks one, so the device default can still apply. */
+    const val NAV_BAR_STYLE = "nav_bar_style"
+}
+
+/** Bottom bar look, chosen in 我的 › 设置. */
+enum class NavBarStyle(val key: String, val label: String) {
+    CLASSIC("classic", "经典"),
+    GLASS("glass", "悬浮玻璃");
+
+    companion object {
+        /** A saved choice wins; otherwise HyperOS (澎湃OS) starts with the glass capsule and other phones with the classic bar. */
+        fun resolve(savedKey: String?, hyperOs: Boolean): NavBarStyle =
+            entries.firstOrNull { it.key == savedKey } ?: if (hyperOs) GLASS else CLASSIC
+    }
 }
 
 /** Every color the screens read. Screens use the named accessors below instead of literal colors. */

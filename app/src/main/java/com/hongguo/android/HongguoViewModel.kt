@@ -73,6 +73,7 @@ data class HongguoUiState(
     val playbackSpeed: Float = 1f,
     val themeStyle: AppThemeStyle = AppThemeStyle.WARM,
     val darkFollowsSystem: Boolean = false,
+    val navBarStyle: NavBarStyle = NavBarStyle.CLASSIC,
     val themeOnboardingPending: Boolean = false,
     /** Confirmation after the first-launch picker; cleared only once the snackbar has been shown. */
     val themeHint: String? = null,
@@ -89,6 +90,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             .takeIf { it in PlaybackSpeeds } ?: 1f,
         themeStyle = AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
         darkFollowsSystem = preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false),
+        navBarStyle = NavBarStyle.resolve(preferences.getString(ThemePreferences.NAV_BAR_STYLE, null), SystemRom.isHyperOs),
         themeOnboardingPending = !preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, false) ||
             preferences.getInt(ThemePreferences.ONBOARDING_VERSION, 1) < ThemePreferences.CURRENT_ONBOARDING_VERSION))
     val state = mutableState.asStateFlow()
@@ -303,6 +305,10 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     fun setThemeStyle(style: AppThemeStyle) {
         preferences.edit { putString(ThemePreferences.STYLE, style.key) }
         mutableState.update { it.copy(themeStyle = style) }
+    }
+    fun setNavBarStyle(style: NavBarStyle) {
+        preferences.edit { putString(ThemePreferences.NAV_BAR_STYLE, style.key) }
+        mutableState.update { it.copy(navBarStyle = style) }
     }
     fun setDarkFollowsSystem(enabled: Boolean) {
         preferences.edit { putBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, enabled) }

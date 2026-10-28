@@ -81,7 +81,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
     val ranked = items.take(5)
     val rest = if (items.size > 5) items.drop(5) else emptyList()
     LazyVerticalStaggeredGrid(columns = StaggeredGridCells.Fixed(2), modifier = Modifier.fillMaxSize().testTag("cards_home"),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp).plusNavClearance(),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalItemSpacing = 8.dp) {
         item(span = StaggeredGridItemSpan.FullLine) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -205,7 +205,7 @@ internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
     var showFilters by rememberSaveable { mutableStateOf(false) }
     val items = state.category.items
     LazyColumn(Modifier.fillMaxSize().testTag("cards_discover"),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -323,7 +323,7 @@ internal fun CardsLibrary(state: HongguoUiState, model: HongguoViewModel, accoun
             return@Column
         }
         val entries = if (history) state.history else state.favorites
-        LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(12.dp),
+        LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(12.dp).plusNavClearance(),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 Surface(onClick = { model.selectLibrarySource(true) }, color = CardSurface, shape = RoundedCornerShape(12.dp),

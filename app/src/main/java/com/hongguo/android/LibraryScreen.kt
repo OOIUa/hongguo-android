@@ -84,7 +84,7 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
             Text(if (history) "本机观看记录" else "本机收藏", fontSize = 12.sp, color = Muted,
                 modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
             LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("${kind}_list"),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp)) {
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp).plusNavClearance()) {
                 if (entries.isEmpty()) item {
                     EmptyPrompt(if (history) "还没有观看记录" else "还没有收藏的剧集",
                         if (history) "开始播放后，这里会记住集数和进度。" else "在剧集详情或播放器中收藏，喜欢的故事就会留在这里。")

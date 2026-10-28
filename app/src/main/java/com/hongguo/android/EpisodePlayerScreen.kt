@@ -68,11 +68,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -93,7 +91,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hongguo.account.AccountSessionStatus
 import androidx.media3.common.Player
-import coil.compose.AsyncImage
 import java.util.Locale
 
 @Composable
@@ -220,7 +217,6 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             key = { detail.episodes[it].id }, beyondViewportPageCount = 1,
             userScrollEnabled = !showEpisodes && !showSpeed && !showFavorites && !seeking) { page ->
             Box(Modifier.fillMaxSize().testTag("episode_page_$page"), Alignment.Center) {
-                AsyncImage(model = detail.cover, contentDescription = null, modifier = Modifier.fillMaxSize().alpha(.24f), contentScale = ContentScale.Fit)
                 if (page == selected && activeVideo != null && playback.player != null) {
                     VideoSurface(playback, Modifier.fillMaxSize())
                     PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),

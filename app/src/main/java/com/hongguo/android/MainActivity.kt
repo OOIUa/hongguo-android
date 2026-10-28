@@ -14,6 +14,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -22,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -62,13 +64,26 @@ class MainActivity : ComponentActivity() {
                 }
                 if (state.playerOpen && state.detail != null) EpisodePlayerScreen(state, model, accountModel)
                 else {
+                    val showNav = state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.ACCOUNT)
+                    // 悬浮玻璃: the bar floats as a liquid-glass capsule and the page runs underneath it.
+                    val floatingNav = showNav && state.navBarStyle == NavBarStyle.GLASS
+                    val backdrop = rememberGlassBackdrop()
+                    val navClearance = if (floatingNav) floatingNavClearance() else 0.dp
                     Scaffold(containerColor = Canvas,
-                        snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")) }, bottomBar = {
-                        if (state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.ACCOUNT))
-                            AppNavigation(state.tab, model::selectTab, layout)
+                        snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")
+                            .padding(bottom = if (floatingNav) 76.dp else 0.dp)) }, bottomBar = {
+                        if (showNav && !floatingNav) AppNavigation(state.tab, model::selectTab, style = layout)
                     }) { insets ->
+                        val direction = LocalLayoutDirection.current
+                        val pagePadding = if (!floatingNav) insets else PaddingValues(
+                            start = insets.calculateStartPadding(direction), top = insets.calculateTopPadding(),
+                            end = insets.calculateEndPadding(direction), bottom = 0.dp)
+                        Box(Modifier.fillMaxSize()) {
+                        CompositionLocalProvider(LocalNavClearance provides navClearance) {
                         pageStates.SaveableStateProvider(state.selectedCard?.let { "detail_${it.id}" } ?: "tab_${state.tab.name}") {
-                        Column(Modifier.fillMaxSize().padding(insets).semantics { testTagsAsResourceId = true }) {
+                        Column(Modifier.fillMaxSize()
+                            .then(if (floatingNav) Modifier.glassBackdropSource(backdrop).background(Canvas) else Modifier)
+                            .padding(pagePadding).semantics { testTagsAsResourceId = true }) {
                             if (state.selectedCard != null) when (layout) {
                                 AppThemeStyle.IMMERSIVE -> ImmersiveDetail(state, model, accountModel)
                                 AppThemeStyle.CARDS -> CardsDetail(state, model, accountModel)
@@ -108,6 +123,10 @@ class MainActivity : ComponentActivity() {
                                     onOpenLibrary = model::openLibrary)
                             }
                         }
+                        }
+                        }
+                        if (floatingNav) AppNavigation(state.tab, model::selectTab, Modifier.align(Alignment.BottomCenter),
+                            style = layout, backdrop = backdrop)
                         }
                     }
                 }

@@ -60,7 +60,7 @@ internal fun CloudLibraryContent(
         if (owner != null && state.sessionStatus == AccountSessionStatus.LOGGED_IN && !state.busy) accountModel.refresh()
     }
     var removeTarget by remember(owner, state.sessionStatus) { mutableStateOf<LibraryEntry?>(null) }
-    LazyColumn(Modifier.fillMaxSize().testTag("cloud_library"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+    LazyColumn(Modifier.fillMaxSize().testTag("cloud_library"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         state.message?.let { message -> item { AccountNotice(message, "知道了", accountModel::consumeMessage, tag = "cloud_message") } }
         if (state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
