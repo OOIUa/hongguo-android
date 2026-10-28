@@ -31,6 +31,21 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalHapticFeedback
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
@@ -163,13 +178,40 @@ internal fun LiquidGlassNavigationBar(
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
+    val haptics = LocalHapticFeedback.current
     val palette = LocalHongguoPalette.current
+    val scope = rememberCoroutineScope()
     val selectedIndex = tabs.indexOfFirst { it.tab == selected }.coerceAtLeast(0)
     val activeColor = if (style == AppThemeStyle.WARM) AccentInk else Ink
     // Darker than the classic bar's grey: labels sit on whatever colour scrolls underneath the glass.
     val idleColor = Ink.copy(alpha = .72f)
-    val indicatorFraction by animateFloatAsState(selectedIndex.toFloat(),
-        spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow), label = "glass_indicator")
+
+    // iOS-style tab bar: press and drag the capsule, the selection lens follows the finger and swells like a
+    // magnifier, ticks as it crosses each tab, and springs to the nearest tab (or one further on a fling) on release.
+    var dragging by remember { mutableStateOf(false) }
+    var dragPos by remember { mutableFloatStateOf(selectedIndex.toFloat()) }
+    var hovered by remember { mutableIntStateOf(selectedIndex) }
+    // The drawn lens chases the finger with a stiff spring; it starts from wherever the lens currently is.
+    val follow = remember { Animatable(selectedIndex.toFloat()) }
+    val followSpring = spring<Float>(dampingRatio = .86f, stiffness = 1400f)
+    val settle = remember { Animatable(selectedIndex.toFloat()) }
+    val press = animateFloatAsState(if (dragging) 1f else 0f,
+        spring(dampingRatio = .55f, stiffness = Spring.StiffnessMediumLow), label = "glass_press")
+    LaunchedEffect(selectedIndex) {
+        if (!dragging) {
+            hovered = selectedIndex
+            settle.animateTo(selectedIndex.toFloat(), spring(dampingRatio = .72f, stiffness = Spring.StiffnessMediumLow))
+        }
+    }
+    // Where the lens is drawn; read only in draw / layer blocks so the motion does not recompose the bar.
+    val lensPosition = { if (dragging) follow.value else settle.value }
+    fun select(index: Int) {
+        keyboard?.hide()
+        focus.clearFocus()
+        val tab = tabs[index].tab
+        onSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
+    }
+
     val glass = rememberGraphicsLayer()
     val shape = RoundedCornerShape(50)
     var capsuleOrigin by remember { mutableStateOf(Offset.Zero) }
@@ -181,8 +223,57 @@ internal fun LiquidGlassNavigationBar(
         .padding(start = CapsuleSideMargin, end = CapsuleSideMargin, bottom = CapsuleGap)
         .semantics { testTagsAsResourceId = true }, contentAlignment = Alignment.BottomCenter) {
         Box(Modifier.widthIn(max = 440.dp).fillMaxWidth().height(CapsuleHeight)
+            // The whole capsule eases up a little while held, like pressing on a soft glass surface.
+            .graphicsLayer { val p = press.value; scaleX = 1f + .025f * p; scaleY = 1f + .045f * p }
             .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = .22f), spotColor = Color.Black.copy(alpha = .28f))
             .onGloballyPositioned { capsuleOrigin = it.positionInRoot() }
+            .pointerInput(tabs.size) {
+                val velocity = VelocityTracker()
+                val count = tabs.size
+                fun itemWidth() = size.width / count.toFloat()
+                fun finish(velocityX: Float) {
+                    val width = itemWidth()
+                    val current = dragPos
+                    // A quick flick carries the lens on in its direction, at most about one more tab, as on iOS.
+                    val projected = current + ((velocityX / width) * .12f).coerceIn(-.6f, .6f)
+                    val target = projected.roundToInt().coerceIn(0, count - 1)
+                    scope.launch {
+                        settle.snapTo(follow.value)
+                        dragging = false
+                        hovered = target
+                        settle.animateTo(target.toFloat(), spring(dampingRatio = .62f, stiffness = Spring.StiffnessMediumLow),
+                            initialVelocity = (velocityX / width).coerceIn(-12f, 12f))
+                    }
+                    if (target != selectedIndex) select(target)
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                }
+                detectHorizontalDragGestures(
+                    onDragStart = { start ->
+                        velocity.resetTracking()
+                        // The lens jumps under the finger (smoothed by the follow spring), then tracks it.
+                        dragPos = (start.x / itemWidth() - .5f).coerceIn(0f, count - 1f)
+                        hovered = dragPos.roundToInt()
+                        val from = settle.value
+                        dragging = true
+                        scope.launch { follow.snapTo(from); follow.animateTo(dragPos, followSpring) }
+                        haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                    },
+                    onHorizontalDrag = { change, dx ->
+                        change.consume()
+                        velocity.addPosition(change.uptimeMillis, change.position)
+                        // A little rubber-band past the first and last tab.
+                        dragPos = (dragPos + dx / itemWidth()).coerceIn(-.3f, count - 1 + .3f)
+                        scope.launch { follow.animateTo(dragPos, followSpring) }
+                        val now = dragPos.roundToInt().coerceIn(0, count - 1)
+                        if (now != hovered) {
+                            hovered = now
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        }
+                    },
+                    onDragEnd = { finish(velocity.calculateVelocity().x) },
+                    onDragCancel = { finish(0f) },
+                )
+            }
             .drawBehind {
                 if (backdrop.version < 0) return@drawBehind // read so page changes invalidate this draw
                 val radius = size.height / 2
@@ -214,31 +305,55 @@ internal fun LiquidGlassNavigationBar(
                     topLeft = Offset(rim / 2, rim / 2), size = Size(size.width - rim, size.height - rim),
                     cornerRadius = CornerRadius(radius - rim / 2), style = Stroke(rim))
             }) {
-            // Selection lens: a smaller pill of glass that slides between tabs.
+            // Selection lens: a smaller pill of glass that slides between tabs and swells while dragged.
             val indicator = if (palette.isDark) Color.White.copy(alpha = .14f) else Color.Black.copy(alpha = .065f)
+            val lensRim = Color.White.copy(alpha = if (palette.isDark) .32f else .9f)
             Box(Modifier.matchParentSize().padding(vertical = 5.dp).drawBehind {
                 val itemWidth = size.width / tabs.size
                 val inset = 5.dp.toPx()
-                drawRoundRect(indicator, topLeft = Offset(indicatorFraction * itemWidth + inset, 0f),
-                    size = Size(itemWidth - inset * 2, size.height), cornerRadius = CornerRadius(size.height / 2))
+                val p = press.value
+                val grow = 4.dp.toPx() * p
+                val width = itemWidth - inset * 2 + itemWidth * .16f * p
+                val left = lensPosition() * itemWidth + itemWidth / 2 - width / 2
+                val top = -grow
+                val height = size.height + grow * 2
+                val corner = CornerRadius(height / 2)
+                drawRoundRect(indicator.copy(alpha = indicator.alpha * (1f + .6f * p)), topLeft = Offset(left, top),
+                    size = Size(width, height), cornerRadius = corner)
+                if (p > .01f) {
+                    // While held the lens reads as its own piece of glass: a bright rim and a soft top highlight.
+                    drawRoundRect(lensRim.copy(alpha = lensRim.alpha * p), topLeft = Offset(left, top), size = Size(width, height),
+                        cornerRadius = corner, style = Stroke(1.dp.toPx()))
+                    drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = .28f * p), Color.Transparent),
+                        startY = top, endY = top + height * .6f), topLeft = Offset(left, top), size = Size(width, height * .6f),
+                        cornerRadius = corner)
+                }
             })
             Row(Modifier.fillMaxWidth().fillMaxHeight().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
                 tabs.forEachIndexed { index, item ->
                     val isSelected = index == selectedIndex
-                    val color = if (isSelected) activeColor else idleColor
+                    val highlighted = if (dragging) index == hovered else isSelected
+                    val color by animateColorAsState(if (highlighted) activeColor else idleColor, tween(160), label = "glass_tab_color")
+                    val pop = remember { Animatable(1f) }
+                    LaunchedEffect(isSelected) {
+                        // A small bounce on the icon that becomes selected.
+                        if (isSelected) { pop.snapTo(.82f); pop.animateTo(1f, spring(dampingRatio = .42f, stiffness = 420f)) }
+                    }
                     Column(Modifier.weight(1f).fillMaxHeight()
                         .selectable(selected = isSelected, role = Role.Tab,
-                            interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                            keyboard?.hide()
-                            focus.clearFocus()
-                            onSelect(if (item.tab == AppTab.FAVORITES) AppTab.HISTORY else item.tab)
-                        }
+                            interactionSource = remember { MutableInteractionSource() }, indication = null) { select(index) }
                         .testTag("nav_${item.tab.name.lowercase(Locale.ROOT)}"),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Icon(if (isSelected) item.selectedIcon else item.icon, contentDescription = null, tint = color,
-                            modifier = Modifier.size(24.dp))
+                        Icon(if (highlighted) item.selectedIcon else item.icon, contentDescription = null, tint = color,
+                            modifier = Modifier.size(24.dp).graphicsLayer {
+                                // Icons under the lens are magnified while it is held.
+                                val near = (1f - abs(lensPosition() - index)).coerceIn(0f, 1f)
+                                val scale = pop.value * (1f + .18f * near * press.value)
+                                scaleX = scale; scaleY = scale
+                                translationY = -2.dp.toPx() * near * press.value
+                            })
                         Text(item.label, color = color, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                            fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
                             modifier = Modifier.padding(top = 2.dp))
                     }
                 }

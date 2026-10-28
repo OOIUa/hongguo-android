@@ -1,3 +1,14 @@
+# 0.7.8 底栏拖动切换、设置页独立与沉浸暗场状态栏
+
+验证日期：2026-10-28（Asia/Shanghai）。versionName 0.7.8、versionCode 19。
+
+- 底栏拖动（仿 iOS）：悬浮玻璃底栏（`HyperOsNavigation.kt`）按住后选中胶囊跳到手指下并跟随移动，拖动中胶囊放大、带高光描边，整条胶囊轻微鼓起，镜下图标放大上浮；每经过一个 Tab 触发 `SegmentTick` 震动，两端有少量橡皮筋；松手以弹簧落到最近的 Tab，快速一甩最多多走一格并切换。经典底栏（`AppNavigation.kt`）可左右拖动，选中颜色与标记跟随手指，松手切换。两种底栏新选中的图标有轻微回弹。点击行为、`nav_*` 标签与选中语义不变。
+- 设置页独立：「设置」「主题样式」改为独立页面（`AppTab.SETTINGS` / `THEME_STYLE`），不显示底栏，从右侧滑入；返回回到打开它的页面。此前它们是「我的」页内部的状态，切到其他 Tab 再回到「我的」仍停在设置页。
+- 沉浸暗场状态栏：顶部系统栏一直是透明的，但页面整体留出状态栏高度，推荐流与详情封面上方是一条实色带。现在沉浸暗场的首页推荐流和剧集详情封面延伸到状态栏下方，顶部 Tab、搜索与返回按钮仍避开状态栏；其他页面不变。
+- 顶部标签：首页、剧场、片单等的文字标签点击时使用默认水波纹，会在文字后方短暂出现白色或灰色方块；改为点击时短暂变淡（`quietSelectable`），暖白首页 / 发现的标签颜色与下划线增加过渡动画。
+- 云端构建（与发布签名无关）：`:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 通过，结果见下一条。Robolectric：我的 → 设置 → 主题样式 → 返回 → 返回回到我的；打开设置后切到首页再回我的显示我的；经典底栏拖过三个 Tab 后切到我的；悬浮玻璃慢拖两个 Tab 切到片单、快速一甩 1.1 个 Tab 落到片单（多走一格）、点击仍正常；拖动中截图确认胶囊放大与高光。新增设备用例 `ThemeSettingsFlowTest.settingsIsItsOwnPageAndLeavingItReturnsToMine`，待发布机器运行。
+- 已知限制：未在实体手机上检查拖动跟手程度与震动强度（`SegmentTick` 在部分机型上可能没有震感）；Robolectric 不提供状态栏高度，沉浸暗场顶部效果需真机确认。
+
 # 0.7.7 简约红果图标、播放切集与页面过渡动画
 
 验证日期：2026-10-28（Asia/Shanghai）。versionName 0.7.7、versionCode 18。

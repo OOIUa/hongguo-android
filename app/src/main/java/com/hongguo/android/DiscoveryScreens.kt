@@ -2,6 +2,10 @@ package com.hongguo.android
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -286,13 +290,15 @@ internal fun CatalogSearchEntry(placeholder: String, tag: String, onClick: () ->
 
 @Composable
 internal fun CatalogTextTab(label: String, isSelected: Boolean, tag: String, onClick: () -> Unit) {
-    Column(Modifier.heightIn(min = 36.dp).semantics { selected = isSelected }
-        .clickable(role = Role.Tab, onClick = onClick).testTag(tag).padding(top = 6.dp),
+    Column(Modifier.heightIn(min = 36.dp).quietSelectable(isSelected, onClick = onClick).testTag(tag).padding(top = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = if (isSelected) AccentInk else Muted, fontSize = 16.sp, lineHeight = 24.sp,
+        val color by animateColorAsState(if (isSelected) AccentInk else Muted, tween(180), label = "catalog_tab_color")
+        val mark by animateFloatAsState(if (isSelected) 1f else 0f, tween(220), label = "catalog_tab_mark")
+        Text(label, color = color, fontSize = 16.sp, lineHeight = 24.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
-        Box(Modifier.width(32.dp).height(2.dp).clip(RoundedCornerShape(2.dp))
-            .background(if (isSelected) Orange else Color.Transparent))
+        // The underline grows from the centre instead of switching on.
+        Box(Modifier.width(32.dp).height(2.dp).graphicsLayer { scaleX = mark; alpha = mark }.clip(RoundedCornerShape(2.dp))
+            .background(Orange))
     }
 }
 

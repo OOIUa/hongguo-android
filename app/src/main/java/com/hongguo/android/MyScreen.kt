@@ -1,6 +1,5 @@
 package com.hongguo.android
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,7 +44,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,35 +60,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private const val PAGE_SETTINGS = "settings"
-private const val PAGE_THEME = "theme"
-
 @Composable
 internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
                       updateState: UpdateUiState, updateModel: UpdateViewModel,
                       accountName: String? = null, accountStatus: String = "登录后查看手机片单",
                       style: AppThemeStyle = AppThemeStyle.WARM,
                       onAccount: () -> Unit = { model.selectTab(AppTab.ACCOUNT) }) {
-    // "" = 我的, PAGE_SETTINGS = 设置, PAGE_THEME = 主题样式. Saved so rotation keeps the page.
-    var page by rememberSaveable { mutableStateOf("") }
-    // The theme page can be opened from 设置 or (沉浸暗场) straight from 我的; back returns to where it came from.
-    var themeReturn by rememberSaveable { mutableStateOf(PAGE_SETTINGS) }
-    BackHandler(enabled = page.isNotEmpty() && LocalPageActive.current) { page = if (page == PAGE_THEME) themeReturn else "" }
-    when (page) {
-        PAGE_SETTINGS -> {
-            SystemSettingsScreen(state, model, updateState, updateModel,
-                onTheme = { themeReturn = PAGE_SETTINGS; page = PAGE_THEME }, onBack = { page = "" })
-            return
-        }
-        PAGE_THEME -> {
-            ThemeStyleScreen(state, model) { page = themeReturn }
-            return
-        }
-    }
-    val openSettings = { page = PAGE_SETTINGS }
+    // 设置 and 主题样式 are pages of their own (AppTab.SETTINGS / THEME_STYLE), not states of 我的: leaving and coming
+    // back to 我的 always shows 我的.
+    val openSettings = { model.selectTab(AppTab.SETTINGS) }
     when (style) {
         AppThemeStyle.IMMERSIVE -> {
-            ImmersiveMine(state, model, updateModel, accountName, accountStatus, onAccount, openSettings) { themeReturn = ""; page = PAGE_THEME }
+            ImmersiveMine(state, model, updateModel, accountName, accountStatus, onAccount, openSettings) { model.selectTab(AppTab.THEME_STYLE) }
             return
         }
         AppThemeStyle.CARDS -> {
@@ -195,7 +176,7 @@ private fun PageHeader(title: String, backLabel: String, backTag: String, onBack
 }
 
 @Composable
-private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
+internal fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
                                  updateState: UpdateUiState, updateModel: UpdateViewModel,
                                  onTheme: () -> Unit, onBack: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("settings_screen").padding(horizontal = 20.dp),
@@ -240,7 +221,7 @@ private fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
 }
 
 @Composable
-private fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, onBack: () -> Unit) {
+internal fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, onBack: () -> Unit) {
     val systemDark = isSystemInDarkTheme()
     val overridden = state.darkFollowsSystem && systemDark && state.themeStyle != AppThemeStyle.IMMERSIVE
     LazyColumn(Modifier.fillMaxSize().testTag("theme_screen").padding(horizontal = 20.dp),

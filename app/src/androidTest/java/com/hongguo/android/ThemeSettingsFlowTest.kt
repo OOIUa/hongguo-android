@@ -20,6 +20,21 @@ import org.junit.runner.RunWith
 class ThemeSettingsFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun settingsIsItsOwnPageAndLeavingItReturnsToMine() {
+        lateinit var model: HongguoViewModel
+        compose.runOnIdle { model = ViewModelProvider(compose.activity)[HongguoViewModel::class.java] }
+        compose.onNodeWithTag("nav_mine").performClick()
+        compose.onNodeWithTag("my_settings_icon").performClick()
+        compose.onNodeWithTag("settings_screen").assertExists()
+        // 设置 has no bottom bar of its own.
+        compose.onNodeWithTag("nav_home").assertDoesNotExist()
+        // Leaving 设置 for another tab and coming back to 我的 shows 我的, not 设置 again.
+        compose.runOnIdle { model.selectTab(AppTab.HOME) }
+        compose.onNodeWithTag("nav_mine").performClick()
+        compose.onNodeWithTag("my_screen").assertExists()
+        compose.onNodeWithTag("settings_screen").assertDoesNotExist()
+    }
+
     @Test fun settingsEntryOpensThemePickerAndChoicePersists() {
         lateinit var model: HongguoViewModel
         compose.runOnIdle { model = ViewModelProvider(compose.activity)[HongguoViewModel::class.java] }

@@ -55,6 +55,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -136,7 +140,7 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
                         !home.hasMore -> Triple("已经看到最后一部了", "刷新", model::refreshHome)
                         else -> Triple(null, null, {})
                     }
-                    if (message != null) Row(Modifier.align(Alignment.TopCenter).padding(top = 64.dp, start = 24.dp, end = 24.dp)
+                    if (message != null) Row(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp, start = 24.dp, end = 24.dp)
                         .clip(RoundedCornerShape(20.dp)).background(Color.Black.copy(alpha = .62f))
                         .padding(start = 16.dp, end = if (action != null) 4.dp else 16.dp).heightIn(min = 40.dp)
                         .testTag("immersive_feed_end"), verticalAlignment = Alignment.CenterVertically) {
@@ -150,7 +154,7 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
             }
         }
         // Feed switcher and search float above the feed.
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 12.dp, end = 4.dp),
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp, start = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = model::refreshHome, modifier = Modifier.testTag("immersive_refresh")) {
                 Icon(Icons.Outlined.Refresh, "刷新推荐", tint = Color.White)
@@ -158,7 +162,7 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally)) {
                 listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
-                    Column(Modifier.selectable(selected, role = Role.Tab) { model.selectHomeFeed(feed) }
+                    Column(Modifier.quietSelectable(selected) { model.selectHomeFeed(feed) }
                         .heightIn(min = 44.dp).testTag("immersive_feed_${feed.name.lowercase()}").padding(top = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(label, color = if (selected) Color.White else Color.White.copy(alpha = .7f),
@@ -246,7 +250,7 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
                         val selected = state.browseDraft.genre == genre
                         Text(label, color = if (selected) Ink else Muted, fontSize = if (selected) 24.sp else 17.sp,
                             fontWeight = if (selected) FontWeight.Black else FontWeight.Medium,
-                            modifier = Modifier.selectable(selected, role = Role.Tab) { model.changeGenre(genre) }
+                            modifier = Modifier.quietSelectable(selected) { model.changeGenre(genre) }
                                 .heightIn(min = 44.dp).padding(top = 8.dp).testTag("theater_genre_$genre"))
                     }
                 }
@@ -391,7 +395,7 @@ internal fun ImmersiveLibrary(state: HongguoUiState, model: HongguoViewModel, ac
                 listOf(false to "本机", true to "账号").forEach { (cloud, label) ->
                     val selected = state.libraryCloud == cloud
                     Box(Modifier.clip(RoundedCornerShape(50)).background(if (selected) Ink else Color.Transparent)
-                        .selectable(selected, role = Role.Tab) { model.selectLibrarySource(cloud) }
+                        .quietSelectable(selected) { model.selectLibrarySource(cloud) }
                         .heightIn(min = 40.dp).padding(horizontal = 16.dp).testTag("immersive_source_${if (cloud) "account" else "local"}"),
                         contentAlignment = Alignment.Center) {
                         Text(label, color = if (selected) Canvas else Muted, fontSize = 13.sp,
@@ -492,11 +496,15 @@ internal fun ImmersiveDetail(state: HongguoUiState, model: HongguoViewModel, acc
     LazyColumn(Modifier.fillMaxSize().testTag("immersive_detail"), contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Box(Modifier.fillMaxWidth().height(360.dp)) {
+            // The picture runs up under the transparent status bar; the back button stays below it.
+            val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            Box(Modifier.fillMaxWidth().height(360.dp + statusTop)) {
                 PosterImage(detail?.cover ?: card.cover, Modifier.fillMaxSize())
+                Box(Modifier.fillMaxWidth().height(statusTop + 56.dp).background(Brush.verticalGradient(
+                    listOf(Color.Black.copy(alpha = .45f), Color.Transparent))))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                     .35f to Color.Transparent, 1f to Canvas)))
-                IconButton(onClick = model::backToSearch, modifier = Modifier.padding(6.dp).clip(CircleShape)
+                IconButton(onClick = model::backToSearch, modifier = Modifier.statusBarsPadding().padding(6.dp).clip(CircleShape)
                     .background(Color.Black.copy(alpha = .35f)).testTag("detail_back")) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Color.White)
                 }
@@ -551,7 +559,7 @@ internal fun ImmersiveDetail(state: HongguoUiState, model: HongguoViewModel, acc
                         val label = "${detail.episodes[indices.first()].index}-${detail.episodes[indices.last()].index}"
                         Text(label, color = if (i == current) Ink else Muted, fontSize = 14.sp,
                             fontWeight = if (i == current) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.selectable(i == current, role = Role.Tab) { range = i }
+                            modifier = Modifier.quietSelectable(i == current) { range = i }
                                 .heightIn(min = 48.dp).wrapContentHeight().testTag("episode_range_$i"))
                     }
                 }

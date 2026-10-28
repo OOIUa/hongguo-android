@@ -103,7 +103,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
                 listOf(HomeFeed.RECOMMEND to "推荐", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
-                    Column(Modifier.selectable(selected, role = Role.Tab) { model.selectHomeFeed(feed) }
+                    Column(Modifier.quietSelectable(selected) { model.selectHomeFeed(feed) }
                         .heightIn(min = 48.dp).testTag("cards_feed_${feed.name.lowercase()}"),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(label, color = if (selected) Ink else Muted, fontSize = if (selected) 19.sp else 15.sp,
@@ -220,7 +220,7 @@ internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
                 listOf("short_play" to "短剧", "comic_series" to "漫剧", "ai_series" to "AI 剧").forEach { (genre, label) ->
                     val selected = state.browseDraft.genre == genre
                     Box(Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(if (selected) Ink else Color.Transparent)
-                        .selectable(selected, role = Role.Tab) { model.changeGenre(genre) }.heightIn(min = 38.dp)
+                        .quietSelectable(selected) { model.changeGenre(genre) }.heightIn(min = 38.dp)
                         .testTag("cards_genre_$genre"), contentAlignment = Alignment.Center) {
                         Text(label, color = if (selected) Canvas else Muted, fontSize = 14.sp,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
@@ -302,7 +302,7 @@ internal fun CardsLibrary(state: HongguoUiState, model: HongguoViewModel, accoun
                 Triple("账号云片单", state.libraryCloud, "cards_tab_account")).forEachIndexed { index, (label, selected, tag) ->
                 Text(label, color = if (selected) Ink else Muted, fontSize = if (selected) 22.sp else 15.sp,
                     fontWeight = if (selected) FontWeight.Black else FontWeight.Medium,
-                    modifier = Modifier.selectable(selected, role = Role.Tab) {
+                    modifier = Modifier.quietSelectable(selected) {
                         when (index) {
                             0 -> { model.selectLibrarySource(false); model.selectTab(AppTab.HISTORY) }
                             1 -> { model.selectLibrarySource(false); model.selectTab(AppTab.FAVORITES) }

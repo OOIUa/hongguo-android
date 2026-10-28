@@ -1,5 +1,16 @@
 package com.hongguo.android
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -236,3 +247,16 @@ private fun nativeStyle(fontFamily: FontFamily, fontSize: TextUnit, lineHeight: 
     platformStyle = PlatformTextStyle(includeFontPadding = false),
     lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
 )
+
+/**
+ * Selection for tab-like text (feed, genre, library and range tabs). The default ripple drew a white or grey box
+ * behind the label for a moment after each tap; these labels show their state with colour and an underline instead,
+ * so a press only dims them briefly.
+ */
+internal fun Modifier.quietSelectable(selected: Boolean, role: Role = Role.Tab, onClick: () -> Unit): Modifier = composed {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val dim by animateFloatAsState(if (pressed) .55f else 1f, tween(if (pressed) 60 else 160), label = "tab_press")
+    this.selectable(selected = selected, interactionSource = source, indication = null, role = role, onClick = onClick)
+        .graphicsLayer { alpha = dim }
+}

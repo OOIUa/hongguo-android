@@ -47,7 +47,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '换用简约版红果图标（自适应启动图标，Android 13 起支持主题图标），首页标题旁同步使用新 logo。补齐过渡动画：播放页上下滑动切集时当前画面随手指滑走、下一集带集数滑入，自动连播和选集跳转也以滑动切换，画面首帧淡入；进入详情、搜索和账号页从右侧滑入、返回时滑出，底栏切换淡入淡出，播放器打开时上滑出现、关闭时淡出。播放、主题、底栏样式、记录、续播、账号片单和更新功能保持不变。'
+        notes = '底栏可以按住左右拖动切换：悬浮玻璃底栏的选中胶囊跟随手指放大，经过每个页面有轻微震动，松手弹到目标页面，快速一甩可多走一格；经典底栏同样支持拖动。设置与主题样式改为独立页面，切到其他页面后再回到我的不会停留在设置页。沉浸暗场主题的首页推荐流和剧集详情封面延伸到透明状态栏下方。首页、剧场等页面点击顶部标签时不再闪现白色底色。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

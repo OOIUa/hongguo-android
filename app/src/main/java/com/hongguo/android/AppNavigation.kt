@@ -32,6 +32,16 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,7 +66,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
     val focus = LocalFocusManager.current
     val active = when (selected) {
         AppTab.HISTORY -> AppTab.FAVORITES
-        AppTab.ACCOUNT -> AppTab.MINE
+        AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE -> AppTab.MINE
         else -> selected
     }
     // Same four destinations in every theme; labels, icons and the selection mark differ per layout.
@@ -84,13 +94,43 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
         return
     }
     val secondary = NavMuted
+    val haptics = LocalHapticFeedback.current
+    fun select(tab: AppTab) {
+        keyboard?.hide()
+        focus.clearFocus()
+        onSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
+    }
+    // Drag along the bar to move the selection between tabs (a tick per tab); lifting the finger switches to it.
+    var dragIndex by remember { mutableStateOf<Int?>(null) }
+    val shown = dragIndex?.let { tabs[it].tab } ?: active
     Surface(color = if (style == AppThemeStyle.CARDS) CardSurface else Canvas, tonalElevation = 0.dp, shadowElevation = 0.dp) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().semantics { testTagsAsResourceId = true }) {
             HorizontalDivider(thickness = .5.dp, color = NavDivider)
-            Row(Modifier.fillMaxWidth().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().selectableGroup().pointerInput(tabs.size) {
+                fun indexAt(x: Float) = (x / (size.width / tabs.size.toFloat())).toInt().coerceIn(0, tabs.lastIndex)
+                detectHorizontalDragGestures(
+                    onDragStart = { start -> dragIndex = indexAt(start.x) },
+                    onHorizontalDrag = { change, _ ->
+                        change.consume()
+                        val now = indexAt(change.position.x)
+                        if (now != dragIndex) { dragIndex = now; haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+                    },
+                    onDragEnd = {
+                        dragIndex?.let { index -> if (tabs[index].tab != active) select(tabs[index].tab) }
+                        dragIndex = null
+                    },
+                    onDragCancel = { dragIndex = null },
+                )
+            }, verticalAlignment = Alignment.CenterVertically) {
                 tabs.forEach { item ->
                     val tab = item.tab
-                    val isSelected = active == tab
+                    val isSelected = shown == tab
+                    // A small bounce on the icon that becomes selected (by tap or drag).
+                    val pop = remember { Animatable(1f) }
+                    LaunchedEffect(isSelected) {
+                        if (isSelected) { pop.snapTo(.84f); pop.animateTo(1f, spring(dampingRatio = .42f, stiffness = 420f)) }
+                    }
+                    val popLayer = Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }
                     val color by animateColorAsState(when {
                         !isSelected -> secondary
                         style == AppThemeStyle.WARM -> AccentInk
@@ -101,11 +141,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
                     val mark = animateFloatAsState(if (isSelected) 1f else 0f,
                         spring(dampingRatio = .7f, stiffness = Spring.StiffnessMediumLow), label = "nav_mark_${tab.name}")
                     Column(Modifier.weight(1f).heightIn(min = 64.dp)
-                        .selectable(selected = isSelected, role = Role.Tab, onClick = {
-                            keyboard?.hide()
-                            focus.clearFocus()
-                            onSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
-                        }).testTag("nav_${tab.name.lowercase(Locale.ROOT)}")
+                        .selectable(selected = active == tab, role = Role.Tab, onClick = { select(tab) }).testTag("nav_${tab.name.lowercase(Locale.ROOT)}")
                         .padding(horizontal = 4.dp, vertical = 7.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center) {
@@ -118,9 +154,9 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
                                 drawRoundRect(pill.copy(alpha = pill.alpha * m.coerceIn(0f, 1f)), topLeft = Offset((size.width - w) / 2, 0f),
                                     size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2))
                             }, contentAlignment = Alignment.Center) {
-                                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(23.dp))
+                                Icon(icon, contentDescription = null, tint = color, modifier = popLayer.size(23.dp))
                             }
-                        } else Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(23.dp))
+                        } else Icon(icon, contentDescription = null, tint = color, modifier = popLayer.size(23.dp))
                         Spacer(Modifier.height(4.dp))
                         Text(item.label, color = color, fontSize = if (style == AppThemeStyle.IMMERSIVE && isSelected) 14.sp else 13.sp,
                             lineHeight = 18.sp, maxLines = 2,

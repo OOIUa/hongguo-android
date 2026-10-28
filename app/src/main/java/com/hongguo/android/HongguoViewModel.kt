@@ -20,7 +20,8 @@ import com.hongguo.api.service.ProgressiveMedia
 
 private val mediaCleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-enum class AppTab { HOME, CATEGORY, SEARCH, FAVORITES, MINE, HISTORY, ACCOUNT }
+/** SETTINGS and THEME_STYLE are pages of their own (no bottom bar), opened from 我的 and closed back to where they came from. */
+enum class AppTab { HOME, CATEGORY, SEARCH, FAVORITES, MINE, HISTORY, ACCOUNT, SETTINGS, THEME_STYLE }
 
 data class FeedState(
     val items: List<DramaCard> = emptyList(),
@@ -131,10 +132,14 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var searchOrigin = AppTab.HOME
     private var accountOrigin = AppTab.MINE
     private var libraryOrigin = AppTab.HOME
+    private var settingsOrigin = AppTab.MINE
+    private var themeOrigin = AppTab.SETTINGS
 
     fun closeSearch() = navigate(searchOrigin, rememberOrigin = false)
     fun closeAccount() = navigate(accountOrigin, rememberOrigin = false)
     fun closeLibrary() = navigate(libraryOrigin, rememberOrigin = false)
+    fun closeSettings() = navigate(settingsOrigin, rememberOrigin = false)
+    fun closeThemeStyle() = navigate(themeOrigin, rememberOrigin = false)
     fun selectLibrarySource(cloud: Boolean) { mutableState.update { it.copy(libraryCloud = cloud) } }
 
     init {
@@ -152,6 +157,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private fun navigate(tab: AppTab, rememberOrigin: Boolean) {
         if (rememberOrigin && tab == AppTab.SEARCH && state.value.tab != AppTab.SEARCH) searchOrigin = state.value.tab
         if (rememberOrigin && tab == AppTab.ACCOUNT && state.value.tab != AppTab.ACCOUNT) accountOrigin = state.value.tab
+        if (rememberOrigin && tab == AppTab.SETTINGS && state.value.tab != AppTab.SETTINGS) settingsOrigin = state.value.tab
+        if (rememberOrigin && tab == AppTab.THEME_STYLE && state.value.tab != AppTab.THEME_STYLE) themeOrigin = state.value.tab
         if (rememberOrigin && tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) && state.value.tab !in setOf(AppTab.HISTORY, AppTab.FAVORITES, AppTab.ACCOUNT)) {
             libraryOrigin = state.value.tab
             mutableState.update { it.copy(libraryCloud = false) }

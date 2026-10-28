@@ -49,7 +49,7 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
                 val selected = state.libraryCloud == cloud
                 Box(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(50))
                     .background(if (selected) SoftOrange else Color.Transparent)
-                    .selectable(selected, role = Role.Tab, onClick = { model.selectLibrarySource(cloud) })
+                    .quietSelectable(selected) { model.selectLibrarySource(cloud) }
                     .testTag(if (cloud) "library_source_account" else "library_source_local"),
                     contentAlignment = Alignment.Center) {
                     Text(label, color = if (selected) AccentInk else Muted, fontSize = 16.sp,
@@ -66,8 +66,8 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 listOf(true to "历史", false to "收藏").forEach { (isHistory, label) ->
-                    Column(Modifier.padding(end = 28.dp).selectable(history == isHistory, role = Role.Tab,
-                        onClick = { model.selectTab(if (isHistory) AppTab.HISTORY else AppTab.FAVORITES) })
+                    Column(Modifier.padding(end = 28.dp).quietSelectable(history == isHistory) {
+                        model.selectTab(if (isHistory) AppTab.HISTORY else AppTab.FAVORITES) }
                         .testTag(if (isHistory) "library_history" else "library_favorites"),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(label, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,

@@ -75,6 +75,8 @@ class MainActivity : ComponentActivity() {
                         state.selectedCard != null -> model.backToSearch()
                         state.tab == AppTab.SEARCH -> model.closeSearch()
                         state.tab == AppTab.ACCOUNT -> model.closeAccount()
+                        state.tab == AppTab.SETTINGS -> model.closeSettings()
+                        state.tab == AppTab.THEME_STYLE -> model.closeThemeStyle()
                         state.tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) -> model.closeLibrary()
                         else -> model.selectTab(AppTab.HOME)
                     }
@@ -90,7 +92,7 @@ class MainActivity : ComponentActivity() {
                 val playerActive = transition.targetState == EnterExitState.Visible
                 if (playerShown) EpisodePlayerScreen(state, model, accountModel, active = playerActive)
                 else {
-                    val showNav = state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.ACCOUNT)
+                    val showNav = state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE)
                     // 悬浮玻璃: the bar floats as a liquid-glass capsule and the page runs underneath it.
                     val floatingNav = showNav && state.navBarStyle == NavBarStyle.GLASS
                     val backdrop = rememberGlassBackdrop()
@@ -101,9 +103,11 @@ class MainActivity : ComponentActivity() {
                         if (showNav && !floatingNav) AppNavigation(state.tab, model::selectTab, style = layout)
                     }) { insets ->
                         val direction = LocalLayoutDirection.current
-                        val pagePadding = if (!floatingNav) insets else PaddingValues(
-                            start = insets.calculateStartPadding(direction), top = insets.calculateTopPadding(),
-                            end = insets.calculateEndPadding(direction), bottom = 0.dp)
+                        // The top inset is applied per page: 沉浸暗场's feed and detail picture run up under the transparent
+                        // status bar instead of leaving a solid band above them.
+                        val topInset = insets.calculateTopPadding()
+                        val pagePadding = PaddingValues(start = insets.calculateStartPadding(direction), top = 0.dp,
+                            end = insets.calculateEndPadding(direction), bottom = if (floatingNav) 0.dp else insets.calculateBottomPadding())
                         Box(Modifier.fillMaxSize()) {
                         CompositionLocalProvider(LocalNavClearance provides navClearance) {
                         // A detail page keeps drawing its last state while it slides out after 返回.
@@ -119,7 +123,8 @@ class MainActivity : ComponentActivity() {
                         CompositionLocalProvider(LocalPageActive provides pageActive) {
                         pageStates.SaveableStateProvider(key) {
                         Box(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxSize().background(Canvas)) {
+                        Column(Modifier.fillMaxSize().background(Canvas)
+                            .padding(top = if (drawsUnderStatusBar(key, layout)) 0.dp else topInset)) {
                             // Each page draws its own state: a leaving detail page keeps its drama, never the next one.
                             val detailState = when {
                                 !key.startsWith("detail_") -> null
@@ -168,6 +173,9 @@ class MainActivity : ComponentActivity() {
                                     }, style = layout)
                                 AppTab.ACCOUNT -> AccountScreen(accountModel, onBack = model::closeAccount,
                                     onOpenLibrary = model::openLibrary)
+                                AppTab.SETTINGS -> SystemSettingsScreen(tabState, model, updateState, updateModel,
+                                    onTheme = { model.selectTab(AppTab.THEME_STYLE) }, onBack = model::closeSettings)
+                                AppTab.THEME_STYLE -> ThemeStyleScreen(tabState, model, model::closeThemeStyle)
                             }
                             }
                         }
@@ -229,11 +237,11 @@ private fun BrandHeader() {
     }
 }
 
-/** Pages opened on top (detail, 搜索, 账号) slide in from the right and back out; switching tabs cross-fades. */
+/** Pages opened on top (detail, 搜索, 账号, 设置, 主题样式) slide in from the right and back out; switching tabs cross-fades. */
 private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, to: String): ContentTransform {
     fun depth(key: String) = when {
-        key.startsWith("detail_") -> 2
-        key == "tab_${AppTab.SEARCH.name}" || key == "tab_${AppTab.ACCOUNT.name}" -> 1
+        key.startsWith("detail_") || key == "tab_${AppTab.THEME_STYLE.name}" -> 2
+        key == "tab_${AppTab.SEARCH.name}" || key == "tab_${AppTab.ACCOUNT.name}" || key == "tab_${AppTab.SETTINGS.name}" -> 1
         else -> 0
     }
     val forward = depth(to) > depth(from)
@@ -248,6 +256,10 @@ private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, 
         else -> fadeIn(tween(180, delayMillis = 60)).togetherWith(fadeOut(tween(120)))
     }
 }
+
+/** Pages whose own picture fills the area behind the status bar (they pad their top controls themselves). */
+private fun drawsUnderStatusBar(key: String, layout: AppThemeStyle): Boolean =
+    layout == AppThemeStyle.IMMERSIVE && (key == "tab_${AppTab.HOME.name}" || key.startsWith("detail_"))
 
 /** False while a page is animating out, so its back handlers and taps stand down. */
 internal val LocalPageActive = compositionLocalOf { true }
