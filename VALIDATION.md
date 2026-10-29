@@ -1,3 +1,13 @@
+# 0.7.9 头像昵称规则对齐 iOS、底栏拖动到「我的」
+
+验证日期：2026-10-29（Asia/Shanghai）。versionName 0.7.9、versionCode 20。
+
+- 头像与昵称（对齐 iOS `AccountRules`）：新增 `ProfileRules`。昵称优先取 App 资料 `user_name`，为空时取官网资料 `screen_name` / `nickname` / `user_name` / `name`（依次查 `data`、`data.user`、`data.user_info`，去首尾空白、最多 64 字、不含控制字符），都没有时显示「红果用户」。头像依次取 App 资料与官网资料中的 `avatar_url`、`avatar_large_url`、`avatar_large`、`avatar_medium`、`avatar_thumb`、`avatar`（字符串或 `url_list` 图片对象），只接受 HTTPS（http 与 `//` 开头升级为 https），拒绝带账号信息、空白或其他协议的地址。`CloudProfile` 新增 `avatarUrl` 并加密保存；官网已登录、云账号未接通（`WEBSITE_ONLY`）时保存并显示官网昵称与头像（`WebsiteProfile`，不作为账号身份）。「我的」三套布局与账号页显示头像，加载中或失败时保留原占位图标。
+- 底栏拖动到「我的」：两种底栏的拖动检测（`pointerInput(tabs.size)`）一直沿用创建底栏时的选中项与回调。从设置、账号等无底栏页面回到「我的」后底栏重建，记下的选中项为「我的」；之后切到其他页面再拖回「我的」，松手时与旧值比较相等而不切换，点击不受影响。改为 `rememberUpdatedState` 读取当前选中项、Tab 列表与回调。
+- 单元测试：新增 `ProfileRulesTest`（与 iOS 自测相同的头像 / 昵称用例）、`AccountProtocolTest.appProfileFallsBackToWebsiteNameAndAvatarLikeIos`、`AccountDiskCodecTest` 头像与官网资料往返及不安全头像丢弃，`AccountRepositoryTest` 检查 `WEBSITE_ONLY` 保存官网资料。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，Build Tools 36.0.0，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug` 通过，单元测试 246 个全部通过、lint 无错误；APK 包名 `com.hongguo.android`、versionCode 20、versionName 0.7.9，`apksigner` 证书 SHA-256 与 `release-signing.sha256` 一致。未运行 `connectedDebugAndroidTest`（无设备）。
+- 已知限制：未用本人账号核对官网与 App 实际返回的头像字段；拖动修复需真机确认（设置页返回我的 → 切到首页 → 拖回我的）。
+
 # 0.7.8 底栏拖动切换、设置页独立与沉浸暗场状态栏
 
 验证日期：2026-10-28（Asia/Shanghai）。versionName 0.7.8、versionCode 19。

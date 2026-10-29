@@ -10,6 +10,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -159,6 +163,13 @@ internal fun AccountScreen(
                 Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.fillMaxWidth().padding(16.dp).testTag("account_website_only"),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        state.websiteProfile?.takeIf { it.nickname != null || it.avatarUrl != null }?.let { website ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                AccountAvatar(website.avatarUrl, 40.dp)
+                                Text(website.nickname ?: "红果用户", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("account_website_name"))
+                            }
+                        }
                         Text("官网已登录，云片单待连接", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                         Text("官网登录已加密保存在本机。可直接重试，无需重新获取验证码。",
                             color = Muted, fontSize = 14.sp, lineHeight = 22.sp)
@@ -258,10 +269,19 @@ internal fun AccountScreen(
         },
         removeTarget, { removeTarget = null },
         { entry -> removeTarget = null; accountModel.setFavorite(entry.card, false, ownerKey) },
-        accountLabel = if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) "本机保存的官网登录会话"
+        accountLabel = if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY)
+                state.websiteProfile?.nickname?.let { "官网账号「$it」的本机登录会话" } ?: "本机保存的官网登录会话"
             else state.profile?.let { "${it.nickname.ifBlank { "红果用户" }}（账号 ${it.id}）" },
         localReset = localResetRequired,
     )
+}
+
+@Composable
+private fun AccountAvatar(url: String?, size: Dp) {
+    Box(Modifier.size(size).clip(CircleShape).background(Cream), Alignment.Center) {
+        Icon(Icons.Outlined.PersonOutline, null, Modifier.size(size * 0.6f), tint = Muted)
+        AccountAvatarImage(url)
+    }
 }
 
 @Composable
@@ -270,7 +290,7 @@ private fun AccountProfileCard(state: AccountState, onLogout: () -> Unit) {
     Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Outlined.PersonOutline, null, Modifier.size(32.dp), tint = Muted)
+                AccountAvatar(profile.avatarUrl, 48.dp)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(profile.nickname.ifBlank { "红果用户" }, color = Ink, fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("account_profile"))

@@ -37,6 +37,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -95,10 +96,16 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
     }
     val secondary = NavMuted
     val haptics = LocalHapticFeedback.current
+    // The drag detector outlives recompositions (keyed on the tab count only), so it must read the current
+    // selection: a stale `active` from when the bar was created (e.g. back on 我的 from 设置) made a drag that
+    // ended on that tab compare equal and never switch.
+    val currentActive by rememberUpdatedState(active)
+    val currentTabs by rememberUpdatedState(tabs)
+    val currentOnSelect by rememberUpdatedState(onSelect)
     fun select(tab: AppTab) {
         keyboard?.hide()
         focus.clearFocus()
-        onSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
+        currentOnSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
     }
     // Drag along the bar to move the selection between tabs (a tick per tab); lifting the finger switches to it.
     var dragIndex by remember { mutableStateOf<Int?>(null) }
@@ -116,7 +123,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
                         if (now != dragIndex) { dragIndex = now; haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
                     },
                     onDragEnd = {
-                        dragIndex?.let { index -> if (tabs[index].tab != active) select(tabs[index].tab) }
+                        dragIndex?.let { index -> currentTabs[index].tab.let { if (it != currentActive) select(it) } }
                         dragIndex = null
                     },
                     onDragCancel = { dragIndex = null },

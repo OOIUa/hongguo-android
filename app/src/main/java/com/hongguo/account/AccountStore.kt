@@ -7,6 +7,8 @@ import android.util.AtomicFile
 import com.hongguo.account.protocol.AccountCredentials
 import com.hongguo.account.protocol.AccountCredentialSource
 import com.hongguo.account.protocol.CloudProfile
+import com.hongguo.account.protocol.ProfileRules
+import com.hongguo.account.protocol.WebsiteProfile
 import com.hongguo.account.protocol.validBusinessAccountId
 import com.hongguo.android.LibraryCodec
 import com.hongguo.android.LibrarySnapshot
@@ -127,7 +129,9 @@ internal object AccountDiskCodec {
         "version" to 1,
         "credentials" to value.credentials?.toJson(),
         "websiteCredentials" to websiteOnly(value.websiteCredentials)?.toJson(),
-        "profile" to value.profile?.let { mapOf("id" to it.id, "nickname" to it.nickname) },
+        "profile" to value.profile?.let { mapOf("id" to it.id, "nickname" to it.nickname, "avatar" to it.avatarUrl) },
+        "websiteProfile" to value.websiteProfile?.takeIf { value.websiteCredentials != null }
+            ?.let { mapOf("nickname" to it.nickname, "avatar" to it.avatarUrl) },
         "smsRetryAt" to value.smsRetryAt,
         "accounts" to value.accounts.mapValues { (_, cache) -> mapOf(
             "library" to library(cache),
@@ -144,11 +148,15 @@ internal object AccountDiskCodec {
         if (number(root["version"]) != 1L) throw IOException("账号数据版本不支持")
         val profileRaw = map(root["profile"])
         val profile = (profileRaw["id"] as? String)?.takeIf(::validBusinessAccountId)?.let {
-            CloudProfile(it, (profileRaw["nickname"] as? String).orEmpty().take(256))
+            CloudProfile(it, (profileRaw["nickname"] as? String).orEmpty().take(256),
+                ProfileRules.safeImageUrl(profileRaw["avatar"]).orEmpty())
         }
         val credentials = (root["credentials"] as? String)?.let { AccountCredentials.fromJson(it) }
         if ((profile == null) != (credentials == null)) throw IOException("账号数据不完整")
         val websiteCredentials = decodeWebsiteCredentials(root["websiteCredentials"])
+        val websiteProfile = map(root["websiteProfile"]).takeIf { websiteCredentials != null && it.isNotEmpty() }?.let {
+            WebsiteProfile((it["nickname"] as? String)?.trim()?.take(64)?.ifEmpty { null }, ProfileRules.safeImageUrl(it["avatar"]))
+        }
         val accounts = map(root["accounts"]).filterKeys(::validBusinessAccountId).mapValues { (_, raw) ->
             val cache = map(raw)
             val library = LibraryCodec.decode(Json.stringify(cache["library"]))
@@ -169,7 +177,7 @@ internal object AccountDiskCodec {
                 syncEnabled = cache["syncEnabled"] == true, lastSyncAt = number(cache["lastSyncAt"]),
             )
         }
-        return AccountDisk(credentials, profile, accounts, number(root["smsRetryAt"]), websiteCredentials)
+        return AccountDisk(credentials, profile, accounts, number(root["smsRetryAt"]), websiteCredentials, websiteProfile)
     }
 }
 

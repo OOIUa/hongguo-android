@@ -2,6 +2,7 @@ package com.hongguo.account
 
 import com.hongguo.account.protocol.AccountCredentials
 import com.hongguo.account.protocol.CloudProfile
+import com.hongguo.account.protocol.WebsiteProfile
 import com.hongguo.android.LibraryEntry
 
 enum class AccountSessionStatus { SIGNED_OUT, RESTORING, NEEDS_VERIFICATION, LOGGED_IN, WEBSITE_ONLY }
@@ -11,6 +12,8 @@ enum class PhoneStep { IDLE, CODE_SENT }
 /** Presentation state never contains a cookie, verification code or device credential. */
 data class AccountState(
     val profile: CloudProfile? = null,
+    /** Website name/avatar while only the website session is verified (WEBSITE_ONLY). */
+    val websiteProfile: WebsiteProfile? = null,
     val sessionStatus: AccountSessionStatus = AccountSessionStatus.SIGNED_OUT,
     val busy: Boolean = false,
     val qrBytes: ByteArray? = null,
@@ -60,6 +63,8 @@ internal data class AccountDisk(
     val smsRetryAt: Long = 0,
     /** Website verification succeeded; this session has no confirmed App business identity yet. */
     val websiteCredentials: AccountCredentials? = null,
+    /** Display-only name/avatar of [websiteCredentials]; never an account identity. */
+    val websiteProfile: WebsiteProfile? = null,
 ) {
     override fun toString() = "AccountDisk([private])"
 }

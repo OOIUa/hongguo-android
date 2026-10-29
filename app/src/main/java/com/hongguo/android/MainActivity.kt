@@ -164,7 +164,9 @@ class MainActivity : ComponentActivity() {
                                 }
                                 AppTab.MINE -> MyScreen(state, model, updateState, updateModel,
                                     accountName = if (accountState.sessionStatus == AccountSessionStatus.WEBSITE_ONLY)
-                                        "官网登录已保存" else accountState.profile?.nickname,
+                                        accountState.websiteProfile?.nickname ?: "官网登录已保存" else accountState.profile?.nickname,
+                                    accountAvatar = if (accountState.sessionStatus == AccountSessionStatus.WEBSITE_ONLY)
+                                        accountState.websiteProfile?.avatarUrl else accountState.profile?.avatarUrl,
                                     accountStatus = when (accountState.sessionStatus) {
                                         AccountSessionStatus.WEBSITE_ONLY -> "官网已登录，手机云账号未接通"
                                         AccountSessionStatus.LOGGED_IN -> "查看账号收藏、历史与预约"

@@ -79,7 +79,7 @@ internal fun appRequestCookie(credentials: AccountCredentials): String {
 internal object AccountCredentialsParser {
     fun parseHeader(value: String) = AccountCredentials(value)
 }
-data class CloudProfile(val id: String,val nickname: String)
+data class CloudProfile(val id: String,val nickname: String,val avatarUrl: String = "")
 data class CloudProgress(val series: Series,val episodeId: String,val episodeIndex: Int,val position: Long,val duration: Long,val updatedAt: Long,val episodeCount: Int=0)
 
 data class CloudFavorite(val series: Series,val collectedAt: Long)
@@ -147,7 +147,8 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
             json
         }
     }
-    private fun validateWebsite(credentials: AccountCredentials) = verifyAccountStage(AccountVerificationStage.WEBSITE) {
+    /** Returns the website profile's name and avatar, used when the app profile has none. */
+    private fun validateWebsite(credentials: AccountCredentials): WebsiteProfile = verifyAccountStage(AccountVerificationStage.WEBSITE) {
         checkCookie(credentials.cookie)
         val url = websiteBase.resolve("/passport/account/info/v2/")!!.newBuilder()
             .addQueryParameter("aid", "513755").addQueryParameter("passport_jssdk_version", "3.4.10")
@@ -168,10 +169,13 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
                     else "官网登录态未通过验证（错误码 $code）", code, expired)
             }
             validateWebsiteSession(reply)
+            val data = reply.optJSONObject("data") ?: JSONObject()
+            WebsiteProfile(ProfileRules.displayName(data), ProfileRules.avatarUrl(data))
         }
     }
-    fun profile(credentials: AccountCredentials): CloudProfile {
-        if (credentials.source == AccountCredentialSource.WEBSITE) validateWebsite(credentials)
+    /** [onWebsite] receives the verified website profile before the app profile is requested. */
+    fun profile(credentials: AccountCredentials, onWebsite: (WebsiteProfile) -> Unit = {}): CloudProfile {
+        val website = if (credentials.source == AccountCredentialSource.WEBSITE) validateWebsite(credentials).also(onWebsite) else WebsiteProfile()
         return verifyAccountStage(AccountVerificationStage.PROFILE) {
             var gatewayLogin: String? = null
             val reply = json(credentials,"/reading/user/info/v1/", onGatewayLogin = { gatewayLogin = it })
@@ -188,7 +192,8 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
                     if (credentials.source == AccountCredentialSource.WEBSITE) "官网登录已确认，但红果 App 未确认账号授权；可保留官网登录状态，或导入本人的 App 登录态"
                     else "红果 App 登录态未返回有效账号身份，请确认登录态及对应设备资料",
                     diagnostic = appProfileDiagnostic(reply, credentials, gatewayLogin))
-            CloudProfile(id,data.str("user_name").ifBlank { "红果用户" })
+            CloudProfile(id, data.str("user_name").ifBlank { website.nickname ?: "红果用户" },
+                ProfileRules.avatarUrl(data) ?: website.avatarUrl.orEmpty())
         }
     }
     fun history(credentials: AccountCredentials): List<CloudProgress> {

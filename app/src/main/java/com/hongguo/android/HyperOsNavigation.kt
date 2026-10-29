@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -205,11 +206,15 @@ internal fun LiquidGlassNavigationBar(
     }
     // Where the lens is drawn; read only in draw / layer blocks so the motion does not recompose the bar.
     val lensPosition = { if (dragging) follow.value else settle.value }
+    // Read by the long-lived drag detector, which would otherwise keep the values from when the bar was created.
+    val currentSelectedIndex by rememberUpdatedState(selectedIndex)
+    val currentTabs by rememberUpdatedState(tabs)
+    val currentOnSelect by rememberUpdatedState(onSelect)
     fun select(index: Int) {
         keyboard?.hide()
         focus.clearFocus()
-        val tab = tabs[index].tab
-        onSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
+        val tab = currentTabs[index].tab
+        currentOnSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
     }
 
     val glass = rememberGraphicsLayer()
@@ -244,7 +249,7 @@ internal fun LiquidGlassNavigationBar(
                         settle.animateTo(target.toFloat(), spring(dampingRatio = .62f, stiffness = Spring.StiffnessMediumLow),
                             initialVelocity = (velocityX / width).coerceIn(-12f, 12f))
                     }
-                    if (target != selectedIndex) select(target)
+                    if (target != currentSelectedIndex) select(target)
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                 }
                 detectHorizontalDragGestures(

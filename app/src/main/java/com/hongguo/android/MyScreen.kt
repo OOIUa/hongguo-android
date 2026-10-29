@@ -59,11 +59,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 
 @Composable
 internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
                       updateState: UpdateUiState, updateModel: UpdateViewModel,
                       accountName: String? = null, accountStatus: String = "登录后查看手机片单",
+                      accountAvatar: String? = null,
                       style: AppThemeStyle = AppThemeStyle.WARM,
                       onAccount: () -> Unit = { model.selectTab(AppTab.ACCOUNT) }) {
     // 设置 and 主题样式 are pages of their own (AppTab.SETTINGS / THEME_STYLE), not states of 我的: leaving and coming
@@ -71,11 +76,11 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
     val openSettings = { model.selectTab(AppTab.SETTINGS) }
     when (style) {
         AppThemeStyle.IMMERSIVE -> {
-            ImmersiveMine(state, model, updateModel, accountName, accountStatus, onAccount, openSettings) { model.selectTab(AppTab.THEME_STYLE) }
+            ImmersiveMine(state, model, updateModel, accountName, accountStatus, accountAvatar, onAccount, openSettings) { model.selectTab(AppTab.THEME_STYLE) }
             return
         }
         AppThemeStyle.CARDS -> {
-            CardsMine(state, model, updateModel, accountName, accountStatus, onAccount, openSettings)
+            CardsMine(state, model, updateModel, accountName, accountStatus, accountAvatar, onAccount, openSettings)
             return
         }
         AppThemeStyle.WARM -> Unit
@@ -97,6 +102,7 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Cream), Alignment.Center) {
                         Icon(Icons.Outlined.PersonOutline, null, Modifier.size(28.dp), tint = Muted)
+                        AccountAvatarImage(accountAvatar)
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(accountName ?: "登录红果账号", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
@@ -400,7 +406,7 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, tag
 /** B · 沉浸暗场: avatar header, four shortcuts and one grouped list. */
 @Composable
 private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, updateModel: UpdateViewModel,
-                          accountName: String?, accountStatus: String, onAccount: () -> Unit,
+                          accountName: String?, accountStatus: String, accountAvatar: String?, onAccount: () -> Unit,
                           openSettings: () -> Unit, openTheme: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 16.dp),
         contentPadding = PaddingValues(0.dp).plusNavClearance(),
@@ -415,6 +421,7 @@ private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, update
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.size(64.dp).clip(CircleShape).background(Cream), Alignment.Center) {
                     Icon(Icons.Outlined.PersonOutline, null, Modifier.size(32.dp), tint = Ink)
+                    AccountAvatarImage(accountAvatar)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(accountName ?: "登录红果账号", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold,
@@ -463,7 +470,7 @@ private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, update
 /** C · 内容卡片: compact header, two stat cards and two grouped cards. */
 @Composable
 private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateModel: UpdateViewModel,
-                      accountName: String?, accountStatus: String, onAccount: () -> Unit, openSettings: () -> Unit) {
+                      accountName: String?, accountStatus: String, accountAvatar: String?, onAccount: () -> Unit, openSettings: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 12.dp),
         contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -477,6 +484,7 @@ private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateMode
                 horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.size(60.dp).clip(CircleShape).background(CardSurface).border(1.dp, Line, CircleShape), Alignment.Center) {
                     Icon(Icons.Outlined.PersonOutline, null, Modifier.size(28.dp), tint = Muted)
+                    AccountAvatarImage(accountAvatar)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(accountName ?: "未登录", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Black,
@@ -532,4 +540,12 @@ private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateMode
                 modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 24.dp))
         }
     }
+}
+
+/** Account avatar over its placeholder; the placeholder stays while loading, without an avatar, or when the image fails. */
+@Composable
+internal fun AccountAvatarImage(url: String?) {
+    if (url.isNullOrBlank()) return
+    AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(),
+        contentDescription = "账号头像", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
 }

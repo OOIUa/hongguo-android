@@ -3,6 +3,7 @@ package com.hongguo.account
 import com.hongguo.account.protocol.AccountCredentials
 import com.hongguo.account.protocol.AccountCredentialSource
 import com.hongguo.account.protocol.AccountProtocolException
+import com.hongguo.account.protocol.WebsiteProfile
 import com.hongguo.account.protocol.AccountVerificationStage
 import com.hongguo.account.protocol.CloudFavorite
 import com.hongguo.account.protocol.CloudProfile
@@ -74,8 +75,10 @@ class AccountRepositoryTest {
         var historyCalls = 0
         var favoritesCalls = 0
         override fun prepareCredentials(credentials: AccountCredentials) = credentials.copy(deviceId = "7100000000000000001", installId = "7200000000000000001")
-        override fun profile(credentials: AccountCredentials): CloudProfile {
+        var websiteValue: WebsiteProfile? = null
+        override fun profile(credentials: AccountCredentials, onWebsite: (WebsiteProfile) -> Unit): CloudProfile {
             profileCredentials += credentials
+            websiteValue?.let(onWebsite)
             onProfile?.invoke(); profileError?.let { throw it }; return profileValue
         }
         override fun history(credentials: AccountCredentials): List<CloudProgress> { historyCalls++; historyError?.let { throw it }; return historyValue }
@@ -275,9 +278,12 @@ class AccountRepositoryTest {
             profileError = AccountProtocolException("手机账号授权未确认", verificationStage = AccountVerificationStage.PROFILE,
                 diagnostic = "classification=BUSINESS_ID_MISSING")
         }
+        api.websiteValue = WebsiteProfile("果果", "https://p6.example/t.webp")
         val repo = repository(store, api, login); runCurrent()
         repo.completeWebLogin("sessionid=website-fixture"); runCurrent()
         assertEquals(AccountSessionStatus.WEBSITE_ONLY, repo.state.value.sessionStatus)
+        assertEquals(api.websiteValue, repo.state.value.websiteProfile)
+        assertEquals(api.websiteValue, store.value.websiteProfile)
         assertNull(repo.state.value.profile)
         assertNull(repo.ownerKey)
         assertNull(store.value.credentials)

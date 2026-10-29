@@ -3,6 +3,7 @@ package com.hongguo.account
 import com.hongguo.account.protocol.AccountCredentials
 import com.hongguo.account.protocol.AccountCredentialSource
 import com.hongguo.account.protocol.CloudProfile
+import com.hongguo.account.protocol.WebsiteProfile
 import com.hongguo.api.util.Json
 import com.hongguo.android.DramaCard
 import com.hongguo.android.LibraryEntry
@@ -52,6 +53,23 @@ class AccountDiskCodecTest {
         assertEquals(setOf(uid), decoded.accounts.keys)
         assertEquals(setOf(numeric), decoded.accounts.getValue(uid).reservationOnlineIds)
         assertEquals(setOf(numeric), decoded.accounts.getValue(uid).favoriteAttempts.keys)
+    }
+
+    @Test fun avatarAndWebsiteProfileRoundTrip() {
+        val uid = "7000000000000000001"
+        val source = AccountDisk(AccountCredentials("sessionid=avatar-fixture"), CloudProfile(uid, "测试", "https://p3.example/a.jpeg"))
+        assertEquals(source, AccountDiskCodec.decode(AccountDiskCodec.encode(source)))
+        val website = AccountDisk(websiteCredentials = AccountCredentials("sessionid=web-fixture", source = AccountCredentialSource.WEBSITE),
+            websiteProfile = WebsiteProfile("果果", "https://p6.example/t.webp"))
+        assertEquals(website, AccountDiskCodec.decode(AccountDiskCodec.encode(website)))
+        // A website profile without its session is never kept.
+        assertNull(AccountDiskCodec.decode(AccountDiskCodec.encode(website.copy(websiteCredentials = null))).websiteProfile)
+    }
+
+    @Test fun unsafeStoredAvatarIsDropped() {
+        val text = AccountDiskCodec.encode(AccountDisk(AccountCredentials("sessionid=avatar-fixture"),
+            CloudProfile("7000000000000000001", "测试", "javascript:alert(1)")))
+        assertEquals("", AccountDiskCodec.decode(text).profile?.avatarUrl)
     }
 
     @Test fun partialCredentialProfileSnapshotIsRejected() {

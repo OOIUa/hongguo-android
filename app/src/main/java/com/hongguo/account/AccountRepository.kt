@@ -13,6 +13,7 @@ import com.hongguo.account.protocol.CloudReservation
 import com.hongguo.account.protocol.PhoneLogin
 import com.hongguo.account.protocol.Series
 import com.hongguo.account.protocol.WebLogin
+import com.hongguo.account.protocol.WebsiteProfile
 import com.hongguo.account.protocol.validBusinessAccountId
 import com.hongguo.android.DramaCard
 import com.hongguo.android.LibraryCodec
@@ -38,7 +39,7 @@ import java.util.concurrent.atomic.AtomicLong
 /** A small injectable boundary keeps auth, persistence and account-switch tests off the network. */
 internal interface AccountGateway {
     fun prepareCredentials(credentials: AccountCredentials): AccountCredentials
-    fun profile(credentials: AccountCredentials): CloudProfile
+    fun profile(credentials: AccountCredentials, onWebsite: (WebsiteProfile) -> Unit = {}): CloudProfile
     fun history(credentials: AccountCredentials): List<CloudProgress>
     fun favorites(credentials: AccountCredentials): List<CloudFavorite>
     fun reservations(credentials: AccountCredentials, online: Boolean): List<CloudReservation>
@@ -62,7 +63,7 @@ private fun accountHttp() = OkHttpClient.Builder().callTimeout(25, TimeUnit.SECO
 private class LiveAccountGateway : AccountGateway {
     private val client = CloudAccountClient(accountHttp())
     override fun prepareCredentials(credentials: AccountCredentials) = client.prepareCredentials(credentials)
-    override fun profile(credentials: AccountCredentials) = client.profile(credentials)
+    override fun profile(credentials: AccountCredentials, onWebsite: (WebsiteProfile) -> Unit) = client.profile(credentials, onWebsite)
     override fun history(credentials: AccountCredentials) = client.history(credentials)
     override fun favorites(credentials: AccountCredentials) = client.favorites(credentials)
     override fun reservations(credentials: AccountCredentials, online: Boolean) = client.reservations(credentials, online)
@@ -129,7 +130,8 @@ class AccountRepository internal constructor(
                     if (generation != 0L) return@launch
                     disk = loaded
                     val profile = loaded.profile
-                    mutableState.value = AccountState(profile = profile, sessionStatus = when {
+                    mutableState.value = AccountState(profile = profile,
+                        websiteProfile = loaded.websiteProfile.takeIf { profile == null && loaded.websiteCredentials != null }, sessionStatus = when {
                         profile != null -> AccountSessionStatus.RESTORING
                         loaded.websiteCredentials != null -> AccountSessionStatus.WEBSITE_ONLY
                         else -> AccountSessionStatus.SIGNED_OUT
@@ -311,7 +313,8 @@ class AccountRepository internal constructor(
         if (!current(g)) return
         val credentials = runInterruptible(io) { gateway.prepareCredentials(web) }
         if (!current(g)) return
-        val profile = try { runInterruptible(io) { gateway.profile(credentials) } }
+        var website: WebsiteProfile? = null
+        val profile = try { runInterruptible(io) { gateway.profile(credentials) { website = it } } }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
             // PROFILE is reached only after the website has proved its session. Keep that proof
@@ -319,11 +322,12 @@ class AccountRepository internal constructor(
             if (credentials.source == AccountCredentialSource.WEBSITE && error is AccountProtocolException &&
                 error.verificationStage == AccountVerificationStage.PROFILE) synchronized(lock) {
                 if (generation == g && disk.profile == null) {
-                    if (!saveLocked(disk.copy(websiteCredentials = credentials))) {
+                    if (!saveLocked(disk.copy(websiteCredentials = credentials, websiteProfile = website))) {
                         throw AccountProtocolException("官网会话未能保存，请检查本机空间后重试",
                             verificationStage = AccountVerificationStage.PROFILE, diagnostic = error.diagnostic)
                     }
-                    mutableState.value = mutableState.value.copy(sessionStatus = AccountSessionStatus.WEBSITE_ONLY, localClearFailed = false)
+                    mutableState.value = mutableState.value.copy(sessionStatus = AccountSessionStatus.WEBSITE_ONLY,
+                        websiteProfile = website, localClearFailed = false)
                 }
             }
             throw error
@@ -332,13 +336,13 @@ class AccountRepository internal constructor(
             verificationStage = AccountVerificationStage.PROFILE)
         synchronized(lock) {
             if (generation != g) return
-            if (!saveLocked(disk.copy(credentials = credentials, profile = profile, websiteCredentials = null))) {
+            if (!saveLocked(disk.copy(credentials = credentials, profile = profile, websiteCredentials = null, websiteProfile = null))) {
                 mutableState.value = mutableState.value.copy(busy = false); return
             }
             ownerGeneration++
             lastUploaded.clear(); lastObserved.clear(); lastProgressUploadAt = 0
             activeLogin?.cancel(); activeLogin = null
-            mutableState.value = mutableState.value.copy(profile = profile, sessionStatus = AccountSessionStatus.LOGGED_IN,
+            mutableState.value = mutableState.value.copy(profile = profile, websiteProfile = null, sessionStatus = AccountSessionStatus.LOGGED_IN,
                 busy = false, qrBytes = null, qrExpiresAt = 0, qrRemainingSeconds = 0, phoneStep = PhoneStep.IDLE,
                 historyError = null, favoritesError = null, reservationsError = null, loginDiagnostic = null, localClearFailed = false,
                 message = "已登录红果账号")
@@ -671,7 +675,7 @@ class AccountRepository internal constructor(
         resetRequestsLocked()
         val uid = disk.profile?.id
         val accounts = if (uid == null) disk.accounts else disk.accounts + (uid to cacheLocked().copy(pending = emptyMap()))
-        val next = disk.copy(credentials = null, profile = null, accounts = accounts, websiteCredentials = null)
+        val next = disk.copy(credentials = null, profile = null, accounts = accounts, websiteCredentials = null, websiteProfile = null)
         val cleared = clearSessionLocked(next)
         lastUploaded.clear(); lastObserved.clear(); lastProgressUploadAt = 0
         mutableState.value = AccountState(phoneRemainingSeconds = ((disk.smsRetryAt - now() + 999) / 1000).coerceAtLeast(0).toInt(),
@@ -690,7 +694,7 @@ class AccountRepository internal constructor(
         resetRequestsLocked()
         val uid = disk.profile?.id
         val accounts = if (uid == null) disk.accounts else disk.accounts + (uid to cacheLocked().copy(pending = emptyMap(), syncEnabled = false))
-        val next = disk.copy(credentials = null, profile = null, accounts = accounts, websiteCredentials = null)
+        val next = disk.copy(credentials = null, profile = null, accounts = accounts, websiteCredentials = null, websiteProfile = null)
         val cleared = clearSessionLocked(next)
         lastUploaded.clear(); lastObserved.clear()
         mutableState.value = AccountState(localClearFailed = cleared == SessionClear.FAILED, message = when (cleared) {
@@ -722,11 +726,12 @@ class AccountRepository internal constructor(
         var clearFailed = mutableState.value.localClearFailed
         if (disk.profile == null && websiteToClear != null && disk.websiteCredentials == websiteToClear && error is AccountProtocolException &&
             error.verificationStage == AccountVerificationStage.WEBSITE && error.requiresLogin) {
-            clearFailed = clearSessionLocked(disk.copy(websiteCredentials = null)) == SessionClear.FAILED
+            clearFailed = clearSessionLocked(disk.copy(websiteCredentials = null, websiteProfile = null)) == SessionClear.FAILED
         }
         activeLogin?.cancel(); activeLogin = null
         mutableState.value = mutableState.value.copy(busy = false, qrBytes = null, qrExpiresAt = 0, qrRemainingSeconds = 0,
             phoneStep = PhoneStep.IDLE, localClearFailed = clearFailed,
+            websiteProfile = disk.websiteProfile.takeIf { disk.profile == null && disk.websiteCredentials != null },
             sessionStatus = if (disk.profile != null) mutableState.value.sessionStatus
                 else if (disk.websiteCredentials != null) AccountSessionStatus.WEBSITE_ONLY else AccountSessionStatus.SIGNED_OUT,
             loginDiagnostic = (error as? AccountProtocolException)?.diagnostic,

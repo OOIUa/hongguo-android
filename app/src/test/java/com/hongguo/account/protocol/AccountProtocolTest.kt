@@ -318,4 +318,20 @@ class AccountProtocolTest {
             assertThrows(AccountProtocolException::class.java) { client.profile(credentials) }
         }
     }
+
+    @Test fun appProfileFallsBackToWebsiteNameAndAvatarLikeIos() {
+        val client = cloud()
+        server.enqueue(body("""{"message":"success","data":{"has_login":true,"screen_name":" 官网昵称 ","avatar_url":"http://p3.example/w.jpeg"}}"""))
+        server.enqueue(body("""{"code":0,"data":{"biz_user_id":9999999999999999997,"user_name":""}}"""))
+        var website: WebsiteProfile? = null
+        val fallback = client.profile(credentials) { website = it }
+        assertEquals(WebsiteProfile("官网昵称", "https://p3.example/w.jpeg"), website)
+        assertEquals("官网昵称", fallback.nickname)
+        assertEquals("https://p3.example/w.jpeg", fallback.avatarUrl)
+        server.enqueue(body("""{"message":"success","data":{"has_login":true,"screen_name":"官网昵称","avatar_url":"https://p3.example/w.jpeg"}}"""))
+        server.enqueue(body("""{"code":0,"data":{"biz_user_id":9999999999999999997,"user_name":"App 昵称","avatar_url":"https://p3.example/app.jpeg"}}"""))
+        val app = client.profile(credentials)
+        assertEquals("App 昵称", app.nickname)
+        assertEquals("https://p3.example/app.jpeg", app.avatarUrl)
+    }
 }

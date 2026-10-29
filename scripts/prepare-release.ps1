@@ -11,7 +11,11 @@ try {
     $sdk = $env:ANDROID_HOME
     if (-not $sdk) { throw 'Set ANDROID_HOME to the Android SDK directory.' }
     $buildTools = Join-Path $sdk 'build-tools/36.0.0'
-    $badging = (& (Join-Path $buildTools 'aapt.exe') dump badging $apkPath) -join "`n"
+    # Build Tools ship aapt.exe / apksigner.bat on Windows and aapt / apksigner on macOS and Linux.
+    $onWindows = $PSVersionTable.PSEdition -eq 'Desktop' -or $IsWindows
+    $aapt = Join-Path $buildTools ($(if ($onWindows) { 'aapt.exe' } else { 'aapt' }))
+    $apksigner = Join-Path $buildTools ($(if ($onWindows) { 'apksigner.bat' } else { 'apksigner' }))
+    $badging = (& $aapt dump badging $apkPath) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect APK.' }
     if ($badging -notmatch "package: name='com.hongguo.android' versionCode='(\d+)' versionName='([^']+)'") {
         throw 'Unexpected application ID or APK metadata.'
@@ -21,7 +25,7 @@ try {
     if ($version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') { throw 'Only a regular release version can be published.' }
     if ($badging -notmatch "sdkVersion:'(\d+)'") { throw 'Missing minSdk.' }
     $minimum = [int]$Matches[1]
-    $signature = (& (Join-Path $buildTools 'apksigner.bat') verify --print-certs $apkPath) -join "`n"
+    $signature = (& $apksigner verify --print-certs $apkPath) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed.' }
     $expected = (Get-Content release-signing.sha256 -Raw).Trim().ToLowerInvariant()
     if ($signature -notmatch 'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})' -or $Matches[1].ToLowerInvariant() -ne $expected) {
@@ -47,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '底栏可以按住左右拖动切换：悬浮玻璃底栏的选中胶囊跟随手指放大，经过每个页面有轻微震动，松手弹到目标页面，快速一甩可多走一格；经典底栏同样支持拖动。设置与主题样式改为独立页面，切到其他页面后再回到我的不会停留在设置页。沉浸暗场主题的首页推荐流和剧集详情封面延伸到透明状态栏下方。首页、剧场等页面点击顶部标签时不再闪现白色底色。'
+        notes = '账号头像与昵称的获取规则与 iOS 端一致：优先使用红果 App 账号资料的昵称和头像，缺少时改用官网账号的昵称与头像，头像只加载 HTTPS 图片；我的与账号页显示头像，官网已登录但云账号未接通时也显示官网昵称和头像。修复底栏按住拖动无法切换到我的（从设置等页面返回我的之后）的问题。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)
