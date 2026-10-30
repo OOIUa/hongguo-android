@@ -1,3 +1,14 @@
+# 0.7.11 沉浸暗场自动试看、推荐设为首个标签
+
+验证日期：2026-10-30（Asia/Shanghai）。versionName 0.7.11、versionCode 22。
+
+- 沉浸暗场首页自动试看：新增 `rememberFeedPreview`，只为停稳（`settledPage`）的那一页创建一个 ExoPlayer，经 `previewFirstEpisode` 取详情与第 1 集渐进会话（`allowFallback = false`，不为试看整集下载）。首页离开、打开详情或完整播放器、应用进入后台时释放；不写本机历史、不上报账号进度。首帧前显示封面，之后横屏剧集置于黑底。点画面暂停 / 继续；复用 `PlayerInteractionLayer` 支持按住左侧 2 倍速并显示「2× 临时加速中」。「立即播放」经 `playFromPreview` 从试看位置进入完整播放器；第 1 集看完后同一按钮以颜色、缩放与上下滑动的过渡变为「继续播放 · 第 2 集」。播放接口偶发拒绝匿名身份时，试看在 2 秒后重试一次，失败则保留封面。
+- 长按 2 倍速震动反馈：`PlayerInteractionLayer` 接受长按时执行 `HapticFeedbackType.LongPress`，完整播放器与首页一致。
+- 首页标签：「推荐」（猜你喜欢推荐流）改为首个且默认标签，原热度列表改名「热度」（暖白为「热度精选」），内容卡片榜单在推荐下显示「为你推荐」；沉浸暗场信息行去掉「第几部 / 共几部」。
+- 同版本合入另一会话的界面细节优化：新增 `TabMotion.kt`（标签滑动胶囊 / 下划线指示器），用于片单来源与历史/收藏切换、内容卡片与发现页标签；「我的」页布局调整（设置入口改为 `my_settings` 行，`ThemeSettingsFlowTest` 同步）。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，Build Tools 36.0.0，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug` 通过，单元测试 259 个全部通过、lint 0 错误。未运行 `connectedDebugAndroidTest`（无设备）。
+- 已知限制：本机无安卓设备，自动试看、长按 2 倍速、震动与按钮过渡未在真机或模拟器上查看；同一逻辑的 iOS 版本已在 iPhone 18 Pro 模拟器实测试看、上滑切换、暂停、长按 2 倍速与立即播放续播。
+
 # 0.7.10 首页猜你喜欢、同步上游播放修复
 
 验证日期：2026-10-30（Asia/Shanghai）。versionName 0.7.10、versionCode 21。

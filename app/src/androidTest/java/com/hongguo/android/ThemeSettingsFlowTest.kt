@@ -24,7 +24,7 @@ class ThemeSettingsFlowTest {
         lateinit var model: HongguoViewModel
         compose.runOnIdle { model = ViewModelProvider(compose.activity)[HongguoViewModel::class.java] }
         compose.onNodeWithTag("nav_mine").performClick()
-        compose.onNodeWithTag("my_settings_icon").performClick()
+        compose.onNodeWithTag("my_settings").performScrollTo().performClick()
         compose.onNodeWithTag("settings_screen").assertExists()
         // 设置 has no bottom bar of its own.
         compose.onNodeWithTag("nav_home").assertDoesNotExist()
@@ -43,7 +43,7 @@ class ThemeSettingsFlowTest {
         try {
             compose.runOnIdle { model.setThemeStyle(AppThemeStyle.WARM) }
             compose.onNodeWithTag("nav_mine").performClick()
-            compose.onNodeWithTag("my_settings_icon").performClick()
+            compose.onNodeWithTag("my_settings").performScrollTo().performClick()
             compose.onNodeWithTag("settings_screen").assertExists()
             compose.onNodeWithTag("settings_theme").performScrollTo().performClick()
             compose.onNodeWithTag("theme_screen").assertExists()

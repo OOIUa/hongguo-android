@@ -1,7 +1,24 @@
 package com.hongguo.android
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.outlined.FastForward
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -126,10 +143,14 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
                 LaunchedEffect(pager.currentPage, items.size, state.home.error) {
                     if (pager.currentPage >= items.size - 3 && state.home.hasMore && state.home.error == null) model.loadMoreHome()
                 }
+                // Only the settled page of a visible, unobscured home plays; anything else releases the preview.
+                val previewEnabled = LocalPageActive.current && state.tab == AppTab.HOME && state.selectedCard == null && !state.playerOpen
+                val preview = rememberFeedPreview(items.getOrNull(pager.settledPage), previewEnabled, model)
                 VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("immersive_feed"),
                     key = { items.getOrNull(it)?.id ?: it }, beyondViewportPageCount = 1) { page ->
                     val card = items.getOrNull(page) ?: return@VerticalPager
-                    ImmersiveFeedPage(card, page, items.size, state.favorites.any { it.card.id == card.id }, model)
+                    ImmersiveFeedPage(card, page, state.favorites.any { it.card.id == card.id }, model,
+                        preview.takeIf { it.cardId == card.id })
                 }
                 // On the last page, say why nothing follows instead of letting the swipe silently do nothing.
                 if (pager.currentPage >= items.lastIndex) {
@@ -159,16 +180,19 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
             IconButton(onClick = model::refreshHome, modifier = Modifier.testTag("immersive_refresh")) {
                 Icon(Icons.Outlined.Refresh, "刷新推荐", tint = Color.White)
             }
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)) {
-                listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.GUESS to "猜你喜欢", HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
+            val tabs = rememberTabIndicator()
+            Row(Modifier.weight(1f).slidingIndicator(tabs, state.homeFeed, Color.White),
+                horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.Bottom) {
+                listOf(HomeFeed.GUESS to "推荐", HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
-                    Column(Modifier.quietSelectable(selected) { model.selectHomeFeed(feed) }
+                    val color by animatedTabColor(selected, Color.White, Color.White.copy(alpha = .7f))
+                    Column(Modifier.tabAnchor(tabs, feed).quietSelectable(selected) { model.selectHomeFeed(feed) }
                         .heightIn(min = 44.dp).testTag("immersive_feed_${feed.name.lowercase()}").padding(top = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(label, color = if (selected) Color.White else Color.White.copy(alpha = .7f),
-                            fontSize = if (selected) 17.sp else 16.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
-                        Box(Modifier.width(18.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
-                            .background(if (selected) Color.White else Color.Transparent))
+                        Text(label, color = color, fontSize = animatedTabSize(selected, 17.sp, 16.sp),
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                        Spacer(Modifier.height(3.dp))
                     }
                 }
             }
@@ -180,9 +204,27 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
 }
 
 @Composable
-private fun ImmersiveFeedPage(card: DramaCard, page: Int, total: Int, favorite: Boolean, model: HongguoViewModel) {
-    Box(Modifier.fillMaxSize().testTag("immersive_page_$page")) {
-        PosterImage(card.cover, Modifier.fillMaxSize())
+private fun ImmersiveFeedPage(card: DramaCard, page: Int, favorite: Boolean, model: HongguoViewModel, preview: FeedPreviewUi?) {
+    val playing = preview?.player
+    Box(Modifier.fillMaxSize().background(Color.Black).testTag("immersive_page_$page")) {
+        // The cover stays until the first frame; then landscape episodes sit on black, not on their poster.
+        if (preview?.rendered != true) PosterImage(card.cover, Modifier.fillMaxSize())
+        if (playing != null) VideoSurface(VideoPlaybackUi(player = playing, isPlaying = !preview.paused),
+            Modifier.fillMaxSize().alpha(if (preview.rendered) 1f else 0f))
+        // Tap pauses / resumes and holding the left half plays at 2×, as in the full player; the buttons drawn above
+        // keep their own clicks and a vertical drag still belongs to the pager.
+        if (playing != null) PlayerInteractionLayer(Modifier.fillMaxSize().testTag("immersive_preview_$page"),
+            onTap = preview.toggle, onHoldSpeedChange = preview.hold)
+        AnimatedVisibility(preview?.holding == true, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
+            enter = fadeIn(), exit = fadeOut()) {
+            Row(Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .5f))
+                .padding(horizontal = 13.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.FastForward, null, Modifier.size(16.dp), tint = Color.White)
+                Text(" 2× 临时加速中", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (playing != null && preview.paused && !preview.ended) Icon(Icons.Outlined.PlayArrow, "已暂停",
+            Modifier.align(Alignment.Center).size(64.dp), tint = Color.White.copy(alpha = .8f))
         Box(Modifier.fillMaxWidth().height(180.dp).background(Brush.verticalGradient(
             listOf(Color.Black.copy(alpha = .6f), Color.Transparent))))
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(380.dp).background(Brush.verticalGradient(
@@ -195,8 +237,8 @@ private fun ImmersiveFeedPage(card: DramaCard, page: Int, total: Int, favorite: 
                     Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(card.title, color = Color.White, fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(listOfNotNull(card.episodeCount.takeIf { it > 0 }?.let { "全 $it 集" }, "${page + 1} / $total").joinToString(" · "),
-                            color = Color.White.copy(alpha = .8f), fontSize = 13.sp)
+                        val info = listOfNotNull("第 1 集".takeIf { playing != null }, card.episodeCount.takeIf { it > 0 }?.let { "全 $it 集" })
+                        if (info.isNotEmpty()) Text(info.joinToString(" · "), color = Color.White.copy(alpha = .8f), fontSize = 13.sp)
                         if (roomy && card.summary.isNotBlank()) Text(card.summary, color = Color.White.copy(alpha = .82f), fontSize = 13.sp,
                             lineHeight = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
@@ -208,13 +250,34 @@ private fun ImmersiveFeedPage(card: DramaCard, page: Int, total: Int, favorite: 
                         if (roomy) RailAction(Icons.Outlined.Info, "详情", tag = "immersive_detail_$page") { model.openDrama(card) }
                     }
                 }
-                Button(onClick = { model.playDrama(card) }, shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = .16f), contentColor = Color.White),
-                    modifier = Modifier.fillMaxWidth().padding(end = 6.dp).heightIn(min = 48.dp).testTag("immersive_play_$page")) {
-                    Icon(Icons.Outlined.PlayArrow, null, Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("立即播放", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    if (card.episodeCount > 0) Text(" · 全 ${card.episodeCount} 集", fontSize = 14.sp, color = Color.White.copy(alpha = .75f))
+                // After episode 1 ends, the same button turns into 继续播放 for episode 2.
+                val next = preview?.detail?.episodes?.getOrNull(1)?.takeIf { preview.ended }
+                val container by animateColorAsState(if (next != null) Orange else Color.White.copy(alpha = .16f),
+                    tween(350), label = "immersive_play_color")
+                val scale by animateFloatAsState(if (next != null) 1.02f else 1f, spring(dampingRatio = .6f), label = "immersive_play_scale")
+                Button(onClick = {
+                    // 立即播放 continues the preview where it is instead of restarting episode 1.
+                    val first = preview?.detail?.episodes?.firstOrNull()
+                    when {
+                        next != null -> model.playFromPreview(card, next, 0)
+                        first != null && !preview.ended -> model.playFromPreview(card, first, preview.positionMs())
+                        else -> model.playDrama(card)
+                    }
+                }, shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = container, contentColor = Color.White),
+                    modifier = Modifier.fillMaxWidth().padding(end = 6.dp).heightIn(min = 48.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+                        .testTag("immersive_play_$page")) {
+                    AnimatedContent(next, transitionSpec = {
+                        (slideInVertically { it } + fadeIn()).togetherWith(slideOutVertically { -it } + fadeOut())
+                    }, label = "immersive_play_label") { target ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if (target != null) Icons.Outlined.SkipNext else Icons.Outlined.PlayArrow, null, Modifier.size(20.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (target != null) "继续播放" else "立即播放", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            if (target != null) Text(" · 第 ${target.index} 集", fontSize = 14.sp, color = Color.White.copy(alpha = .85f))
+                            else if (card.episodeCount > 0) Text(" · 全 ${card.episodeCount} 集", fontSize = 14.sp, color = Color.White.copy(alpha = .75f))
+                        }
+                    }
                 }
                 if (roomy) Text("上滑看下一部", color = Color.White.copy(alpha = .55f), fontSize = 11.sp,
                     modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -245,13 +308,17 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Bottom) {
+                val tabs = rememberTabIndicator()
+                Row(Modifier.weight(1f).slidingIndicator(tabs, state.browseDraft.genre, Orange, width = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Bottom) {
                     listOf("short_play" to "短剧", "comic_series" to "漫剧", "ai_series" to "AI 剧").forEach { (genre, label) ->
                         val selected = state.browseDraft.genre == genre
-                        Text(label, color = if (selected) Ink else Muted, fontSize = if (selected) 24.sp else 17.sp,
+                        val color by animatedTabColor(selected, Ink, Muted)
+                        Text(label, color = color, fontSize = animatedTabSize(selected, 24.sp, 17.sp),
                             fontWeight = if (selected) FontWeight.Black else FontWeight.Medium,
-                            modifier = Modifier.quietSelectable(selected) { model.changeGenre(genre) }
-                                .heightIn(min = 44.dp).padding(top = 8.dp).testTag("theater_genre_$genre"))
+                            modifier = Modifier.tabAnchor(tabs, genre).quietSelectable(selected) { model.changeGenre(genre) }
+                                .heightIn(min = 44.dp).padding(top = 8.dp, bottom = 7.dp).wrapContentHeight(Alignment.Bottom)
+                                .testTag("theater_genre_$genre"))
                     }
                 }
                 IconButton(onClick = { model.selectTab(AppTab.SEARCH) }, modifier = Modifier.testTag("theater_search")) {
@@ -307,7 +374,7 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
             Text("全部剧集", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
         itemsIndexed(items.drop(3), key = { _, card -> card.id }) { index, card ->
-            Column(Modifier.clickable(role = Role.Button) { model.openDrama(card) }.testTag("theater_result_${index + 3}"),
+            Column(Modifier.animateItem().clickable(role = Role.Button) { model.openDrama(card) }.testTag("theater_result_${index + 3}"),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(.75f))
                 Text(card.title, color = Ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -391,14 +458,17 @@ internal fun ImmersiveLibrary(state: HongguoUiState, model: HongguoViewModel, ac
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text("追剧", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-            Row(Modifier.clip(RoundedCornerShape(50)).background(Cream).padding(3.dp)) {
+            val source = rememberTabIndicator()
+            Row(Modifier.clip(RoundedCornerShape(50)).background(Cream).padding(3.dp)
+                .slidingPill(source, state.libraryCloud, Ink, corner = 20.dp)) {
                 listOf(false to "本机", true to "账号").forEach { (cloud, label) ->
                     val selected = state.libraryCloud == cloud
-                    Box(Modifier.clip(RoundedCornerShape(50)).background(if (selected) Ink else Color.Transparent)
+                    val color by animatedTabColor(selected, Canvas, Muted)
+                    Box(Modifier.tabAnchor(source, cloud).clip(RoundedCornerShape(50))
                         .quietSelectable(selected) { model.selectLibrarySource(cloud) }
                         .heightIn(min = 40.dp).padding(horizontal = 16.dp).testTag("immersive_source_${if (cloud) "account" else "local"}"),
                         contentAlignment = Alignment.Center) {
-                        Text(label, color = if (selected) Canvas else Muted, fontSize = 13.sp,
+                        Text(label, color = color, fontSize = 13.sp,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
                     }
                 }

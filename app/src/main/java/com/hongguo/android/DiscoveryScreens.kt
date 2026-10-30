@@ -95,12 +95,14 @@ internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
             }
             item(key = "home_feeds", span = { GridItemSpan(maxLineSpan) }) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    val tabs = rememberTabIndicator()
+                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())
+                        .slidingIndicator(tabs, state.homeFeed, Orange, width = 32.dp, height = 2.dp),
                         horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                        listOf(HomeFeed.RECOMMEND to "热度精选", HomeFeed.GUESS to "猜你喜欢", HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单")
+                        listOf(HomeFeed.GUESS to "推荐", HomeFeed.RECOMMEND to "热度精选", HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单")
                             .forEach { (feed, label) ->
-                                CatalogTextTab(label, state.homeFeed == feed,
-                                    "home_feed_${feed.name.lowercase(Locale.ROOT)}") { model.selectHomeFeed(feed) }
+                                CatalogTextTab(label, state.homeFeed == feed, "home_feed_${feed.name.lowercase(Locale.ROOT)}",
+                                    Modifier.tabAnchor(tabs, feed)) { model.selectHomeFeed(feed) }
                             }
                     }
                     IconButton(onClick = model::refreshHome, enabled = !state.home.loading,
@@ -289,16 +291,14 @@ internal fun CatalogSearchEntry(placeholder: String, tag: String, onClick: () ->
 }
 
 @Composable
-internal fun CatalogTextTab(label: String, isSelected: Boolean, tag: String, onClick: () -> Unit) {
-    Column(Modifier.heightIn(min = 36.dp).quietSelectable(isSelected, onClick = onClick).testTag(tag).padding(top = 6.dp),
+/** Text tab whose underline is drawn by the row ([slidingIndicator]) so it can glide between tabs. */
+internal fun CatalogTextTab(label: String, isSelected: Boolean, tag: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(modifier.heightIn(min = 36.dp).quietSelectable(isSelected, onClick = onClick).testTag(tag).padding(top = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val color by animateColorAsState(if (isSelected) AccentInk else Muted, tween(180), label = "catalog_tab_color")
-        val mark by animateFloatAsState(if (isSelected) 1f else 0f, tween(220), label = "catalog_tab_mark")
         Text(label, color = color, fontSize = 16.sp, lineHeight = 24.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
-        // The underline grows from the centre instead of switching on.
-        Box(Modifier.width(32.dp).height(2.dp).graphicsLayer { scaleX = mark; alpha = mark }.clip(RoundedCornerShape(2.dp))
-            .background(Orange))
+        Spacer(Modifier.height(2.dp))
     }
 }
 
@@ -329,7 +329,7 @@ private fun CatalogGrid(
             item(span = { GridItemSpan(maxLineSpan) }) { EmptyPrompt(emptyTitle, emptyHint) }
         }
         itemsIndexed(feed.items, key = { _, card -> card.id }) { index, card ->
-            CatalogPoster(card, "${tagPrefix}_result_$index", tall = columns >= 3) { onOpen(card) }
+            CatalogPoster(card, "${tagPrefix}_result_$index", tall = columns >= 3, Modifier.animateItem()) { onOpen(card) }
         }
         feed.error?.let { error ->
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -350,8 +350,8 @@ private fun CatalogGrid(
 }
 
 @Composable
-private fun CatalogPoster(card: DramaCard, tag: String, tall: Boolean = false, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).testTag(tag),
+private fun CatalogPoster(card: DramaCard, tag: String, tall: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).testTag(tag),
         verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(if (tall) .75f else .95f)
             .clip(RoundedCornerShape(if (tall) 12.dp else 16.dp)))

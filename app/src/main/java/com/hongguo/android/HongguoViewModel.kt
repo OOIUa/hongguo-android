@@ -39,7 +39,7 @@ data class FeedState(
 
 data class HongguoUiState(
     val tab: AppTab = AppTab.HOME,
-    val homeFeed: HomeFeed = HomeFeed.RECOMMEND,
+    val homeFeed: HomeFeed = HomeFeed.GUESS,
     val home: FeedState = FeedState(),
     val category: FeedState = FeedState(),
     val browseDraft: BrowseSelection = BrowseSelection(),
@@ -213,7 +213,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             catch (error: Exception) {
                 if (version == homeVersion) mutableState.update { it.copy(home = previous.copy(
                     loading = false, loadingMore = false, loaded = true, error = readableFailure(error,
-                        if (current.homeFeed == HomeFeed.GUESS) "加载猜你喜欢" else "加载推荐"))) }
+                        if (current.homeFeed == HomeFeed.GUESS) "加载推荐" else "加载首页"))) }
             }
         }
     }
@@ -424,6 +424,17 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         searchJob?.cancel()
         mutableState.update { it.copy(searching = false, loadingMore = false) }
     }
+
+    /** 沉浸暗场 preview: the episode list plus episode 1's progressive session. Writes no history or progress. */
+    internal suspend fun previewFirstEpisode(card: DramaCard): Pair<DramaDetail, PreparedVideo> {
+        val detail = repository.details(card)
+        val first = detail.episodes.first()
+        return detail to repository.prepare(first, allowFallback = false) { _, _, _ -> }
+    }
+
+    /** Continues a feed preview in the full player at [positionMs] of [episode] instead of restarting it. */
+    fun playFromPreview(card: DramaCard, episode: Episode, positionMs: Long) =
+        openLibrary(LibraryEntry(card, episode.id, episode.index.coerceAtLeast(1), positionMs))
 
     fun openDrama(card: DramaCard) = openDramaInternal(card, null)
     /** Opens the drama and starts its last-watched (or first) episode as soon as the episode list arrives. */

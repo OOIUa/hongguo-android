@@ -99,23 +99,22 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
             }
         }
         item(span = StaggeredGridItemSpan.FullLine) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+            // 分类 used to sit at the end of this row as a fifth "channel", but it only opened the 发现 tab that the
+            // bottom bar already offers, and looked selectable like the feeds beside it.
+            val tabs = rememberTabIndicator()
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp)
+                .slidingIndicator(tabs, state.homeFeed, Orange, width = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
-                listOf(HomeFeed.RECOMMEND to "推荐", HomeFeed.GUESS to "猜你喜欢", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
+                listOf(HomeFeed.GUESS to "推荐", HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
-                    Column(Modifier.quietSelectable(selected) { model.selectHomeFeed(feed) }
+                    val color by animatedTabColor(selected, Ink, Muted)
+                    Column(Modifier.tabAnchor(tabs, feed).quietSelectable(selected) { model.selectHomeFeed(feed) }
                         .heightIn(min = 48.dp).testTag("cards_feed_${feed.name.lowercase()}"),
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(label, color = if (selected) Ink else Muted, fontSize = if (selected) 19.sp else 15.sp,
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom)) {
+                        Text(label, color = color, fontSize = animatedTabSize(selected, 19.sp, 15.sp),
                             fontWeight = if (selected) FontWeight.Black else FontWeight.Medium)
-                        Box(Modifier.width(16.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
-                            .background(if (selected) Orange else Color.Transparent))
+                        Spacer(Modifier.height(3.dp))
                     }
-                }
-                Column(Modifier.clickable(role = Role.Tab) { model.selectTab(AppTab.CATEGORY) }.heightIn(min = 48.dp)
-                    .testTag("cards_feed_category"), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center) {
-                    Text("分类", color = Muted, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -137,7 +136,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
         if (ranked.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) {
             Surface(color = CardSurface, shape = RoundedCornerShape(14.dp), modifier = Modifier.testTag("cards_ranking")) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(when (state.homeFeed) { HomeFeed.LATEST -> "新剧榜"; HomeFeed.COMIC -> "漫剧榜"; HomeFeed.GUESS -> "猜你喜欢"; else -> "热度榜" },
+                    Text(when (state.homeFeed) { HomeFeed.LATEST -> "新剧榜"; HomeFeed.COMIC -> "漫剧榜"; HomeFeed.GUESS -> "为你推荐"; else -> "热度榜" },
                         color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 2.dp))
                     ranked.forEachIndexed { index, card ->
                         Row(Modifier.fillMaxWidth().clickable { model.openDrama(card) }.heightIn(min = 52.dp)
@@ -161,7 +160,8 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
             Text("猜你想看", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
         }
         staggeredItemsIndexed(rest, key = { _, card -> card.id }) { index, card ->
-            WaterfallCard(card, WaterfallRatios[index % WaterfallRatios.size], "cards_result_${index + 5}") { model.openDrama(card) }
+            WaterfallCard(card, WaterfallRatios[index % WaterfallRatios.size], "cards_result_${index + 5}",
+                Modifier.animateItem()) { model.openDrama(card) }
         }
         state.home.error?.let { error -> item(span = StaggeredGridItemSpan.FullLine) {
             FailurePanel(error, if (items.isNotEmpty() && state.home.hasMore) model::loadMoreHome else model::refreshHome, "cards_retry")
@@ -177,8 +177,8 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
 }
 
 @Composable
-private fun WaterfallCard(card: DramaCard, ratio: Float, tag: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = CardSurface, shape = RoundedCornerShape(12.dp), modifier = Modifier.testTag(tag)) {
+private fun WaterfallCard(card: DramaCard, ratio: Float, tag: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(onClick = onClick, color = CardSurface, shape = RoundedCornerShape(12.dp), modifier = modifier.testTag(tag)) {
         Column {
             PosterImage(card.cover, Modifier.fillMaxWidth().aspectRatio(ratio))
             Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -216,13 +216,16 @@ internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
             }
         }
         item {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardSurface).padding(4.dp)) {
+            val tabs = rememberTabIndicator()
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardSurface).padding(4.dp)
+                .slidingPill(tabs, state.browseDraft.genre, Ink, corner = 9.dp)) {
                 listOf("short_play" to "短剧", "comic_series" to "漫剧", "ai_series" to "AI 剧").forEach { (genre, label) ->
                     val selected = state.browseDraft.genre == genre
-                    Box(Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(if (selected) Ink else Color.Transparent)
+                    val color by animatedTabColor(selected, Canvas, Muted)
+                    Box(Modifier.weight(1f).tabAnchor(tabs, genre).clip(RoundedCornerShape(9.dp))
                         .quietSelectable(selected) { model.changeGenre(genre) }.heightIn(min = 38.dp)
                         .testTag("cards_genre_$genre"), contentAlignment = Alignment.Center) {
-                        Text(label, color = if (selected) Canvas else Muted, fontSize = 14.sp,
+                        Text(label, color = color, fontSize = 14.sp,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
                     }
                 }
@@ -249,7 +252,7 @@ internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
             item { EmptyPrompt("没有符合条件的剧集", "试试减少筛选条件，或切换类型。") }
         itemsIndexed(items, key = { _, card -> card.id }) { index, card ->
             Surface(onClick = { model.openDrama(card) }, color = CardSurface, shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.testTag("cards_discover_$index")) {
+                modifier = Modifier.animateItem().testTag("cards_discover_$index")) {
                 Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Cover(card.cover, card.title, Modifier.width(78.dp).height(104.dp))
                     Column(Modifier.weight(1f).heightIn(min = 104.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -300,7 +303,8 @@ internal fun CardsLibrary(state: HongguoUiState, model: HongguoViewModel, accoun
             listOf(Triple("历史", !state.libraryCloud && history, "cards_tab_history"),
                 Triple("收藏", !state.libraryCloud && !history, "cards_tab_favorites"),
                 Triple("账号云片单", state.libraryCloud, "cards_tab_account")).forEachIndexed { index, (label, selected, tag) ->
-                Text(label, color = if (selected) Ink else Muted, fontSize = if (selected) 22.sp else 15.sp,
+                val color by animatedTabColor(selected, Ink, Muted)
+                Text(label, color = color, fontSize = animatedTabSize(selected, 22.sp, 15.sp),
                     fontWeight = if (selected) FontWeight.Black else FontWeight.Medium,
                     modifier = Modifier.quietSelectable(selected) {
                         when (index) {

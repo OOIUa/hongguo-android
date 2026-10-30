@@ -44,11 +44,12 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(50)).background(Cream)) {
+        val source = rememberTabIndicator()
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(50)).background(Cream)
+            .slidingPill(source, state.libraryCloud, SoftOrange, corner = 24.dp)) {
             listOf(false to "本机", true to "红果账号").forEach { (cloud, label) ->
                 val selected = state.libraryCloud == cloud
-                Box(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(50))
-                    .background(if (selected) SoftOrange else Color.Transparent)
+                Box(Modifier.weight(1f).tabAnchor(source, cloud).heightIn(min = 48.dp).clip(RoundedCornerShape(50))
                     .quietSelectable(selected) { model.selectLibrarySource(cloud) }
                     .testTag(if (cloud) "library_source_account" else "library_source_local"),
                     contentAlignment = Alignment.Center) {
@@ -63,17 +64,19 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
                 CloudLibraryContent(accountModel, model::openLibrary, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
             }
         } else {
-            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 10.dp),
-                verticalAlignment = Alignment.CenterVertically) {
+            val kinds = rememberTabIndicator()
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 10.dp)
+                .slidingIndicator(kinds, history, Orange, width = 30.dp, height = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
                 listOf(true to "历史", false to "收藏").forEach { (isHistory, label) ->
-                    Column(Modifier.padding(end = 28.dp).quietSelectable(history == isHistory) {
+                    Column(Modifier.tabAnchor(kinds, isHistory).quietSelectable(history == isHistory) {
                         model.selectTab(if (isHistory) AppTab.HISTORY else AppTab.FAVORITES) }
                         .testTag(if (isHistory) "library_history" else "library_favorites"),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(label, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                             color = if (history == isHistory) AccentInk else Muted,
                             modifier = Modifier.padding(vertical = 12.dp))
-                        Box(Modifier.width(30.dp).height(2.dp).background(if (history == isHistory) Orange else Color.Transparent))
+                        Spacer(Modifier.height(2.dp))
                     }
                 }
                 Spacer(Modifier.weight(1f))

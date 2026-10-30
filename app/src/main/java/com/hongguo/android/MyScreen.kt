@@ -41,6 +41,10 @@ import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,25 +80,23 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
     val openSettings = { model.selectTab(AppTab.SETTINGS) }
     when (style) {
         AppThemeStyle.IMMERSIVE -> {
-            ImmersiveMine(state, model, updateModel, accountName, accountStatus, accountAvatar, onAccount, openSettings) { model.selectTab(AppTab.THEME_STYLE) }
+            ImmersiveMine(state, model, updateState, updateModel, accountName, accountStatus, accountAvatar, onAccount, openSettings) { model.selectTab(AppTab.THEME_STYLE) }
             return
         }
         AppThemeStyle.CARDS -> {
-            CardsMine(state, model, updateModel, accountName, accountStatus, accountAvatar, onAccount, openSettings)
+            CardsMine(state, model, updateState, updateModel, accountName, accountStatus, accountAvatar, onAccount, openSettings)
             return
         }
         AppThemeStyle.WARM -> Unit
     }
+    // Each destination has one entry: the stat cards open 收藏 / 历史, the account card opens the account page, and the
+    // grouped list below holds the rest. The former header gear and 播放历史 row repeated entries already on screen.
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 20.dp),
         contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("我的", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
-                IconButton(onClick = openSettings, modifier = Modifier.testTag("my_settings_icon")) {
-                    Icon(Icons.Outlined.Settings, "设置", tint = Ink)
-                }
-            }
+            Text("我的", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Ink,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp))
         }
         item {
             Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
@@ -115,29 +117,16 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MyStat("本机收藏", state.favorites.size, Modifier.weight(1f).testTag("my_favorites")) {
+                MyStat("本机收藏", state.favorites.size, Icons.Outlined.StarBorder, Modifier.weight(1f).testTag("my_favorites")) {
                     model.selectTab(AppTab.FAVORITES)
                 }
-                MyStat("本机看过", state.history.size, Modifier.weight(1f).testTag("my_history_count")) {
+                MyStat("本机看过", state.history.size, Icons.Outlined.History, Modifier.weight(1f).testTag("my_history")) {
                     model.selectTab(AppTab.HISTORY)
                 }
             }
         }
         item {
-            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-                Column {
-                    MyMenuRow("账号与隐私", "登录方式、云片单与账号管理", "my_account", onClick = onAccount)
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("播放历史", "继续上次看到的地方", "my_history") { model.selectTab(AppTab.HISTORY) }
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("设置", "主题样式、自动连播、预加载与更新", "my_settings",
-                        trailing = state.themeStyle.label, onClick = openSettings)
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("检查更新", "当前版本 ${BuildConfig.VERSION_NAME}", "update_check") {
-                        updateModel.checkForUpdates()
-                    }
-                }
-            }
+            MyServiceMenu("主题样式、自动连播、预加载与更新", state.themeStyle.label, updateState, updateModel, onAccount, openSettings)
         }
         item {
             Text("本机收藏与观看记录仅保存在这台设备。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp,
@@ -149,25 +138,53 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
 }
 
 @Composable
-private fun MyStat(label: String, count: Int, modifier: Modifier, onClick: () -> Unit) {
+private fun MyStat(label: String, count: Int, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
     Surface(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(16.dp), color = CardSurface) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(label, color = Muted, fontSize = 14.sp)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(icon, null, Modifier.size(16.dp), tint = Muted)
+                Text(label, color = Muted, fontSize = 14.sp)
+            }
             Text(count.toString(), color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
+/** 账号与隐私 · 设置 · 检查更新, the same three rows (with the same tags) in every theme. */
 @Composable
-private fun MyMenuRow(title: String, subtitle: String, tag: String, trailing: String? = null, onClick: () -> Unit) {
+private fun MyServiceMenu(settingsHint: String, themeLabel: String, updateState: UpdateUiState, updateModel: UpdateViewModel,
+                          onAccount: () -> Unit, openSettings: () -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
+        Column {
+            MyMenuRow("账号与隐私", "登录方式、云片单与账号管理", "my_account", Icons.Outlined.PrivacyTip, onClick = onAccount)
+            MenuDivider()
+            MyMenuRow("设置", settingsHint, "my_settings", Icons.Outlined.Settings, trailing = themeLabel, onClick = openSettings)
+            MenuDivider()
+            MyMenuRow("检查更新", if (updateState.checking) "正在检查新版本…" else "当前版本 ${BuildConfig.VERSION_NAME}",
+                "update_check", Icons.Outlined.SystemUpdate, busy = updateState.checking) { updateModel.checkForUpdates() }
+        }
+    }
+}
+
+/** Starts under the row text, not under the icon tile. */
+@Composable
+private fun MenuDivider() = HorizontalDivider(color = Canvas, modifier = Modifier.padding(start = 64.dp, end = 18.dp))
+
+@Composable
+private fun MyMenuRow(title: String, subtitle: String, tag: String, icon: ImageVector? = null, trailing: String? = null,
+                      busy: Boolean = false, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().testTag(tag).clickable(onClick = onClick).padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (icon != null) Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(SoftOrange), Alignment.Center) {
+            Icon(icon, null, Modifier.size(20.dp), tint = AccentInk)
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
         }
         if (trailing != null) Text(trailing, color = Muted, fontSize = 13.sp, maxLines = 1)
-        Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = Muted)
+        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Muted)
+        else Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = Muted)
     }
 }
 
@@ -373,11 +390,12 @@ private fun NavBarStyleSetting(selected: NavBarStyle, onSelect: (NavBarStyle) ->
             Text("底栏样式", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Text("悬浮玻璃：页面在半透明胶囊下滚动，Android 12 及以上有模糊效果", color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
         }
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Cream).padding(3.dp).selectableGroup()) {
+        val pill = rememberTabIndicator()
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Cream).padding(3.dp)
+            .slidingPill(pill, selected, CardSurface, corner = 10.dp).selectableGroup()) {
             NavBarStyle.entries.forEach { style ->
                 val isSelected = style == selected
-                Box(Modifier.weight(1f).heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp))
-                    .background(if (isSelected) CardSurface else Color.Transparent)
+                Box(Modifier.weight(1f).tabAnchor(pill, style).heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp))
                     .selectable(selected = isSelected, role = Role.RadioButton) { onSelect(style) }
                     .testTag("settings_navbar_${style.key}"), contentAlignment = Alignment.Center) {
                     Text(style.label, color = if (isSelected) Ink else Muted, fontSize = 14.sp,
@@ -405,19 +423,15 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, tag
 
 /** B · 沉浸暗场: avatar header, four shortcuts and one grouped list. */
 @Composable
-private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, updateModel: UpdateViewModel,
+private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, updateState: UpdateUiState, updateModel: UpdateViewModel,
                           accountName: String?, accountStatus: String, accountAvatar: String?, onAccount: () -> Unit,
                           openSettings: () -> Unit, openTheme: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 16.dp),
         contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = openSettings, modifier = Modifier.testTag("my_settings_icon")) {
-                    Icon(Icons.Outlined.Settings, "设置", tint = Ink)
-                }
-            }
-            Row(Modifier.fillMaxWidth().clickable(onClick = onAccount).testTag("my_account_card").padding(vertical = 4.dp),
+            Row(Modifier.fillMaxWidth().padding(top = 20.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onAccount)
+                .testTag("my_account_card").padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.size(64.dp).clip(CircleShape).background(Cream), Alignment.Center) {
                     Icon(Icons.Outlined.PersonOutline, null, Modifier.size(32.dp), tint = Ink)
@@ -435,12 +449,12 @@ private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, update
             Surface(color = CardSurface, shape = RoundedCornerShape(16.dp)) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
                     listOf(
-                        Triple(Icons.Outlined.History, "历史 ${state.history.size}") { model.selectTab(AppTab.HISTORY) },
-                        Triple(Icons.Outlined.StarBorder, "追剧 ${state.favorites.size}") { model.selectTab(AppTab.FAVORITES) },
+                        Triple(Icons.Outlined.History, "历史 ${state.history.size}") { model.selectTab(AppTab.HISTORY) },                        Triple(Icons.Outlined.StarBorder, "追剧 ${state.favorites.size}") { model.selectTab(AppTab.FAVORITES) },
                         Triple(Icons.Outlined.CloudQueue, "云片单") { model.selectTab(AppTab.FAVORITES); model.selectLibrarySource(true) },
                         Triple(Icons.Outlined.Palette, "主题", openTheme),
                     ).forEachIndexed { index, (icon, label, action) ->
-                        Column(Modifier.weight(1f).clickable(onClick = action).heightIn(min = 56.dp).testTag("my_shortcut_$index"),
+                        Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = action)
+                            .heightIn(min = 56.dp).testTag(if (index == 0) "my_history" else "my_shortcut_$index"),
                             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Icon(icon, null, tint = Ink, modifier = Modifier.size(24.dp))
                             Text(label, color = Ink, fontSize = 12.sp)
@@ -449,17 +463,7 @@ private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, update
                 }
             }
         }
-        item {
-            Surface(color = CardSurface, shape = RoundedCornerShape(16.dp)) {
-                Column {
-                    MyMenuRow("账号与隐私", "登录方式、云片单与账号管理", "my_account", onClick = onAccount)
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("设置", "主题、播放与更新", "my_settings", trailing = state.themeStyle.label, onClick = openSettings)
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("检查更新", "当前版本 ${BuildConfig.VERSION_NAME}", "update_check") { updateModel.checkForUpdates() }
-                }
-            }
-        }
+        item { MyServiceMenu("主题、播放与更新", state.themeStyle.label, updateState, updateModel, onAccount, openSettings) }
         item {
             Text("红果独立版 ${BuildConfig.VERSION_NAME} · 本机数据仅保存在这台设备", color = Muted, fontSize = 12.sp,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp))
@@ -469,18 +473,13 @@ private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, update
 
 /** C · 内容卡片: compact header, two stat cards and two grouped cards. */
 @Composable
-private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateModel: UpdateViewModel,
+private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateState: UpdateUiState, updateModel: UpdateViewModel,
                       accountName: String?, accountStatus: String, accountAvatar: String?, onAccount: () -> Unit, openSettings: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 12.dp),
         contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = openSettings, modifier = Modifier.testTag("my_settings_icon")) {
-                    Icon(Icons.Outlined.Settings, "设置", tint = Ink)
-                }
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically,
+            Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 20.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.size(60.dp).clip(CircleShape).background(CardSurface).border(1.dp, Line, CircleShape), Alignment.Center) {
                     Icon(Icons.Outlined.PersonOutline, null, Modifier.size(28.dp), tint = Muted)
@@ -503,9 +502,13 @@ private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateMode
                 listOf(Triple("本机看过", state.history.size, AppTab.HISTORY), Triple("本机收藏", state.favorites.size, AppTab.FAVORITES))
                     .forEach { (label, count, tab) ->
                         Surface(onClick = { model.selectTab(tab) }, color = CardSurface, shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.weight(1f).testTag(if (tab == AppTab.HISTORY) "my_history_count" else "my_favorites")) {
+                            modifier = Modifier.weight(1f).testTag(if (tab == AppTab.HISTORY) "my_history" else "my_favorites")) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(label, color = Muted, fontSize = 12.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Icon(if (tab == AppTab.HISTORY) Icons.Outlined.History else Icons.Outlined.StarBorder, null,
+                                        Modifier.size(14.dp), tint = Muted)
+                                    Text(label, color = Muted, fontSize = 12.sp)
+                                }
                                 Row(verticalAlignment = Alignment.Bottom) {
                                     Text("$count", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Black)
                                     Text(" 部", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp))
@@ -517,24 +520,12 @@ private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateMode
         }
         item {
             Surface(color = CardSurface, shape = RoundedCornerShape(14.dp)) {
-                Column {
-                    MyMenuRow("播放历史", "继续上次看到的地方", "my_history") { model.selectTab(AppTab.HISTORY) }
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("云片单", "账号收藏、历史与预约", "my_cloud") { model.selectTab(AppTab.FAVORITES); model.selectLibrarySource(true) }
+                MyMenuRow("云片单", "账号收藏、历史与预约", "my_cloud", Icons.Outlined.CloudQueue) {
+                    model.selectTab(AppTab.FAVORITES); model.selectLibrarySource(true)
                 }
             }
         }
-        item {
-            Surface(color = CardSurface, shape = RoundedCornerShape(14.dp)) {
-                Column {
-                    MyMenuRow("设置", "主题样式、自动连播、预加载与更新", "my_settings", trailing = state.themeStyle.label, onClick = openSettings)
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("账号与隐私", "登录方式与账号管理", "my_account", onClick = onAccount)
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    MyMenuRow("检查更新", "当前版本 ${BuildConfig.VERSION_NAME}", "update_check") { updateModel.checkForUpdates() }
-                }
-            }
-        }
+        item { MyServiceMenu("主题样式、自动连播、预加载与更新", state.themeStyle.label, updateState, updateModel, onAccount, openSettings) }
         item {
             Text("本机收藏与观看记录仅保存在这台设备。", color = Muted, fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 24.dp))

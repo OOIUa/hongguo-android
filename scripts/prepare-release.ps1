@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '首页新增猜你喜欢：读取红果 App 的猜你喜欢推荐，未登录时为匿名推荐，登录红果账号后按本人账号推荐，登录、退出或切换账号后自动刷新；不上报浏览或点击行为。同步上游播放修复：部分剧集只剩无法解码的 1080P 时恢复更低清晰度，播放接口偶发空响应时自动换一个匿名播放设备重试一次。'
+        notes = '沉浸暗场首页改为抖音式刷剧：停在哪一部就直接播放第 1 集，点画面暂停或继续，按住左侧临时 2 倍速并有震动反馈，立即播放从试看位置接着看；第 1 集看完后按钮变为继续播放直接看第 2 集。推荐（猜你喜欢）改为进入应用后的第一个标签，原热度列表改名热度；沉浸暗场去掉页码。完整播放器长按 2 倍速也增加震动反馈。片单、发现等页面的标签切换增加滑动指示动画，「我的」页布局调整。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

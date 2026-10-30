@@ -11,6 +11,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.disabled
@@ -35,6 +37,7 @@ internal fun PlayerInteractionLayer(
     onHoldSpeedChange: (Boolean) -> Unit,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val haptics = LocalHapticFeedback.current
     val currentTap by rememberUpdatedState(onTap)
     val currentHoldChange by rememberUpdatedState(onHoldSpeedChange)
     val currentEnabled by rememberUpdatedState(enabled)
@@ -93,6 +96,8 @@ internal fun PlayerInteractionLayer(
                         if (position.x >= 0 && position.x < size.width / 2f && currentEnabled &&
                             lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !holding) {
                             holding = true
+                            // A short buzz confirms that holding switched to 2×.
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             currentHoldChange(true)
                         }
                     },
