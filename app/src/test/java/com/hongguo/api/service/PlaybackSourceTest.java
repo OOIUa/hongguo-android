@@ -53,6 +53,7 @@ public class PlaybackSourceTest {
 
     @Before @After public void reset() {
         PlaybackDevice.resetForTest(null);
+        AppSource.setPlaybackPostForTest(null);
     }
 
     // ==================== ttEncrypt 注册请求体 ====================
@@ -235,6 +236,87 @@ public class PlaybackSourceTest {
         }
     }
 
+    @Test public void emptyPlaybackResponseRetriesOnceWithRenewedIdentity() throws Exception {
+        AtomicInteger registrations = new AtomicInteger();
+        PlaybackDevice.resetForTest((url, headers, body) -> registrations.incrementAndGet() == 1
+                ? okReply() : reply("7432109876543219999", "7432109876543218888"));
+        List<PlaybackDevice.Identity> used = new ArrayList<>();
+        List<String> bodies = new ArrayList<>();
+        AppSource.setPlaybackPostForTest((body, identity) -> {
+            used.add(identity);
+            bodies.add(new String(body, StandardCharsets.UTF_8));
+            if (used.size() == 1) throw new AppSource.EmptyPlaybackResponseException();
+            throw new IllegalStateException("reached retry");
+        });
+        try {
+            AppSource.fetch("7000000000000000001", "auto");
+            fail();
+        } catch (IllegalStateException e) {
+            assertEquals("reached retry", e.getMessage());
+        }
+        assertEquals(2, used.size());
+        assertEquals(2, registrations.get());
+        assertEquals(DEVICE_ID, used.get(0).deviceId);
+        assertEquals("7432109876543219999", used.get(1).deviceId);
+        assertSame("新身份成为进程内共享身份", used.get(1), PlaybackDevice.get());
+        assertTrue(bodies.get(0).contains("\"device_level\":1"));
+    }
+
+    @Test public void secondEmptyPlaybackResponseIsNotRetriedAgain() throws Exception {
+        AtomicInteger registrations = new AtomicInteger();
+        PlaybackDevice.resetForTest((url, headers, body) -> {
+            registrations.incrementAndGet();
+            return okReply();
+        });
+        AtomicInteger posts = new AtomicInteger();
+        AppSource.setPlaybackPostForTest((body, identity) -> {
+            posts.incrementAndGet();
+            throw new AppSource.EmptyPlaybackResponseException();
+        });
+        try {
+            AppSource.fetch("7000000000000000001", "auto");
+            fail();
+        } catch (AppSource.EmptyPlaybackResponseException expected) {
+            // 只换一次身份
+        }
+        assertEquals(2, posts.get());
+        assertEquals(2, registrations.get());
+    }
+
+    @Test public void failedRenewalReportsOriginalEmptyResponse() throws Exception {
+        AtomicInteger registrations = new AtomicInteger();
+        PlaybackDevice.resetForTest((url, headers, body) -> {
+            if (registrations.incrementAndGet() > 1) throw new IOException("offline");
+            return okReply();
+        });
+        AtomicInteger posts = new AtomicInteger();
+        AppSource.setPlaybackPostForTest((body, identity) -> {
+            posts.incrementAndGet();
+            throw new AppSource.EmptyPlaybackResponseException();
+        });
+        try {
+            AppSource.fetch("7000000000000000001", "auto");
+            fail();
+        } catch (AppSource.EmptyPlaybackResponseException e) {
+            assertEquals(1, e.getSuppressed().length);
+        }
+        assertEquals(1, posts.get());
+        assertEquals(2, registrations.get());
+    }
+
+    @Test public void renewReusesIdentityAlreadyReplacedByAnotherCaller() throws Exception {
+        AtomicInteger registrations = new AtomicInteger();
+        PlaybackDevice.resetForTest((url, headers, body) -> {
+            registrations.incrementAndGet();
+            return okReply();
+        });
+        PlaybackDevice.Identity rejected = PlaybackDevice.get();
+        PlaybackDevice.Identity renewed = PlaybackDevice.renew(rejected);
+        assertNotSame(rejected, renewed);
+        assertSame(renewed, PlaybackDevice.renew(rejected));
+        assertEquals(2, registrations.get());
+    }
+
     // ==================== 内联片源模型 ====================
 
     @Test public void inlineVideoListIsUsedWithoutFallbackRequest() throws Exception {
@@ -315,9 +397,13 @@ public class PlaybackSourceTest {
     // ==================== 工具 ====================
 
     private static PlaybackDevice.Reply okReply() {
-        return new PlaybackDevice.Reply(200, "{\"server_time\":1,\"device_id\":7432109876543210987,"
-                + "\"install_id\":7432109876543210123,\"device_id_str\":\"" + DEVICE_ID
-                + "\",\"install_id_str\":\"" + INSTALL_ID + "\",\"new_user\":1}");
+        return reply(DEVICE_ID, INSTALL_ID);
+    }
+
+    private static PlaybackDevice.Reply reply(String deviceId, String installId) {
+        return new PlaybackDevice.Reply(200, "{\"server_time\":1,\"device_id\":" + deviceId + ","
+                + "\"install_id\":" + installId + ",\"device_id_str\":\"" + deviceId
+                + "\",\"install_id_str\":\"" + installId + "\",\"new_user\":1}");
     }
 
     private static IOException expectRegistrationFailure() {

@@ -52,12 +52,11 @@ internal fun RequestBody.oneShot(): RequestBody {
 }
 
 /** Hard response cap also applies to unknown-length/chunked responses. */
-internal fun cloudResponse(response: Response): String {
+internal fun cloudResponse(response: Response, limit: Int = 2 * 1024 * 1024): String {
     if (!response.isSuccessful) {
         throw AccountProtocolException("账号请求失败（HTTP ${response.code}）", response.code, response.code == 401)
     }
     val body = response.body ?: throw AccountProtocolException("账号接口响应为空")
-    val limit = 2 * 1024 * 1024
     if (body.contentLength() > limit) throw AccountProtocolException("账号接口响应过大")
     val out = ByteArrayOutputStream()
     val buffer = ByteArray(8192)

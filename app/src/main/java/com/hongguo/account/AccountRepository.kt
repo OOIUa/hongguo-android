@@ -10,6 +10,8 @@ import com.hongguo.account.protocol.CloudFavorite
 import com.hongguo.account.protocol.CloudProfile
 import com.hongguo.account.protocol.CloudProgress
 import com.hongguo.account.protocol.CloudReservation
+import com.hongguo.account.protocol.GuessBatch
+import com.hongguo.account.protocol.GuessFeedClient
 import com.hongguo.account.protocol.PhoneLogin
 import com.hongguo.account.protocol.Series
 import com.hongguo.account.protocol.WebLogin
@@ -45,6 +47,8 @@ internal interface AccountGateway {
     fun reservations(credentials: AccountCredentials, online: Boolean): List<CloudReservation>
     fun setFavorite(credentials: AccountCredentials, id: String, add: Boolean)
     fun upload(credentials: AccountCredentials, progress: CloudProgress, episodeCount: Int)
+    /** 猜你喜欢；credentials 为 null 时请求匿名推荐流。 */
+    fun recommendations(credentials: AccountCredentials?, session: String, offset: Int): GuessBatch
     fun cancelAll()
 }
 
@@ -69,7 +73,9 @@ private class LiveAccountGateway : AccountGateway {
     override fun reservations(credentials: AccountCredentials, online: Boolean) = client.reservations(credentials, online)
     override fun setFavorite(credentials: AccountCredentials, id: String, add: Boolean) = client.setFavorite(credentials, id, add)
     override fun upload(credentials: AccountCredentials, progress: CloudProgress, episodeCount: Int) = client.upload(credentials, progress, episodeCount)
-    override fun cancelAll() = client.cancelAll()
+    private val guess = GuessFeedClient(accountHttp())
+    override fun recommendations(credentials: AccountCredentials?, session: String, offset: Int) = guess.page(credentials, session, offset)
+    override fun cancelAll() { client.cancelAll(); guess.cancelAll() }
 }
 
 private class LiveAccountLogin : AccountLogin {
@@ -118,6 +124,19 @@ class AccountRepository internal constructor(
     val ownerKey: String? get() = synchronized(lock) {
         disk.profile?.id?.takeIf { mutableState.value.sessionStatus == AccountSessionStatus.LOGGED_IN }?.let { "$it:$ownerGeneration" }
     }
+    /**
+     * 猜你喜欢一批。[owner] 为调用方开始本轮时读到的 [ownerKey]：null 走匿名流；非空时只在
+     * 仍是同一登录会话时携带该账号凭据，账号已切换或退出则报错，不会把旧会话的分页混入新账号。
+     */
+    suspend fun recommendations(owner: String?, session: String, offset: Int): GuessBatch {
+        val credentials = synchronized(lock) {
+            if (owner == null) null
+            else if (ownerKey != owner) throw AccountProtocolException("账号已变化，请刷新猜你喜欢")
+            else disk.credentials ?: throw AccountProtocolException("账号已退出，请刷新猜你喜欢")
+        }
+        return runInterruptible(io) { gateway.recommendations(credentials, session, offset) }
+    }
+
     /** UI confirmation fence only; it never grants cloud access like ownerKey. */
     val sessionKey: String get() = synchronized(lock) { generation.toString() }
 

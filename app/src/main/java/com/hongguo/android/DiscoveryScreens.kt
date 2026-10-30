@@ -97,7 +97,7 @@ internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                        listOf(HomeFeed.RECOMMEND to "热度精选", HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单")
+                        listOf(HomeFeed.RECOMMEND to "热度精选", HomeFeed.GUESS to "猜你喜欢", HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单")
                             .forEach { (feed, label) ->
                                 CatalogTextTab(label, state.homeFeed == feed,
                                     "home_feed_${feed.name.lowercase(Locale.ROOT)}") { model.selectHomeFeed(feed) }

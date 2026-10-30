@@ -9,6 +9,7 @@ import com.hongguo.api.util.Log;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -102,8 +103,41 @@ public final class AppSource {
         // ---- 1. 无签名 POST multi_video_model/v1（使用注册的匿名身份）----
         byte[] body = Json.stringify(payload(vid)).getBytes(StandardCharsets.UTF_8);
         PlaybackDevice.Identity identity = PlaybackDevice.get();
-        Map<String, Object> j = postPlayback(body, identity);
+        Map<String, Object> j;
+        try {
+            j = playbackPost.post(body, identity);
+        } catch (EmptyPlaybackResponseException e) {
+            // 空响应多为当前匿名身份被拒：换一个新注册的身份只重试一次（同步自 hongguo-drama 5.0）。
+            if (Thread.currentThread().isInterrupted()) throw e;
+            PlaybackDevice.Identity renewed;
+            try {
+                renewed = PlaybackDevice.renew(identity);
+            } catch (IOException re) {
+                e.addSuppressed(re);
+                throw e;
+            }
+            if (renewed == identity) throw e;
+            j = playbackPost.post(body, renewed);
+        }
         return parseModel(vid, j, quality);
+    }
+
+    /** 播放接口返回空响应：疑似匿名身份被拒，fetch 会换新身份重试一次。 */
+    static final class EmptyPlaybackResponseException extends IllegalStateException {
+        EmptyPlaybackResponseException() {
+            super("App 接口返回空响应，疑似播放设备身份被拒，请稍后重试");
+        }
+    }
+
+    /** 可替换的播放请求（JVM 测试注入）；生产实现见 {@link #postPlayback}. */
+    interface PlaybackPost {
+        Map<String, Object> post(byte[] body, PlaybackDevice.Identity identity) throws Exception;
+    }
+
+    private static PlaybackPost playbackPost = AppSource::postPlayback;
+
+    static void setPlaybackPostForTest(PlaybackPost post) {
+        playbackPost = post == null ? AppSource::postPlayback : post;
     }
 
     /**
@@ -233,7 +267,9 @@ public final class AppSource {
     private static Map<String, Object> payload(String vid) {
         Map<String, Object> biz = Json.obj();
         biz.put("detail_page_version", 0);
-        biz.put("device_level", 3);
+        // level=3 会把部分剧集的 360P-720P 下发成 bytevc2（无法解码），只剩 1080P；
+        // level=1 对正常剧集的供给与 3 一致（同步自 hongguoTV 0.1.12）。
+        biz.put("device_level", 1);
         biz.put("disable_digg_stat", false);
         biz.put("need_all_video_definition", true);
         biz.put("need_mp4_align", false);
@@ -332,10 +368,10 @@ public final class AppSource {
         return parsePlaybackResponse(res.text());
     }
 
-    /** 区分空响应（疑似设备身份被拒）与其他无效响应。空响应不值得重试同一请求。 */
+    /** 区分空响应（疑似设备身份被拒）与其他无效响应。空响应不值得用同一身份重试。 */
     static Map<String, Object> parsePlaybackResponse(String text) {
         if (text == null || text.trim().isEmpty()) {
-            throw new IllegalStateException("App 接口返回空响应，疑似播放设备身份被拒，请稍后重试");
+            throw new EmptyPlaybackResponseException();
         }
         Map<String, Object> j;
         try { j = Json.parseObject(text); }

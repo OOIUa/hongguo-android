@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '账号头像与昵称的获取规则与 iOS 端一致：优先使用红果 App 账号资料的昵称和头像，缺少时改用官网账号的昵称与头像，头像只加载 HTTPS 图片；我的与账号页显示头像，官网已登录但云账号未接通时也显示官网昵称和头像。修复底栏按住拖动无法切换到我的（从设置等页面返回我的之后）的问题。'
+        notes = '首页新增猜你喜欢：读取红果 App 的猜你喜欢推荐，未登录时为匿名推荐，登录红果账号后按本人账号推荐，登录、退出或切换账号后自动刷新；不上报浏览或点击行为。同步上游播放修复：部分剧集只剩无法解码的 1080P 时恢复更低清晰度，播放接口偶发空响应时自动换一个匿名播放设备重试一次。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

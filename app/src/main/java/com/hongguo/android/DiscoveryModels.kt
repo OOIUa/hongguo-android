@@ -2,7 +2,7 @@ package com.hongguo.android
 
 import com.hongguo.api.util.Json
 
-enum class HomeFeed { RECOMMEND, LATEST, COMIC }
+enum class HomeFeed { RECOMMEND, GUESS, LATEST, COMIC }
 
 data class BrowseSelection(
     val genre: String = "short_play",

@@ -1,3 +1,14 @@
+# 0.7.10 首页猜你喜欢、同步上游播放修复
+
+验证日期：2026-10-30（Asia/Shanghai）。versionName 0.7.10、versionCode 21。
+
+- 猜你喜欢：新增 `GuessFeedClient`（参考 tsukiyo-zero/hongguoTV `RecommendationFeed.kt`），读取官方 App 书城 `/reading/bookapi/bookmall/tab/v1/`（tab_type=16）的「猜你喜欢」流，不签名、不上报曝光 / 点击 / 完播。未登录时匿名请求，不带 Cookie 与账号设备；仅 App 账号验证通过（`LOGGED_IN`）时携带账号 Cookie 与该账号注册的 device_id / iid。请求走账号传输层（不跟随跳转、无 Cookie 存储），响应上限放宽到 16 MiB（每批约 1.4 MiB、仅 3 部）。服务端 session 与 offset 只存内存，每页最多 3 批、凑够 6 部即止，整批无新作品时本轮结束；登录、退出、切换账号时自动刷新，旧会话分页不混入新账号。三套主题首页入口均新增「猜你喜欢」，沉浸暗场顶栏间距 22dp → 16dp。
+- 播放修复（同步上游）：播放请求 `device_level` 3 → 1（hongguoTV 0.1.12：level=3 时部分剧集 360P–720P 下发为不可解码的 bytevc2，只剩 1080P）；播放接口空响应时经 `PlaybackDevice.renew` 换一个新注册的匿名设备只重试一次（hongguo-drama 5.0），并发调用共享同一次换新，换新仍受 30 秒失败冷却约束，取消的播放不重试。
+- 匿名真实请求（2026-10-30）：猜你喜欢接口 HTTP 200、code 0，返回 cell_name「猜你喜欢」、3 部作品；用该响应离线运行 `GuessFeedClient.parse`，标题、集数、封面均正确解析。未用本人账号请求，登录后的推荐是否与官方 App 同账号一致尚未核对。
+- 单元测试：新增 `GuessFeedTest`（账号 / 匿名请求参数与 Cookie、跳转不转发 Cookie、无效设备拒绝、会话注入、大响应）、`GuessFeedPagerTest`（批次拼页、会话传递、全重复结束）、`AccountRepositoryTest.guessFeedCarriesCredentialsOnlyForTheCurrentOwner`，`PlaybackSourceTest` 新增空响应换设备重试 4 例。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，Build Tools 36.0.0，原 debug 签名）：`clean :app:assembleDebug :app:testDebugUnitTest :app:lintDebug` 通过，单元测试 259 个全部通过、lint 0 错误；APK 包名 `com.hongguo.android`、versionCode 21、versionName 0.7.10，`apksigner` 证书 SHA-256 与 `release-signing.sha256` 一致。未运行 `connectedDebugAndroidTest`（无设备）。
+- 已知限制：首页新入口未在真机 / 模拟器上查看（窄屏沉浸暗场顶栏需确认）；device_level=1 与空响应重试未用真实上游播放回归。
+
 # 0.7.9 头像昵称规则对齐 iOS、底栏拖动到「我的」
 
 验证日期：2026-10-29（Asia/Shanghai）。versionName 0.7.9、versionCode 20。

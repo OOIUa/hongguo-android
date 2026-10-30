@@ -51,6 +51,7 @@ class DramaRepository {
                     val page = Client.browsePage("short_play", mapOf("sort" to "hot_score", "limit" to "18"), seen, start)
                     DiscoveryMapper.page(page.items, page.hasMore, page.nextSkip, start, seen)
                 }
+                HomeFeed.GUESS -> throw IllegalStateException("猜你喜欢由账号推荐流分页加载")
                 HomeFeed.LATEST -> {
                     val page = Client.latestPage("short_play", false, DiscoveryMapper.PAGE_SIZE, start == 0, seen, start)
                     DiscoveryMapper.page(page.items, page.hasMore, page.nextSkip, start, seen)

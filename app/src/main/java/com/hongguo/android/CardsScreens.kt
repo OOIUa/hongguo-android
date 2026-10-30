@@ -101,7 +101,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
         item(span = StaggeredGridItemSpan.FullLine) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
-                listOf(HomeFeed.RECOMMEND to "推荐", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
+                listOf(HomeFeed.RECOMMEND to "推荐", HomeFeed.GUESS to "猜你喜欢", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
                     Column(Modifier.quietSelectable(selected) { model.selectHomeFeed(feed) }
                         .heightIn(min = 48.dp).testTag("cards_feed_${feed.name.lowercase()}"),
@@ -137,7 +137,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
         if (ranked.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) {
             Surface(color = CardSurface, shape = RoundedCornerShape(14.dp), modifier = Modifier.testTag("cards_ranking")) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(when (state.homeFeed) { HomeFeed.LATEST -> "新剧榜"; HomeFeed.COMIC -> "漫剧榜"; else -> "热度榜" },
+                    Text(when (state.homeFeed) { HomeFeed.LATEST -> "新剧榜"; HomeFeed.COMIC -> "漫剧榜"; HomeFeed.GUESS -> "猜你喜欢"; else -> "热度榜" },
                         color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 2.dp))
                     ranked.forEachIndexed { index, card ->
                         Row(Modifier.fillMaxWidth().clickable { model.openDrama(card) }.heightIn(min = 52.dp)

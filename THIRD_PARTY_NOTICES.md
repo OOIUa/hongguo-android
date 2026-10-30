@@ -48,3 +48,19 @@ On 2026-10-27 the upstream playback endpoint began rejecting per-request synthet
   https://github.com/sunnysky123/hongguo-web/tree/79babdfefb6a80284e371b1ba14be897f7988c96
 
 Local changes: the registered identity (device_id / iid / cdid only) is kept in process memory and is fully separate from the personal account module; no device token, cookie or raw response is stored. Successful registration is shared by playback, prefetch and retries; a failed registration is reused only for a 30-second cooldown instead of until process restart, because an Android process may first play while offline and then stay resident.
+
+## Playback source sync (0.7.10)
+
+- `AppSource.java` playback request now sends `device_level=1` instead of 3. At level 3 the server delivers some episodes' 360P–720P renditions as bytevc2, which Android cannot decode, leaving only 1080P. Synchronized from tsukiyo-zero/hongguoTV, commit `ef61f68105e832fefe79baf069ca2feb2d11ebe6` (2026-10-29, TV 0.1.12), GPL-3.0-only — `kotlin-tv/core/.../ContentRepository.kt`.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/ef61f68105e832fefe79baf069ca2feb2d11ebe6/kotlin-tv
+- An empty playback response (suspected rejected anonymous identity) now triggers one renewed device registration and a single retry; a second empty response, or a failed renewal, is reported as before. Synchronized from jackotom/hongguo-drama 5.0, commit `1fa218a196478c9bd3908bea9666bc23f23b921f` (2026-10-30), GPL-3.0-only — `src/native/app-source.js` and `src/native/playback-device.js`.
+  https://github.com/jackotom/hongguo-drama/tree/1fa218a196478c9bd3908bea9666bc23f23b921f
+
+Local changes: concurrent callers that see the same rejected identity share one renewal; renewal still honors the 30-second registration failure cooldown, and a cancelled playback thread does not retry.
+
+## 猜你喜欢 (0.7.10)
+
+`app/src/main/java/com/hongguo/account/protocol/GuessFeed.kt` (request parameters, card parsing) is adapted from tsukiyo-zero/hongguoTV, commit `97c5b1d15dc2233e53f6152918c7e3cc3bbebb84` (2026-10-30), GPL-3.0-only — `kotlin-tv/core/.../RecommendationFeed.kt`, whose endpoint path and card shape reference Xanerix/guoapp `native/core/provider_hongguo_recommendations.go`.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/97c5b1d15dc2233e53f6152918c7e3cc3bbebb84/kotlin-tv
+
+Local changes: signed out, the feed is requested anonymously without any cookie or account device; signed in (verified app account only), it carries the account cookie and that account's registered device_id / iid. The request uses the account transport (no redirects, no cookie jar), so the cookie cannot be forwarded to another host. The server session and offset are kept in memory per browse round and discarded on login, logout or account switch. No exposure, click or completion events are reported, and whether the signed-in results match the official App's 猜你喜欢 for the same account has not been verified on a real account.

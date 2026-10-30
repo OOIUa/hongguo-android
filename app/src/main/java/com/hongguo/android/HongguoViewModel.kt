@@ -12,11 +12,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import com.hongguo.api.service.ProgressiveMedia
+import com.hongguo.account.AccountSessionStatus
 
 private val mediaCleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -110,6 +114,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var bufferReadyForPrefetch = false
     private var prefetchAttemptedFor = -1L
     private var homeJob: Job? = null
+    private var guessPager: GuessFeedPager? = null
     private var categoryJob: Job? = null
     private var filtersJob: Job? = null
     private var pendingLibrary: LibraryEntry? = null
@@ -148,6 +153,13 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             library.state.collect { snapshot -> mutableState.update {
                 it.copy(favorites = snapshot.favorites, history = snapshot.history)
             } }
+        }
+        viewModelScope.launch {
+            // Login, logout or switching account changes whose feed 猜你喜欢 shows.
+            accounts.state.map { (it.sessionStatus == AccountSessionStatus.LOGGED_IN) to it.profile?.id }
+                .distinctUntilChanged().drop(1).collect {
+                    if (state.value.homeFeed == HomeFeed.GUESS && state.value.home.loaded) refreshHome()
+                }
         }
         selectTab(AppTab.HOME)
     }
@@ -193,15 +205,25 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         mutableState.update { it.copy(home = previous.copy(loading = !append, loadingMore = append, error = null)) }
         homeJob = viewModelScope.launch {
             try {
-                val page = repository.discover(current.homeFeed, if (append) previous.nextOffset else 0, previous.items.map { it.id })
+                val page = if (current.homeFeed == HomeFeed.GUESS) guessPage(append)
+                    else repository.discover(current.homeFeed, if (append) previous.nextOffset else 0, previous.items.map { it.id })
                 if (version != homeVersion || !currentCoroutineContext().isActive) return@launch
                 mutableState.update { it.copy(home = mergePage(previous, page, append)) }
             } catch (error: CancellationException) { throw error }
             catch (error: Exception) {
                 if (version == homeVersion) mutableState.update { it.copy(home = previous.copy(
-                    loading = false, loadingMore = false, loaded = true, error = readableFailure(error, "加载推荐"))) }
+                    loading = false, loadingMore = false, loaded = true, error = readableFailure(error,
+                        if (current.homeFeed == HomeFeed.GUESS) "加载猜你喜欢" else "加载推荐"))) }
             }
         }
+    }
+
+    /** Signed in: the account's own feed; otherwise the anonymous one. A changed owner restarts the round. */
+    private suspend fun guessPage(append: Boolean): DramaPage {
+        val owner = accounts.ownerKey
+        val pager = guessPager?.takeIf { append && it.owner == owner }
+            ?: GuessFeedPager(owner, accounts::recommendations).also { guessPager = it }
+        return pager.next()
     }
 
     fun changeGenre(genre: String) {

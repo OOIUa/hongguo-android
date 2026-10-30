@@ -159,8 +159,8 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
             IconButton(onClick = model::refreshHome, modifier = Modifier.testTag("immersive_refresh")) {
                 Icon(Icons.Outlined.Refresh, "刷新推荐", tint = Color.White)
             }
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally)) {
-                listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)) {
+                listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.GUESS to "猜你喜欢", HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
                     Column(Modifier.quietSelectable(selected) { model.selectHomeFeed(feed) }
                         .heightIn(min = 44.dp).testTag("immersive_feed_${feed.name.lowercase()}").padding(top = 8.dp),

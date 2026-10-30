@@ -161,6 +161,16 @@ public final class PlaybackDevice {
         }
     }
 
+    /**
+     * 播放接口拒绝了 rejected 身份时换一个新身份。另一线程已换过则直接复用它的结果，
+     * 不会为同一次拒绝注册多个设备；注册失败仍受冷却约束。
+     */
+    public static synchronized Identity renew(Identity rejected) throws IOException {
+        if (ready != null && ready != rejected) return ready;
+        ready = null;
+        return get();
+    }
+
     private static Identity register(long now) throws Exception {
         String cdid = UUID.randomUUID().toString();
         byte[] random = new byte[32];
