@@ -58,6 +58,16 @@ Local changes: the registered identity (device_id / iid / cdid only) is kept in 
 
 Local changes: concurrent callers that see the same rejected identity share one renewal; renewal still honors the 30-second registration failure cooldown, and a cancelled playback thread does not retry.
 
+## video_tab playback model (0.7.12)
+
+On 2026-11-02 the `POST /novel/player/multi_video_model/v1/` endpoint began answering every request with HTTP 200 and an empty body. `AppSource.java` now first requests `GET /reading/bookapi/video_tab/multi_video_model/v1/` once (registered anonymous identity, unsigned, every `GetVideoModelRequest` field, `device_level=1`) and falls back to the previous flow when that fails. Synchronized from tsukiyo-zero/hongguoTV, commit `8fc02a4aa768` (2026-11-02, TV 0.1.15), GPL-3.0-only — `kotlin-tv/core/.../ContentRepository.kt` `tabVideoModel`.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/eddeb64e2436/kotlin-tv
+
+Local changes: no registration cookie is sent (verified unnecessary on 2026-11-02). The endpoint serves bytevc2 below 1080P, which is filtered out as before, so playback is currently 1080P only.
+
+The fallback's empty-response retry now renews the identity, waits 300 ms and retries once on `api5-normal-hl.fqnovel.com` over a fresh connection; if renewal fails it retries with the previous identity instead of giving up. Synchronized from jackotom/hongguo-drama 5.4, commit `93e694e3f4ab` (2026-11-02), GPL-3.0-only — `src/native/app-source.js` `fetchAppPlayUrl`. Its restored request signing is not adopted: hongguoTV reports that fully signed requests to the old endpoint are also answered with 0 bytes.
+  https://github.com/jackotom/hongguo-drama/tree/93e694e3f4ab
+
 ## 猜你喜欢 (0.7.10)
 
 `app/src/main/java/com/hongguo/account/protocol/GuessFeed.kt` (request parameters, card parsing) is adapted from tsukiyo-zero/hongguoTV, commit `97c5b1d15dc2233e53f6152918c7e3cc3bbebb84` (2026-10-30), GPL-3.0-only — `kotlin-tv/core/.../RecommendationFeed.kt`, whose endpoint path and card shape reference Xanerix/guoapp `native/core/provider_hongguo_recommendations.go`.

@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '沉浸暗场首页改为抖音式刷剧：停在哪一部就直接播放第 1 集，点画面暂停或继续，按住左侧临时 2 倍速并有震动反馈，立即播放从试看位置接着看；第 1 集看完后按钮变为继续播放直接看第 2 集。推荐（猜你喜欢）改为进入应用后的第一个标签，原热度列表改名热度；沉浸暗场去掉页码。完整播放器长按 2 倍速也增加震动反馈。片单、发现等页面的标签切换增加滑动指示动画，「我的」页布局调整。'
+        notes = '修复无法播放：红果播放信息接口 2026-11-02 起对旧请求返回空响应，现改用官方 App 现行接口取片源，旧接口保留为备用，其空响应时换匿名设备后改走备用域名重试。新接口低于 1080P 的档位为设备无法解码的格式，暂时只提供 1080P。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

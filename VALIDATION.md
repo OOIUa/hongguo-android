@@ -1,3 +1,15 @@
+# 0.7.12 播放信息改读 video_tab 接口
+
+验证日期：2026-11-02（Asia/Shanghai）。versionName 0.7.12、versionCode 23。
+
+- 2026-11-02 起 `POST /novel/player/multi_video_model/v1/` 对请求返回 HTTP 200 + 0 字节，0.7.11 无法取得播放信息（iOS 同逻辑实网测试在取播放信息阶段失败，与 hongguoTV 的排查一致）。`AppSource.fetch` 现先以注册的匿名身份、无签名请求一次 `GET /reading/bookapi/video_tab/multi_video_model/v1/`（带齐 GetVideoModelRequest 字段，`device_level=1`），解析 `data.video_model_data[vid].video_model`；失败、非 0 code 或 `video_list` 为空时回退原有旧接口流程（空响应换身份重试一次不变）。同步自 hongguoTV 0.1.15。
+- 旧接口回退路径的空响应重试同步 hongguo-drama 5.4：换新身份后隔 300ms 经备用域名 `api5-normal-hl.fqnovel.com`、新连接重试一次；换身份失败时仍以原身份重试，而不是直接报错。未同步其恢复的请求签名（hongguoTV 实测完整签名对旧接口同样返回空）。hongguoTV 的「两整轮全空后轮换身份」与 hongguo-web 的按被拒 ID 失效注册均已被现有「首次空响应即换身份、并发调用共享一次换新」覆盖。
+- README 下载区去掉逐版更新说明段落，版本变化见 GitHub Release 与本文件。
+- 实网：临时 JVM 测试以新注册的匿名身份请求一集，只经新接口取得 1080p 加密片源（CDN 位于 qznovelvod.com 白名单内），未调用旧接口；测试文件随后删除。
+- 新增 4 个单元测试（请求字段、响应归一化与拒绝、新接口命中不打旧接口、新接口不可用回退旧接口），并更新空响应重试用例（备用域名、换身份失败仍重试）。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug` 通过，单元测试 263 个全部通过、lint 0 错误。未运行 `connectedDebugAndroidTest`（无设备）。
+- 已知限制：新接口低于 1080P 的档位均为 bytevc2，按既有策略过滤，目前只剩 1080P 一档；新接口一次只接受一集。未在真机上播放。
+
 # 0.7.11 沉浸暗场自动试看、推荐设为首个标签
 
 验证日期：2026-10-30（Asia/Shanghai）。versionName 0.7.11、versionCode 22。

@@ -63,6 +63,9 @@ public final class AppSource {
     /** 接口主机（自检与排障用）。 */
     public static final String VIDEO_API_HOST = "api5-normal-sinfonlineb.fqnovel.com";
 
+    /** 空响应后重试用的备用主机（hongguo-drama 5.4）。 */
+    static final String RETRY_HOST = "api5-normal-hl.fqnovel.com";
+
     private static final String VIDEO_UA =
             "com.phoenix.read/71332 (Linux; U; Android 16; zh_CN; 25053RT47C; "
             + "Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 "
@@ -100,24 +103,36 @@ public final class AppSource {
             throw new IllegalArgumentException("分集编号无效");
         }
 
-        // ---- 1. 无签名 POST multi_video_model/v1（使用注册的匿名身份）----
-        byte[] body = Json.stringify(payload(vid)).getBytes(StandardCharsets.UTF_8);
         PlaybackDevice.Identity identity = PlaybackDevice.get();
+        // ---- 1. 官方 App 现行的 GET video_tab/multi_video_model：2026-11-02 起旧的 POST
+        // /novel/player 接口对所有请求返回 200 + 0 字节。只试一次，失败回退旧流程
+        // （同步自 hongguoTV 0.1.15）。
+        Map<String, Object> tab = playbackTab.get(vid, identity);
+        if (tab != null) return parseModel(vid, tab, quality);
+
+        // ---- 2. 回退：无签名 POST multi_video_model/v1（使用注册的匿名身份）----
+        byte[] body = Json.stringify(payload(vid)).getBytes(StandardCharsets.UTF_8);
         Map<String, Object> j;
         try {
-            j = playbackPost.post(body, identity);
+            j = playbackPost.post(body, identity, VIDEO_API_HOST);
         } catch (EmptyPlaybackResponseException e) {
-            // 空响应多为当前匿名身份被拒：换一个新注册的身份只重试一次（同步自 hongguo-drama 5.0）。
+            // 空响应多为当前匿名身份被拒：换一个新注册的身份，隔 300ms 经备用域名、新连接只重试一次。
+            // 换身份失败（冷却或离线）时仍用原身份试备用域名（同步自 hongguo-drama 5.4）。
             if (Thread.currentThread().isInterrupted()) throw e;
-            PlaybackDevice.Identity renewed;
+            PlaybackDevice.Identity retry = identity;
+            IOException renewal = null;
             try {
-                renewed = PlaybackDevice.renew(identity);
+                retry = PlaybackDevice.renew(identity);
             } catch (IOException re) {
-                e.addSuppressed(re);
-                throw e;
+                renewal = re;
             }
-            if (renewed == identity) throw e;
-            j = playbackPost.post(body, renewed);
+            Thread.sleep(300);
+            try {
+                j = playbackPost.post(body, retry, RETRY_HOST);
+            } catch (EmptyPlaybackResponseException again) {
+                if (renewal != null) again.addSuppressed(renewal);
+                throw again;
+            }
         }
         return parseModel(vid, j, quality);
     }
@@ -131,13 +146,25 @@ public final class AppSource {
 
     /** 可替换的播放请求（JVM 测试注入）；生产实现见 {@link #postPlayback}. */
     interface PlaybackPost {
-        Map<String, Object> post(byte[] body, PlaybackDevice.Identity identity) throws Exception;
+        Map<String, Object> post(byte[] body, PlaybackDevice.Identity identity, String host)
+                throws Exception;
     }
 
     private static PlaybackPost playbackPost = AppSource::postPlayback;
 
     static void setPlaybackPostForTest(PlaybackPost post) {
         playbackPost = post == null ? AppSource::postPlayback : post;
+    }
+
+    /** 可替换的 video_tab 请求（JVM 测试注入）；返回 null 表示该接口不可用、应回退旧流程。 */
+    interface PlaybackTab {
+        Map<String, Object> get(String vid, PlaybackDevice.Identity identity) throws Exception;
+    }
+
+    private static PlaybackTab playbackTab = AppSource::getTabModel;
+
+    static void setPlaybackTabForTest(PlaybackTab tab) {
+        playbackTab = tab == null ? AppSource::getTabModel : tab;
     }
 
     /**
@@ -328,6 +355,10 @@ public final class AppSource {
      * {@code !'()* } 也编成 %XX（resolution=1280*2772 里的 * 就在此列）。
      */
     static String playbackUrl(PlaybackDevice.Identity identity, long rticket) {
+        return playbackUrl(identity, rticket, VIDEO_API_HOST);
+    }
+
+    static String playbackUrl(PlaybackDevice.Identity identity, long rticket, String host) {
         Map<String, Object> q = deviceBase();
         q.put("device_id", identity.deviceId);
         q.put("iid", identity.iid);
@@ -339,7 +370,66 @@ public final class AppSource {
             qs.append(pyEncode(e.getKey())).append('=')
               .append(pyEncode(String.valueOf(e.getValue())));
         }
-        return VIDEO_API + "?" + qs;
+        return VIDEO_API.replace(VIDEO_API_HOST, host) + "?" + qs;
+    }
+
+    /** video_tab 接口地址（与旧接口同主机）。 */
+    private static final String TAB_API = "https://" + VIDEO_API_HOST
+            + "/reading/bookapi/video_tab/multi_video_model/v1/";
+
+    /**
+     * video_tab 请求 URL：设备参数、注册身份与 _rticket 之后追加 GetVideoModelRequest 的全部字段，
+     * 缺任一字段服务端回 100103 PARAM_INVALID。该接口一次只接受一集。
+     */
+    static String tabUrl(PlaybackDevice.Identity identity, String vid, long rticket) {
+        String url = playbackUrl(identity, rticket);
+        return TAB_API + url.substring(url.indexOf('?'))
+                + "&video_id=" + vid + "&video_id_type=0&device_level=1&need_all_video_definition=1"
+                + "&need_mp4_align=0&use_os_player=0&video_platform=1024&source=0&from_video_id=";
+    }
+
+    /** 单次 GET video_tab；网络、HTTP 或结构问题一律返回 null，由 fetch 回退旧流程。 */
+    private static Map<String, Object> getTabModel(String vid, PlaybackDevice.Identity identity)
+            throws Exception {
+        Http.Req req = new Http.Req(tabUrl(identity, vid, System.currentTimeMillis()))
+                .method("GET").timeout(15000);
+        req.followRedirect = false;
+        req.header("User-Agent", PLAYBACK_UA);
+        req.header("Accept", "application/json; charset=utf-8");
+        Http.Resp res;
+        try {
+            res = Http.send(req);
+        } catch (IOException e) {
+            if (Thread.currentThread().isInterrupted()) throw e;
+            return null;
+        }
+        return res.status == 200 ? parseTabResponse(vid, res.text()) : null;
+    }
+
+    /**
+     * 把 {@code data.video_model_data[vid].video_model}（对象或 JSON 字符串）整理成 parseModel
+     * 认识的 {@code {code:0, data:{vid:{video_model}}}}；非 0 code、缺分集或 video_list 为空返回 null。
+     */
+    static Map<String, Object> parseTabResponse(String vid, String text) {
+        Map<String, Object> root;
+        try { root = Json.parseObject(text); } catch (Exception ignored) { return null; }
+        if (root == null) return null;
+        Object code = root.containsKey("code") ? root.get("code") : root.get("Code");
+        if (code == null || Json.optInt(code, -1) != 0) return null;
+        Map<String, Object> data = Json.optObj(root.get("data"));
+        Map<String, Object> rows = data == null ? null : Json.optObj(data.get("video_model_data"));
+        Map<String, Object> row = rows == null ? null : Json.optObj(rows.get(vid));
+        if (row == null) return null;
+        Map<String, Object> model = asObject(row.get("video_model"));
+        if (model == null || Json.optArr(model.get("video_list")).isEmpty()) return null;
+        Map<String, Object> entry = Json.obj();
+        entry.put("video_model", model);
+        Map<String, Object> episodes = Json.obj();
+        episodes.put(vid, entry);
+        Map<String, Object> j = Json.obj();
+        j.put("code", 0L);
+        j.put("data", episodes);
+        return j;
     }
 
     /** 播放请求头：无任何签名头（x-gorgon / x-argus / x-medusa 等）。 */
@@ -352,14 +442,16 @@ public final class AppSource {
     }
 
     /** 无签名 POST（2026-10-27 起该接口不再接受签名请求）。 */
-    private static Map<String, Object> postPlayback(byte[] body, PlaybackDevice.Identity identity)
-            throws Exception {
-        String url = playbackUrl(identity, System.currentTimeMillis());
+    private static Map<String, Object> postPlayback(byte[] body, PlaybackDevice.Identity identity,
+            String host) throws Exception {
+        String url = playbackUrl(identity, System.currentTimeMillis(), host);
         Http.Req req = new Http.Req(url).method("POST").timeout(15000);
         req.followRedirect = false;
         for (Map.Entry<String, String> e : playbackHeaders().entrySet()) {
             req.header(e.getKey(), e.getValue());
         }
+        // 重试强制新连接，避免粘在同一后端节点。
+        if (!VIDEO_API_HOST.equals(host)) req.header("Connection", "close");
         req.body(body);
         Http.Resp res = Http.send(req);
         if (res.status != 200) {

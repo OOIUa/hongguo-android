@@ -51,9 +51,17 @@ public class PlaybackSourceTest {
                 "1234567890123456");
     }
 
-    @Before @After public void reset() {
+    @Before public void reset() {
         PlaybackDevice.resetForTest(null);
         AppSource.setPlaybackPostForTest(null);
+        // 默认让 video_tab 不可用，覆盖旧接口回退路径；需要新接口的用例自行注入。
+        AppSource.setPlaybackTabForTest((vid, identity) -> null);
+    }
+
+    @After public void restore() {
+        PlaybackDevice.resetForTest(null);
+        AppSource.setPlaybackPostForTest(null);
+        AppSource.setPlaybackTabForTest(null);
     }
 
     // ==================== ttEncrypt 注册请求体 ====================
@@ -212,6 +220,8 @@ public class PlaybackSourceTest {
                 + "&_rticket=1793000000123"));
         assertTrue("resolution 的 * 按 python quote 编码", query.contains("resolution=1280%2A2772"));
         assertFalse("无签名路径不带 ts", query.contains("&ts="));
+        assertTrue(AppSource.playbackUrl(id, 1L, AppSource.RETRY_HOST)
+                .startsWith("https://" + AppSource.RETRY_HOST + "/novel/player/multi_video_model/v1/?"));
         assertEquals(1, count(query, "device_id="));
 
         Map<String, String> headers = AppSource.playbackHeaders();
@@ -242,8 +252,10 @@ public class PlaybackSourceTest {
                 ? okReply() : reply("7432109876543219999", "7432109876543218888"));
         List<PlaybackDevice.Identity> used = new ArrayList<>();
         List<String> bodies = new ArrayList<>();
-        AppSource.setPlaybackPostForTest((body, identity) -> {
+        List<String> hosts = new ArrayList<>();
+        AppSource.setPlaybackPostForTest((body, identity, host) -> {
             used.add(identity);
+            hosts.add(host);
             bodies.add(new String(body, StandardCharsets.UTF_8));
             if (used.size() == 1) throw new AppSource.EmptyPlaybackResponseException();
             throw new IllegalStateException("reached retry");
@@ -260,6 +272,7 @@ public class PlaybackSourceTest {
         assertEquals("7432109876543219999", used.get(1).deviceId);
         assertSame("新身份成为进程内共享身份", used.get(1), PlaybackDevice.get());
         assertTrue(bodies.get(0).contains("\"device_level\":1"));
+        assertEquals(Arrays.asList(AppSource.VIDEO_API_HOST, AppSource.RETRY_HOST), hosts);
     }
 
     @Test public void secondEmptyPlaybackResponseIsNotRetriedAgain() throws Exception {
@@ -269,7 +282,7 @@ public class PlaybackSourceTest {
             return okReply();
         });
         AtomicInteger posts = new AtomicInteger();
-        AppSource.setPlaybackPostForTest((body, identity) -> {
+        AppSource.setPlaybackPostForTest((body, identity, host) -> {
             posts.incrementAndGet();
             throw new AppSource.EmptyPlaybackResponseException();
         });
@@ -283,14 +296,14 @@ public class PlaybackSourceTest {
         assertEquals(2, registrations.get());
     }
 
-    @Test public void failedRenewalReportsOriginalEmptyResponse() throws Exception {
+    @Test public void failedRenewalStillRetriesAlternateHost() throws Exception {
         AtomicInteger registrations = new AtomicInteger();
         PlaybackDevice.resetForTest((url, headers, body) -> {
             if (registrations.incrementAndGet() > 1) throw new IOException("offline");
             return okReply();
         });
         AtomicInteger posts = new AtomicInteger();
-        AppSource.setPlaybackPostForTest((body, identity) -> {
+        AppSource.setPlaybackPostForTest((body, identity, host) -> {
             posts.incrementAndGet();
             throw new AppSource.EmptyPlaybackResponseException();
         });
@@ -300,7 +313,7 @@ public class PlaybackSourceTest {
         } catch (AppSource.EmptyPlaybackResponseException e) {
             assertEquals(1, e.getSuppressed().length);
         }
-        assertEquals(1, posts.get());
+        assertEquals("换身份失败仍以原身份试一次备用域名", 2, posts.get());
         assertEquals(2, registrations.get());
     }
 
@@ -315,6 +328,70 @@ public class PlaybackSourceTest {
         assertNotSame(rejected, renewed);
         assertSame(renewed, PlaybackDevice.renew(rejected));
         assertEquals(2, registrations.get());
+    }
+
+    // ==================== video_tab 播放模型 ====================
+
+    @Test public void tabRequestCarriesEveryVideoModelField() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        PlaybackDevice.Identity id = PlaybackDevice.get();
+        String url = AppSource.tabUrl(id, "7600000000000000001", 1_793_000_000_123L);
+        assertTrue(url.startsWith("https://" + AppSource.VIDEO_API_HOST
+                + "/reading/bookapi/video_tab/multi_video_model/v1/?"));
+        String query = url.substring(url.indexOf('?') + 1);
+        assertTrue(query.contains("&device_id=" + DEVICE_ID + "&iid=" + INSTALL_ID));
+        assertTrue(query.endsWith("&_rticket=1793000000123&video_id=7600000000000000001&video_id_type=0"
+                + "&device_level=1&need_all_video_definition=1&need_mp4_align=0&use_os_player=0"
+                + "&video_platform=1024&source=0&from_video_id="));
+        assertEquals(1, count(query, "device_id="));
+    }
+
+    @Test public void tabResponseIsNormalizedOrRejected() throws Exception {
+        String vid = "7600000000000000001";
+        Map<String, Object> j = AppSource.parseTabResponse(vid, "{\"code\":0,\"data\":{\"video_model_data\":{\""
+                + vid + "\":{\"video_model\":\"{\\\"video_list\\\":[{\\\"codec_type\\\":\\\"bytevc1\\\"}]}\"}}}}");
+        assertNotNull(j);
+        assertEquals(1, Json.optArr(Json.optObj(Json.optObj(Json.optObj(j.get("data")).get(vid)).get("video_model"))
+                .get("video_list")).size());
+        assertNull(AppSource.parseTabResponse(vid, "{\"code\":100103,\"message\":\"PARAM_INVALID\"}"));
+        assertNull(AppSource.parseTabResponse(vid, ""));
+        assertNull(AppSource.parseTabResponse(vid, "{\"data\":{}}"));
+        assertNull(AppSource.parseTabResponse(vid, "{\"code\":0,\"data\":{\"video_model_data\":{\"7600000000000000999\":"
+                + "{\"video_model\":{\"video_list\":[{}]}}}}}"));
+        assertNull(AppSource.parseTabResponse(vid, "{\"code\":0,\"data\":{\"video_model_data\":{\"" + vid
+                + "\":{\"video_model\":{\"video_list\":[]}}}}}"));
+    }
+
+    @Test public void tabModelIsPlayedWithoutOldEndpoint() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        List<Object> list = Json.arr();
+        list.add(item("bytevc2", 720, 1280, "https://v1.qznovelvod.com/vvc.mp4", VALID_SPADE));
+        list.add(item("bytevc1", 1080, 1920, "https://v1.qznovelvod.com/1080.mp4", VALID_SPADE));
+        Map<String, Object> model = Json.obj();
+        model.put("video_list", list);
+        AppSource.setPlaybackTabForTest((vid, identity) -> response(vid, model));
+        AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AssertionError("旧接口不应被请求"); });
+        Stream.VideoTrack t = AppSource.fetch("7600000000000000001", "auto");
+        assertEquals("bytevc2 被过滤", "https://v1.qznovelvod.com/1080.mp4", t.url);
+    }
+
+    @Test public void unavailableTabFallsBackToOldEndpoint() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        AtomicInteger tabs = new AtomicInteger();
+        AtomicInteger posts = new AtomicInteger();
+        AppSource.setPlaybackTabForTest((vid, identity) -> { tabs.incrementAndGet(); return null; });
+        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+            posts.incrementAndGet();
+            throw new IllegalStateException("reached old endpoint");
+        });
+        try {
+            AppSource.fetch("7600000000000000001", "auto");
+            fail();
+        } catch (IllegalStateException e) {
+            assertEquals("reached old endpoint", e.getMessage());
+        }
+        assertEquals(1, tabs.get());
+        assertEquals(1, posts.get());
     }
 
     // ==================== 内联片源模型 ====================
