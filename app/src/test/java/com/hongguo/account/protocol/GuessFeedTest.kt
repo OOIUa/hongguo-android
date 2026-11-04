@@ -19,7 +19,7 @@ class GuessFeedTest {
 
     @Before fun start() { server = MockWebServer(); server.start() }
     @After fun stop() { server.shutdown(); http.dispatcher.executorService.shutdownNow(); http.connectionPool.evictAll() }
-    private fun client() = GuessFeedClient(http, server.url("/"))
+    private fun client() = GuessFeedClient(http, listOf(server.url("/")))
     private fun feed(session: String = "srv-session") = MockResponse().setHeader("Content-Type", "application/json").setBody("""
         {"code":0,"message":"SUCCESS","data":{"tab_item":[{"tab_type":3,"cell_data":[]},{"tab_type":16,"session_id":"$session",
          "cell_data":[{"cell_name":"猜你喜欢","use_recommend":true,"cell_data":[{"video_data":[
@@ -28,26 +28,25 @@ class GuessFeedTest {
            {"series_id":"7698294694886788121","series_title":"重复"},
            {"series_id":"not-a-number","series_title":"无效"}]}]}]}]}}""")
 
-    @Test fun signedInRequestCarriesAccountCookieAndDevice() {
+    @Test fun signedInRequestCarriesOnlyTheAccountCookie() {
         server.enqueue(feed())
         val batch = client().page(credentials, "", 0)
         assertEquals(listOf("7698294694886788121", "7697622096326708286"), batch.items.map { it.series.id })
         assertEquals("https://p3.example.invalid/a.jpg", batch.items[0].series.cover)
         assertEquals(80, batch.items[0].episodeCount)
         assertEquals("srv-session", batch.session)
+        assertEquals("offset 按服务端下发条数推进，不按过滤后条数", 4, batch.served)
         val request = server.takeRequest()
         val url = request.requestUrl!!
         assertEquals(GuessFeedClient.PATH, url.encodedPath)
         assertEquals("16", url.queryParameter("tab_type"))
         assertEquals("1", url.queryParameter("client_req_type"))
         assertNull(url.queryParameter("session_id"))
-        assertEquals("9999999999999999999", url.queryParameter("device_id"))
-        assertEquals("9999999999999999998", url.queryParameter("iid"))
+        assertNull("账号态带 device_id 会被判 110", url.queryParameter("device_id"))
+        assertNull("账号态带 iid 会被判 110", url.queryParameter("iid"))
         assertEquals("OfflinePhone", url.queryParameter("device_type"))
         assertNull("只转发白名单设备字段", url.queryParameter("cdid"))
-        val cookie = request.getHeader("Cookie")!!
-        assertTrue(cookie.contains("sessionid=offline-test"))
-        assertTrue(cookie.contains("install_id=9999999999999999998"))
+        assertEquals("sessionid=offline-test", request.getHeader("Cookie"))
         assertNull(request.getHeader("X-Gorgon"))
     }
 
@@ -71,9 +70,53 @@ class GuessFeedTest {
         } finally { other.shutdown() }
     }
 
-    @Test fun invalidAccountDeviceIsRejectedBeforeAnyRequest() {
-        assertThrows(AccountProtocolException::class.java) { client().page(AccountCredentials("sessionid=offline-test"), "", 0) }
-        assertEquals(0, server.requestCount)
+    @Test fun accountWithoutRegisteredDeviceStillGetsTheFeed() {
+        server.enqueue(feed())
+        assertEquals(2, client().page(AccountCredentials("sessionid=offline-test"), "", 0).items.size)
+    }
+
+    @Test fun nonZeroCodeRetriesTheNextHostFromTheStart() {
+        val backup = MockWebServer(); backup.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"code":110,"message":"ILLEGAL_ACCESS"}"""))
+            backup.enqueue(feed("new-session"))
+            val batch = GuessFeedClient(http, listOf(server.url("/"), backup.url("/"))).page(credentials, "stale", 3)
+            assertTrue(batch.restarted)
+            assertEquals("new-session", batch.session)
+            assertEquals(2, batch.items.size)
+            val first = server.takeRequest().requestUrl!!
+            assertEquals("stale", first.queryParameter("session_id"))
+            assertEquals("3", first.queryParameter("offset"))
+            val retry = backup.takeRequest()
+            assertNull(retry.requestUrl!!.queryParameter("session_id"))
+            assertEquals("0", retry.requestUrl!!.queryParameter("offset"))
+            assertEquals("1", retry.requestUrl!!.queryParameter("client_req_type"))
+            assertEquals("sessionid=offline-test", retry.getHeader("Cookie"))
+        } finally { backup.shutdown() }
+    }
+
+    @Test fun nonZeroCodeOnEveryHostIsReported() {
+        val backup = MockWebServer(); backup.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"code":110}"""))
+            backup.enqueue(MockResponse().setBody("""{"code":110}"""))
+            val error = assertThrows(AccountProtocolException::class.java) {
+                GuessFeedClient(http, listOf(server.url("/"), backup.url("/"))).page(null, "", 0)
+            }
+            assertEquals(110, error.errorCode)
+            assertEquals(1, backup.requestCount)
+        } finally { backup.shutdown() }
+    }
+
+    @Test fun httpFailureDoesNotRotateHosts() {
+        val backup = MockWebServer(); backup.start()
+        try {
+            server.enqueue(MockResponse().setResponseCode(500))
+            assertThrows(AccountProtocolException::class.java) {
+                GuessFeedClient(http, listOf(server.url("/"), backup.url("/"))).page(credentials, "", 0)
+            }
+            assertEquals(0, backup.requestCount)
+        } finally { backup.shutdown() }
     }
 
     @Test fun parseRejectsErrorsAndHeaderInjectionInSession() {

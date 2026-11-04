@@ -59,16 +59,23 @@ class AccountProtocolTest {
         } finally { other.shutdown() }
     }
 
-    @Test fun smsUsesSameCsrfFormSessionAndConsumesEachSubmittedCodeOnlyOnce() {
+    @Test fun smsSubmitsEachCodeOnceAndOnlyADefiniteRejectionAllowsAnotherCode() {
         server.enqueue(qr())
         server.enqueue(body("""{"message":"success","data":{"retry_time":60}}"""))
         server.enqueue(body("""{"message":"error","data":{"error_code":1102,"description":"provider-raw-secret"}}"""))
+        server.enqueue(body("""{"message":"error","data":{"error_code":1103}}"""))
         val login = WebLogin(http, server.url("/"))
         assertEquals("138****8000", login.send("13800138000").maskedMobile)
         val error = assertThrows(PhoneLogin.Failure::class.java) { login.verify("123456") }
-        assertFalse(error.canRetryCode)
+        assertTrue(error.canRetryCode)
+        assertFalse(error.needsWebsite)
         assertFalse(error.message!!.contains("provider-raw-secret"))
-        assertThrows(IllegalStateException::class.java) { login.verify("123456") }
+        // The rejected code is refused locally, without another request.
+        assertTrue(assertThrows(PhoneLogin.Failure::class.java) { login.verify("123456") }.canRetryCode)
+        assertEquals(3, server.requestCount)
+        // A different code goes through once; an expired one ends the session.
+        assertFalse(assertThrows(PhoneLogin.Failure::class.java) { login.verify("654321") }.canRetryCode)
+        assertThrows(IllegalStateException::class.java) { login.verify("111111") }
         assertThrows(IllegalStateException::class.java) { login.send("13800138000") }
         server.takeRequest()
         val send = server.takeRequest()
@@ -76,7 +83,16 @@ class AccountProtocolTest {
         assertEquals("POST", send.method)
         assertTrue(send.body.readUtf8().contains("mobile=${WebLogin.mix("+86 13800138000")}"))
         assertEquals("/passport/web/sms_login/", server.takeRequest().requestUrl!!.encodedPath)
-        assertEquals(3, server.requestCount)
+        assertEquals(4, server.requestCount)
+    }
+
+    @Test fun smsPlatformVerificationPointsToTheOfficialPage() {
+        server.enqueue(qr())
+        server.enqueue(body("""{"message":"error","data":{"error_code":1,"verify_center_decision_conf":"{}"}}"""))
+        val error = assertThrows(PhoneLogin.Failure::class.java) { WebLogin(http, server.url("/")).send("13800138000") }
+        assertTrue(error.needsWebsite)
+        assertFalse(error.canRetryCode)
+        assertTrue(error.message!!.contains("官网"))
     }
 
     @Test fun profilePreservesNineteenDigitIdsAndRejectsAnonymousAndBusinessErrors() {

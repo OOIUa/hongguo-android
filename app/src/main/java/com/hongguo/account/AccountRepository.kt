@@ -12,6 +12,7 @@ import com.hongguo.account.protocol.CloudProgress
 import com.hongguo.account.protocol.CloudReservation
 import com.hongguo.account.protocol.GuessBatch
 import com.hongguo.account.protocol.GuessFeedClient
+import com.hongguo.account.protocol.AppPhoneLogin
 import com.hongguo.account.protocol.PhoneLogin
 import com.hongguo.account.protocol.Series
 import com.hongguo.account.protocol.WebLogin
@@ -80,12 +81,13 @@ private class LiveAccountGateway : AccountGateway {
 
 private class LiveAccountLogin : AccountLogin {
     private val login = WebLogin(accountHttp())
+    private val phone = AppPhoneLogin(accountHttp())
     override fun qr() = login.qr()
     override fun poll() = login.poll()
     override fun credentials() = login.credentials()
-    override fun send(number: String) = login.send(number)
-    override fun verify(code: String) = login.verify(code)
-    override fun cancel() = login.cancel()
+    override fun send(number: String) = phone.send(number)
+    override fun verify(code: String) = phone.verify(code)
+    override fun cancel() { login.cancel(); phone.cancel() }
 }
 
 /** Application-owned session. Every async result is fenced by the active session generation. */
@@ -199,7 +201,7 @@ class AccountRepository internal constructor(
         activeLogin?.cancel(); activeLogin = null
         gateway.cancelAll()
         mutableState.value = mutableState.value.copy(busy = false, qrBytes = null, qrExpiresAt = 0, qrRemainingSeconds = 0,
-            phoneStep = PhoneStep.IDLE, phoneMasked = "", favoriteBusyIds = emptySet())
+            phoneStep = PhoneStep.IDLE, phoneMasked = "", suggestWebsiteLogin = false, favoriteBusyIds = emptySet())
     }
 
     /** A canceled scan, verification or old player can never restore a superseded account. */
@@ -267,10 +269,11 @@ class AccountRepository internal constructor(
                     saveLocked(disk.copy(smsRetryAt = maxOf(disk.smsRetryAt, now() + sent.retrySeconds.coerceIn(1, 3600) * 1000L)))
                     updatePhoneCountdownLocked()
                     mutableState.value = mutableState.value.copy(busy = false, phoneStep = PhoneStep.CODE_SENT,
-                        phoneMasked = sent.maskedMobile, message = "验证码已发送，请在本机输入；不会自动重发")
+                        phoneMasked = sent.maskedMobile)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { if (current(g)) state { it.copy(busy = false,
+                suggestWebsiteLogin = (error as? PhoneLogin.Failure)?.needsWebsite == true,
                 message = loginFailureMessage(error, "验证码发送未获确认，请等待后手动重试，或在官网完成验证")) } }
         }
     }
@@ -288,7 +291,9 @@ class AccountRepository internal constructor(
             try { finishLogin(pair.first, runInterruptible(io) { pair.second.verify(value) }) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
-                handleLoginFailure(pair.first, error, "本次验证码验证未完成，请在官网完成验证，或等待后手动获取新验证码")
+                if (error is PhoneLogin.Failure && error.canRetryCode) {
+                    if (current(pair.first)) state { it.copy(busy = false, phoneStep = PhoneStep.CODE_SENT, message = error.message) }
+                } else handleLoginFailure(pair.first, error, "本次验证码验证未完成，请在官网完成验证，或等待后手动获取新验证码")
             }
         }
     }
@@ -754,6 +759,7 @@ class AccountRepository internal constructor(
             sessionStatus = if (disk.profile != null) mutableState.value.sessionStatus
                 else if (disk.websiteCredentials != null) AccountSessionStatus.WEBSITE_ONLY else AccountSessionStatus.SIGNED_OUT,
             loginDiagnostic = (error as? AccountProtocolException)?.diagnostic,
+            suggestWebsiteLogin = (error as? PhoneLogin.Failure)?.needsWebsite == true,
             message = loginFailureMessage(error, fallback))
     }
 

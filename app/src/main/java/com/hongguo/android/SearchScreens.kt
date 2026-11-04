@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -31,7 +32,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -102,7 +102,11 @@ internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel, trendi
                 Text("${state.results.size} 部", color = Muted, fontSize = 13.sp)
             }
         }
-        LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("search_results"),
+        val list = rememberLazyListState()
+        LoadAheadEffect(FeedState(items = state.results, loading = state.searching, loadingMore = state.loadingMore,
+            hasMore = state.hasMore, error = state.searchError), { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+            { list.layoutInfo.totalItemsCount }, state.selectedCard == null, model::loadMore)
+        LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("search_results"), state = list,
             contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.results.isEmpty() && !state.searching && state.searchError == null &&
                 state.searchedQuery.isBlank() && trending.isNotEmpty()) {
@@ -119,15 +123,7 @@ internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel, trendi
             state.searchError?.let { error ->
                 item { FailurePanel(error, onRetry = if (state.results.isEmpty()) model::search else model::loadMore) }
             }
-            if (state.hasMore) {
-                item {
-                    OutlinedButton(onClick = model::loadMore, enabled = !state.loadingMore,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("search_load_more"), shape = RoundedCornerShape(12.dp)) {
-                        if (state.loadingMore) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Text("加载更多", fontSize = 14.sp)
-                    }
-                }
-            }
+            if (state.hasMore && state.searchError == null) item { LoadAheadFooter("search_load_more") }
             if (state.results.isNotEmpty() && !state.hasMore && !state.loadingMore) {
                 item { Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 16.dp), color = Muted,
                     fontSize = 12.sp, textAlign = TextAlign.Center) }

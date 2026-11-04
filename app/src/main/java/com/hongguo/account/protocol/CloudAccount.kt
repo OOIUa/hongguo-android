@@ -190,6 +190,9 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
                 (!validIdentifier(id) && gatewayLogin != "1"))
                 throw AccountProtocolException(
                     if (credentials.source == AccountCredentialSource.WEBSITE) "官网登录已确认，但红果 App 未确认账号授权；可保留官网登录状态，或导入本人的 App 登录态"
+                    // A valid session on a number that never opened the official App has no business account (hongguoTV 0.1.18).
+                    else if (data.opt("biz_user_id").let { it == null || it === JSONObject.NULL || (it is String && it.isBlank()) })
+                        "该账号还没有红果账号资料，请先用官方红果 App 登录一次后再试"
                     else "红果 App 登录态未返回有效账号身份，请确认登录态及对应设备资料",
                     diagnostic = appProfileDiagnostic(reply, credentials, gatewayLogin))
             CloudProfile(id, data.str("user_name").ifBlank { website.nickname ?: "红果用户" },

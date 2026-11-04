@@ -16,14 +16,14 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.12**（versionCode 23）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.13**（versionCode 24）· Android **8.0 / API 26** 及以上。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.12 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.12/hongguo-android-0.7.12.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.12/hongguo-android-0.7.12.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.12/hongguo-android-0.7.12.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.12 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.12/hongguo-android-0.7.12-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.12/SHA256SUMS-0.7.12.txt) |
+| GitHub 直连 | [下载 v0.7.13 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/hongguo-android-0.7.13.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/hongguo-android-0.7.13.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/hongguo-android-0.7.13.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.13 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/hongguo-android-0.7.13-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/SHA256SUMS-0.7.13.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -179,7 +179,7 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 
 **播放提示“匿名播放设备注册失败”或“空响应”？**
 
-0.7.2 起，首次播放会向平台注册一个匿名播放设备，身份只保存在内存里，与个人账号无关，重启应用后重新注册。注册失败多为网络问题，约 30 秒后再次播放会自动重试。0.7.1 及更早版本无法通过新的上游校验，请更新到 0.7.2 或以上。
+每次取播放信息都会向平台注册一个新的匿名播放设备，身份只保存在内存里，与个人账号无关。注册失败多为网络问题，约 10 秒后再次播放会自动重试。0.7.1 及更早版本无法通过新的上游校验，请更新到 0.7.2 或以上。
 
 **怎么切换界面主题？**
 

@@ -60,6 +60,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -193,14 +194,15 @@ internal fun AccountScreen(
             }
         } else {
             item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(56.dp))
                     Text(when (state.sessionStatus) {
                         AccountSessionStatus.NEEDS_VERIFICATION -> "账号需要重新验证"
                         AccountSessionStatus.RESTORING -> "正在确认已保存账号"
-                        else -> "接着手机上的故事看"
-                    }, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    Text("登录本人的红果账号，查看账号收藏、历史与预约。本机记录单独保留。",
-                        color = Muted, fontSize = 14.sp, lineHeight = 22.sp)
+                        else -> "登录红果账号"
+                    }, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("查看账号收藏、历史与预约，本机记录单独保留", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
                 }
             }
             if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION || localResetRequired) {
@@ -240,7 +242,7 @@ internal fun AccountScreen(
                 }
             } else {
                 item {
-                    Button(onClick = {
+                    AccountLoginMethods(state, accountModel, webOpen) {
                         accountModel.cancelLogin()
                         webError = null
                         webOpen = true
@@ -248,15 +250,10 @@ internal fun AccountScreen(
                             webLogin.launch(Intent(context, OfficialLoginActivity::class.java))
                         } catch (_: RuntimeException) {
                             webOpen = false
-                            webError = "无法打开官网登录页面，请重试或使用下方登录方式"
+                            webError = "无法打开官网登录页面，请重试或使用其他登录方式"
                         }
-                    }, enabled = !webOpen, modifier = Modifier.fillMaxWidth().testTag("account_web_login")) {
-                        Text(if (webOpen) "正在打开登录页面…" else "在本机打开官网登录")
                     }
-                    Text("只有一部手机也可以使用。请在官网完成登录，再点“完成登录”返回确认。",
-                        color = Muted, fontSize = 12.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 7.dp))
                 }
-                item { AccountLoginMethods(state, accountModel) }
             }
         }
         item { Spacer(Modifier.height(20.dp)) }
@@ -327,83 +324,7 @@ private fun AccountProgressSync(state: AccountState, onChange: (Boolean) -> Unit
 }
 
 @Composable
-private fun AccountLoginMethods(state: AccountState, model: AccountViewModel) {
-    var smsSelected by rememberSaveable { mutableStateOf(false) }
-    // Phone number and one-time code deliberately stay in memory, outside saved instance state.
-    var phone by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
-    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = !smsSelected, onClick = {
-                    if (smsSelected) model.cancelLogin()
-                    smsSelected = false; code = ""
-                }, label = { Text("扫码登录") },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = AccentInk),
-                    modifier = Modifier.testTag("account_method_qr"))
-                FilterChip(selected = smsSelected, onClick = {
-                    if (!smsSelected) model.cancelLogin()
-                    smsSelected = true
-                }, label = { Text("手机号登录") },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Cream, selectedLabelColor = AccentInk),
-                    modifier = Modifier.testTag("account_method_sms"))
-            }
-            if (!smsSelected) {
-                val bitmap = remember(state.qrBytes) { decodeAccountQr(state.qrBytes) }
-                if (bitmap != null) {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Image(bitmap, "红果账号登录二维码", modifier = Modifier.size(220.dp)
-                            .alpha(if (state.qrRemainingSeconds > 0) 1f else .3f).testTag("account_qr_image"))
-                    }
-                    Text(if (state.qrRemainingSeconds > 0) "请用另一台设备上的红果 App 扫码，并确认登录 · ${state.qrRemainingSeconds} 秒"
-                        else "二维码已过期，请刷新", color = Muted, fontSize = 12.sp, lineHeight = 20.sp,
-                        modifier = Modifier.testTag("account_qr_expiry"))
-                } else {
-                    Text("使用另一台设备上的红果 App 扫码确认。当前手机也可使用上方官网登录。",
-                        color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = model::startQrLogin,
-                        enabled = !state.busy || state.qrBytes != null,
-                        modifier = Modifier.testTag("account_qr_refresh")) { Text(if (bitmap == null) "获取二维码" else "刷新二维码") }
-                    if (state.qrBytes != null || state.busy) TextButton(onClick = model::cancelLogin,
-                        modifier = Modifier.testTag("account_login_cancel")) { Text("取消登录") }
-                    if (state.busy && bitmap == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                }
-            } else {
-                OutlinedTextField(value = phone, onValueChange = { value ->
-                    phone = value.filter(Char::isDigit).take(11)
-                }, label = { Text("中国大陆手机号") }, singleLine = true, shape = RoundedCornerShape(16.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    enabled = !state.busy && state.phoneStep == PhoneStep.IDLE,
-                    modifier = Modifier.fillMaxWidth().testTag("account_phone"))
-                if (state.phoneStep == PhoneStep.CODE_SENT) {
-                    Text("验证码已发送至 ${state.phoneMasked}，验证账号资料后才会显示为已登录。",
-                        color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
-                    OutlinedTextField(value = code, onValueChange = { value -> code = value.filter(Char::isDigit).take(8) },
-                        label = { Text("短信验证码") }, singleLine = true, shape = RoundedCornerShape(16.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("account_sms_code"))
-                    Button(onClick = { model.verifySms(code); code = "" }, enabled = !state.busy && code.length >= 4,
-                        modifier = Modifier.fillMaxWidth().testTag("account_sms_verify")) { Text("验证并登录") }
-                }
-                OutlinedButton(onClick = { model.sendSms(phone) }, enabled = !state.busy && phone.length == 11 && state.phoneRemainingSeconds <= 0,
-                    modifier = Modifier.fillMaxWidth().testTag("account_sms_send")) {
-                    Text(if (state.phoneRemainingSeconds > 0) "${state.phoneRemainingSeconds} 秒后重新发送"
-                        else if (state.phoneStep == PhoneStep.CODE_SENT) "重新发送验证码" else "获取验证码")
-                }
-                if (state.phoneStep == PhoneStep.CODE_SENT || state.busy) TextButton(onClick = { model.cancelLogin(); code = "" },
-                    modifier = Modifier.testTag("account_sms_cancel")) { Text("取消或更换手机号") }
-                if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            }
-            HorizontalDivider(color = Canvas)
-            AccountAdvancedImport(state, model)
-        }
-    }
-}
-
-@Composable
-private fun AccountAdvancedImport(state: AccountState, model: AccountViewModel) {
+internal fun AccountAdvancedImport(state: AccountState, model: AccountViewModel) {
     var advancedOpen by rememberSaveable { mutableStateOf(false) }
     var appCookieSelected by rememberSaveable { mutableStateOf(false) }
     // Login credentials stay only in memory and are erased before any validation request.
@@ -451,7 +372,7 @@ private fun AccountAdvancedImport(state: AccountState, model: AccountViewModel) 
     }
 }
 
-private fun decodeAccountQr(bytes: ByteArray?): androidx.compose.ui.graphics.ImageBitmap? {
+internal fun decodeAccountQr(bytes: ByteArray?): androidx.compose.ui.graphics.ImageBitmap? {
     if (bytes == null || bytes.size > 1024 * 1024) return null
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)

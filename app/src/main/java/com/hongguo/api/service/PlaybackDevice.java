@@ -42,7 +42,7 @@ import java.util.zip.GZIPOutputStream;
  * <ul>
  *   <li>只保留 device_id / iid / cdid，仅存进程内存；不保存设备令牌、Cookie 或完整响应，
  *       与账号模块的注册设备完全隔离（不读取、不复用账号 Cookie）。</li>
- *   <li>同一进程内播放、预加载与重试共享一次成功的注册。</li>
+ *   <li>每次取播放信息都注册新身份，播放、预加载与重试之间不共享。</li>
  *   <li>上游三个实现对失败的处理不同（两个 JS 实现缓存失败直到重启，Kotlin 实现每次重试）。
  *       Android 进程可能在离线时首次播放、随后长期驻留，因此这里只在 {@link #FAILURE_COOLDOWN_MS}
  *       内复用失败结果：既避免预加载与重试造成注册风暴，又不需要用户杀进程才能恢复。</li>
@@ -72,7 +72,7 @@ public final class PlaybackDevice {
     private static final byte[] MAGIC = Crypto.unhex("746305100000");
 
     /** 注册失败后在此时长内直接复用失败结果。 */
-    static final long FAILURE_COOLDOWN_MS = 30_000L;
+    static final long FAILURE_COOLDOWN_MS = 10_000L;
 
     private static final int TIMEOUT_MS = 8_000;
 
@@ -122,7 +122,6 @@ public final class PlaybackDevice {
     }
 
     private static Transport transport = PlaybackDevice::httpRegister;
-    private static Identity ready;
     private static RegistrationException lastFailure;
     private static long lastFailureAt;
     private static long clockOffsetForTest;
@@ -130,45 +129,41 @@ public final class PlaybackDevice {
     // ==================== 入口 ====================
 
     /**
-     * 取进程内共享的匿名播放身份；首次调用时注册。
-     * synchronized 使并发的播放 / 预加载等待同一次注册，而不是各自注册一个设备。
+     * 注册一个新的匿名播放身份。身份可能只能用一次（同步自 hongguo-drama 5.5），所以每次取播放信息都
+     * 重新注册，并发调用各注册各的，注册期间不持锁。失败在冷却期内直接复用，避免预加载与重试造成注册风暴。
      */
-    public static synchronized Identity get() throws IOException {
-        if (ready != null) return ready;
-        long now = now();
-        if (lastFailure != null && now - lastFailureAt < FAILURE_COOLDOWN_MS) {
-            throw lastFailure;
+    public static Identity fresh() throws IOException {
+        long now;
+        synchronized (PlaybackDevice.class) {
+            now = now();
+            if (lastFailure != null && now - lastFailureAt < FAILURE_COOLDOWN_MS) {
+                throw lastFailure;
+            }
         }
         if (Thread.currentThread().isInterrupted()) {
             throw new InterruptedIOException("播放请求已取消");
         }
         try {
-            ready = register(now);
-            lastFailure = null;
-            return ready;
+            Identity identity = register(now);
+            synchronized (PlaybackDevice.class) {
+                lastFailure = null;
+            }
+            return identity;
         } catch (InterruptedIOException e) {
             // 线程被取消（离开播放页、切集）不是注册失败：不进入冷却，下次播放立即重试。
             // 超时也是 InterruptedIOException 的子类，但线程未被中断，按失败处理。
             if (Thread.currentThread().isInterrupted()) throw e;
-            lastFailure = new RegistrationException(e);
-            lastFailureAt = now;
-            throw lastFailure;
+            throw recordFailure(new RegistrationException(e), now);
         } catch (Exception e) {
-            lastFailure = e instanceof RegistrationException
-                    ? (RegistrationException) e : new RegistrationException(e);
-            lastFailureAt = now;
-            throw lastFailure;
+            throw recordFailure(e instanceof RegistrationException
+                    ? (RegistrationException) e : new RegistrationException(e), now);
         }
     }
 
-    /**
-     * 播放接口拒绝了 rejected 身份时换一个新身份。另一线程已换过则直接复用它的结果，
-     * 不会为同一次拒绝注册多个设备；注册失败仍受冷却约束。
-     */
-    public static synchronized Identity renew(Identity rejected) throws IOException {
-        if (ready != null && ready != rejected) return ready;
-        ready = null;
-        return get();
+    private static synchronized RegistrationException recordFailure(RegistrationException failure, long now) {
+        lastFailure = failure;
+        lastFailureAt = now;
+        return failure;
     }
 
     private static Identity register(long now) throws Exception {
@@ -367,7 +362,6 @@ public final class PlaybackDevice {
 
     static synchronized void resetForTest(Transport t) {
         transport = t == null ? PlaybackDevice::httpRegister : t;
-        ready = null;
         lastFailure = null;
         lastFailureAt = 0;
         clockOffsetForTest = 0;

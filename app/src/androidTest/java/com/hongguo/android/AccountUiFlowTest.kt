@@ -28,6 +28,7 @@ class AccountUiFlowTest {
         compose.onNodeWithTag("nav_mine").performClick()
         compose.onNodeWithTag("my_account_card").performScrollTo().performClick()
         compose.onNodeWithTag("account_screen").assertExists()
+        compose.onNodeWithTag("account_method_web").performScrollTo().performClick()
         compose.onNodeWithTag("account_web_login").assertExists()
         compose.onNodeWithTag("account_method_sms").performScrollTo().performClick()
         compose.onNodeWithTag("account_phone").performScrollTo().performTextInput("123")

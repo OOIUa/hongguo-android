@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -319,7 +320,10 @@ private fun CatalogGrid(
     canLoadMore: Boolean = true, columns: Int = 0, header: LazyGridScope.() -> Unit,
 ) {
     val minimumCardWidth = if (LocalDensity.current.fontScale >= 1.5f) 184.dp else 148.dp
-    LazyVerticalGrid(columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(minimumCardWidth),
+    val grid = rememberLazyGridState()
+    LoadAheadEffect(feed, { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+        { grid.layoutInfo.totalItemsCount }, canLoadMore, onMore)
+    LazyVerticalGrid(columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(minimumCardWidth), state = grid,
         modifier = Modifier.fillMaxSize().testTag("${tagPrefix}_results"),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp).plusNavClearance(),
         horizontalArrangement = Arrangement.spacedBy(if (columns >= 3) 10.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -336,12 +340,9 @@ private fun CatalogGrid(
                 FailurePanel(error, if (canLoadMore && feed.items.isNotEmpty() && feed.hasMore) onMore else onRefresh, "${tagPrefix}_retry")
             }
         }
-        if (feed.hasMore && feed.items.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-            OutlinedButton(onClick = onMore, enabled = canLoadMore && !feed.loadingMore && !feed.loading,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("${tagPrefix}_load_more"), shape = RoundedCornerShape(12.dp)) {
-                if (feed.loadingMore) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text(if (canLoadMore) "加载更多" else "请先应用新的筛选条件", fontSize = 14.sp)
-            }
+        if (feed.hasMore && feed.items.isNotEmpty() && feed.error == null) item(span = { GridItemSpan(maxLineSpan) }) {
+            if (canLoadMore) LoadAheadFooter("${tagPrefix}_load_more")
+            else Text("请先应用新的筛选条件", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
         }
         if (!feed.loading && !feed.hasMore && feed.items.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
             Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)

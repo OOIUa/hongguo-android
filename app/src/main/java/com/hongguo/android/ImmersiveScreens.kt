@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.VerticalPager
@@ -143,6 +144,7 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
                 LaunchedEffect(pager.currentPage, items.size, state.home.error) {
                     if (pager.currentPage >= items.size - 3 && state.home.hasMore && state.home.error == null) model.loadMoreHome()
                 }
+                CoverPreloadEffect(items, { pager.currentPage }, { items.size })
                 // Only the settled page of a visible, unobscured home plays; anything else releases the preview.
                 val previewEnabled = LocalPageActive.current && state.tab == AppTab.HOME && state.selectedCard == null && !state.playerOpen
                 val preview = rememberFeedPreview(items.getOrNull(pager.settledPage), previewEnabled, model)
@@ -303,7 +305,10 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
     var showFilters by rememberSaveable { mutableStateOf(false) }
     val items = state.category.items
     val ranked = items.take(3)
-    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize().testTag("theater_results"),
+    val grid = rememberLazyGridState()
+    LoadAheadEffect(state.category, { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+        { grid.layoutInfo.totalItemsCount }, state.browseDraft == state.browseApplied, model::loadMoreBrowse)
+    LazyVerticalGrid(columns = GridCells.Fixed(3), state = grid, modifier = Modifier.fillMaxSize().testTag("theater_results"),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp).plusNavClearance(),
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -383,15 +388,14 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
         state.category.error?.let { error -> item(span = { GridItemSpan(maxLineSpan) }) {
             FailurePanel(error, if (items.isNotEmpty() && state.category.hasMore) model::loadMoreBrowse else model::applyBrowse, "theater_retry")
         } }
-        if (state.category.hasMore && items.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-            OutlinedButton(onClick = model::loadMoreBrowse, enabled = !state.category.loadingMore && !state.category.loading,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("theater_load_more"), shape = RoundedCornerShape(12.dp)) {
-                if (state.category.loadingMore) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("加载更多", color = Ink, fontSize = 14.sp)
-            }
+        if (state.category.hasMore && items.isNotEmpty() && state.category.error == null) item(span = { GridItemSpan(maxLineSpan) }) {
+            LoadAheadFooter("theater_load_more")
+        }
+        if (!state.category.loading && !state.category.hasMore && items.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+            Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
         }
     }
-    // Swiping the sheet away discards unapplied choices; otherwise 加载更多 and retry would be blocked by a hidden draft.
+    // Swiping the sheet away discards unapplied choices; otherwise auto-loading and retry would be blocked by a hidden draft.
     if (showFilters) ModalBottomSheet(onDismissRequest = { model.discardBrowseDraft(); showFilters = false }, containerColor = CardSurface) {
         FilterSheetContent(state, model) { showFilters = false }
     }

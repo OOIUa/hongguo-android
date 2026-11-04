@@ -112,13 +112,14 @@ class AccountRepositoryTest {
         var verifies = 0
         var polls = 0
         var sendError: Exception? = null
+        var verifyError: Exception? = null
         var qrExpiry = 3
         var confirmed = false
         override fun qr() = WebLogin.Qr(byteArrayOf(1, 2, 3), qrExpiry)
         override fun poll(): Boolean { polls++; return confirmed }
         override fun credentials() = AccountCredentials("sessionid=fixture")
         override fun send(number: String): PhoneLogin.Sent { sends++; sendError?.let { throw it }; return PhoneLogin.Sent("138****0000", 60) }
-        override fun verify(code: String): AccountCredentials { verifies++; return credentials() }
+        override fun verify(code: String): AccountCredentials { verifies++; verifyError?.let { throw it }; return credentials() }
         override fun cancel() = Unit
     }
 
@@ -636,6 +637,31 @@ class AccountRepositoryTest {
         assertEquals(1, api.setFavoriteCalls)
         assertTrue(repo.state.value.favorites.any { it.card.id == card.id })
         assertFalse(card.id in repo.state.value.favoriteUncertainIds)
+    }
+
+    @Test fun wrongSmsCodeStaysOnTheCodeStepWhileAnEndedSessionDoesNot() = runTest {
+        val login = Login().apply { verifyError = PhoneLogin.Failure("验证码有误", 1102, canRetryCode = true) }
+        val repo = repository(MemoryStore(), Gateway(), login); runCurrent()
+        repo.sendSms("13800138000"); runCurrent()
+        repo.verifySms("123456"); runCurrent()
+        assertEquals(PhoneStep.CODE_SENT, repo.state.value.phoneStep)
+        assertFalse(repo.state.value.busy)
+        assertEquals(1, login.verifies)
+        login.verifyError = PhoneLogin.Failure("验证码已失效", 1103)
+        repo.verifySms("654321"); runCurrent()
+        assertEquals(PhoneStep.IDLE, repo.state.value.phoneStep)
+        assertEquals(2, login.verifies)
+        repo.verifySms("111111"); runCurrent()
+        assertEquals(2, login.verifies)
+    }
+
+    @Test fun platformVerificationSuggestsTheOfficialPageAndCancelClearsIt() = runTest {
+        val login = Login().apply { sendError = PhoneLogin.Failure("需要验证", 1105, needsWebsite = true) }
+        val repo = repository(MemoryStore(), Gateway(), login); runCurrent()
+        repo.sendSms("13800138000"); runCurrent()
+        assertTrue(repo.state.value.suggestWebsiteLogin)
+        repo.cancelLogin()
+        assertFalse(repo.state.value.suggestWebsiteLogin)
     }
 
     @Test fun smsUncertainSendPersistsCooldownAndNeverAutomaticallyResends() = runTest {

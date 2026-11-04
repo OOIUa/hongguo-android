@@ -59,6 +59,7 @@ public class PlaybackSourceTest {
     }
 
     @After public void restore() {
+        AppSource.setPlaybackFallbackForTest(null);
         PlaybackDevice.resetForTest(null);
         AppSource.setPlaybackPostForTest(null);
         AppSource.setPlaybackTabForTest(null);
@@ -154,29 +155,45 @@ public class PlaybackSourceTest {
 
     // ==================== 进程内共享与失败冷却 ====================
 
-    @Test public void concurrentCallersShareOneRegistration() throws Exception {
+    @Test public void everyCallRegistersItsOwnIdentity() throws Exception {
         AtomicInteger calls = new AtomicInteger();
-        CountDownLatch release = new CountDownLatch(1);
         PlaybackDevice.resetForTest((url, headers, body) -> {
             calls.incrementAndGet();
-            try { release.await(5, TimeUnit.SECONDS); } catch (InterruptedException e) { throw new IOException(e); }
             assertEquals(PlaybackDevice.REGISTER_URL, url);
             return okReply();
         });
-        ExecutorService pool = Executors.newFixedThreadPool(6);
+        ExecutorService pool = Executors.newFixedThreadPool(4);
         try {
             List<Future<PlaybackDevice.Identity>> results = new ArrayList<>();
-            for (int i = 0; i < 6; i++) results.add(pool.submit(PlaybackDevice::get));
-            Thread.sleep(100);
-            release.countDown();
-            PlaybackDevice.Identity first = results.get(0).get(5, TimeUnit.SECONDS);
-            for (Future<PlaybackDevice.Identity> f : results) assertSame(first, f.get(5, TimeUnit.SECONDS));
+            for (int i = 0; i < 4; i++) results.add(pool.submit(PlaybackDevice::fresh));
+            for (Future<PlaybackDevice.Identity> f : results) assertEquals(DEVICE_ID, f.get(5, TimeUnit.SECONDS).deviceId);
         } finally {
             pool.shutdownNow();
         }
-        assertEquals(1, calls.get());
-        assertSame(PlaybackDevice.get(), PlaybackDevice.get());
-        assertEquals(1, calls.get());
+        assertEquals(4, calls.get());
+    }
+
+    @Test public void consecutiveEpisodesDoNotReuseAnIdentity() throws Exception {
+        AtomicInteger registrations = new AtomicInteger();
+        PlaybackDevice.resetForTest((url, headers, body) -> {
+            registrations.incrementAndGet();
+            return okReply();
+        });
+        List<PlaybackDevice.Identity> used = new ArrayList<>();
+        AppSource.setPlaybackTabForTest((vid, identity) -> {
+            used.add(identity);
+            throw new IllegalStateException("reached model request");
+        });
+        for (int i = 0; i < 2; i++) {
+            try {
+                AppSource.fetch("7000000000000000001", "auto");
+                fail();
+            } catch (IllegalStateException expected) {
+                assertEquals("reached model request", expected.getMessage());
+            }
+        }
+        assertEquals(2, registrations.get());
+        assertNotSame(used.get(0), used.get(1));
     }
 
     @Test public void failureIsReusedOnlyDuringCooldown() throws Exception {
@@ -196,7 +213,7 @@ public class PlaybackSourceTest {
 
         healthy[0] = true;
         PlaybackDevice.advanceClockForTest(PlaybackDevice.FAILURE_COOLDOWN_MS + 1);
-        assertEquals(DEVICE_ID, PlaybackDevice.get().deviceId);
+        assertEquals(DEVICE_ID, PlaybackDevice.fresh().deviceId);
         assertEquals(2, calls.get());
     }
 
@@ -211,7 +228,7 @@ public class PlaybackSourceTest {
 
     @Test public void playbackRequestUsesRegisteredIdentityWithoutSignature() throws Exception {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
-        PlaybackDevice.Identity id = PlaybackDevice.get();
+        PlaybackDevice.Identity id = PlaybackDevice.fresh();
         String url = AppSource.playbackUrl(id, 1_793_000_000_123L);
 
         assertTrue(url.startsWith("https://" + AppSource.VIDEO_API_HOST + "/novel/player/multi_video_model/v1/?"));
@@ -270,7 +287,6 @@ public class PlaybackSourceTest {
         assertEquals(2, registrations.get());
         assertEquals(DEVICE_ID, used.get(0).deviceId);
         assertEquals("7432109876543219999", used.get(1).deviceId);
-        assertSame("新身份成为进程内共享身份", used.get(1), PlaybackDevice.get());
         assertTrue(bodies.get(0).contains("\"device_level\":1"));
         assertEquals(Arrays.asList(AppSource.VIDEO_API_HOST, AppSource.RETRY_HOST), hosts);
     }
@@ -317,24 +333,11 @@ public class PlaybackSourceTest {
         assertEquals(2, registrations.get());
     }
 
-    @Test public void renewReusesIdentityAlreadyReplacedByAnotherCaller() throws Exception {
-        AtomicInteger registrations = new AtomicInteger();
-        PlaybackDevice.resetForTest((url, headers, body) -> {
-            registrations.incrementAndGet();
-            return okReply();
-        });
-        PlaybackDevice.Identity rejected = PlaybackDevice.get();
-        PlaybackDevice.Identity renewed = PlaybackDevice.renew(rejected);
-        assertNotSame(rejected, renewed);
-        assertSame(renewed, PlaybackDevice.renew(rejected));
-        assertEquals(2, registrations.get());
-    }
-
     // ==================== video_tab 播放模型 ====================
 
     @Test public void tabRequestCarriesEveryVideoModelField() throws Exception {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
-        PlaybackDevice.Identity id = PlaybackDevice.get();
+        PlaybackDevice.Identity id = PlaybackDevice.fresh();
         String url = AppSource.tabUrl(id, "7600000000000000001", 1_793_000_000_123L);
         assertTrue(url.startsWith("https://" + AppSource.VIDEO_API_HOST
                 + "/reading/bookapi/video_tab/multi_video_model/v1/?"));
@@ -423,6 +426,89 @@ public class PlaybackSourceTest {
         assertEquals("https://v1.qznovelvod.com/1080.mp4", t.url);
     }
 
+    /** 内联 1080P 缺加密信息；备用接口返回带密钥的片源。 */
+    private static Map<String, Object> incompleteInlineModel() {
+        List<Object> list = Json.arr();
+        list.add(item("h264", 1080, 1920, "https://v1.qznovelvod.com/nokey.mp4", null));
+        Map<String, Object> model = Json.obj();
+        model.put("video_list", list);
+        model.put("video_id", "v0abc");
+        model.put("video_duration", 60.0);
+        model.put("fallback_api", "https://vod.snssdk.com/video/fallback");
+        return model;
+    }
+
+    private static Map<String, Object> fallbackReply(String id, double duration, int shortSide) {
+        Map<String, Object> row = item("h264", shortSide, shortSide * 16 / 9, "https://v1.qznovelvod.com/keyed.mp4", VALID_SPADE);
+        Map<String, Object> rows = Json.obj();
+        rows.put("video_1", row);
+        Map<String, Object> data = Json.obj();
+        data.put("video_id", id);
+        data.put("video_duration", duration);
+        data.put("video_list", rows);
+        Map<String, Object> info = Json.obj();
+        info.put("data", data);
+        Map<String, Object> outer = Json.obj();
+        outer.put("video_info", info);
+        return outer;
+    }
+
+    @Test public void inlineWithoutEncryptionInfoUsesVerifiedFallback() throws Exception {
+        String vid = "7600000000000000011";
+        AppSource.setPlaybackFallbackForTest(url -> fallbackReply("v0abc", 60.2, 1080));
+        Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto");
+        assertEquals("https://v1.qznovelvod.com/keyed.mp4", t.url);
+        assertTrue(t.encrypt);
+    }
+
+    @Test public void fallbackMustMatchIdentityDurationAndQuality() {
+        String vid = "7600000000000000012";
+        Map<String, Map<String, Object>> replies = new java.util.LinkedHashMap<>();
+        replies.put("其他视频", fallbackReply("v0other", 60.0, 1080));
+        replies.put("时长不同", fallbackReply("v0abc", 30.0, 1080));
+        replies.put("清晰度更低", fallbackReply("v0abc", 60.0, 720));
+        replies.forEach((name, reply) -> {
+            AppSource.setPlaybackFallbackForTest(url -> reply);
+            try {
+                AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto");
+                fail(name + "的备用片源不得使用");
+            } catch (IllegalStateException expected) {
+                assertFalse(expected.getMessage().contains("keyed"));
+            } catch (Exception other) {
+                throw new AssertionError(other);
+            }
+        });
+    }
+
+    @Test public void declaredEncryptedInlineItemDoesNotTryFallback() throws Exception {
+        String vid = "7600000000000000013";
+        Map<String, Object> model = incompleteInlineModel();
+        Map<String, Object> info = Json.obj();
+        info.put("encrypt", true);
+        ((Map<String, Object>) ((List<Object>) model.get("video_list")).get(0)).put("encrypt_info", info);
+        AppSource.setPlaybackFallbackForTest(url -> { throw new AssertionError("不应请求备用接口"); });
+        try {
+            AppSource.parseModel(vid, response(vid, model), "auto");
+            fail();
+        } catch (IllegalStateException expected) {
+            assertFalse(expected.getMessage().contains("备用"));
+        }
+    }
+
+    @Test public void byteVc2OnlyEpisodeSaysSoInsteadOfGenericFailure() throws Exception {
+        String vid = "7600000000000000014";
+        List<Object> list = Json.arr();
+        list.add(item("bytevc2", 1080, 1920, "https://v1.qznovelvod.com/vc2.mp4", VALID_SPADE));
+        Map<String, Object> model = Json.obj();
+        model.put("video_list", list);
+        try {
+            AppSource.parseModel(vid, response(vid, model), "auto");
+            fail();
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("ByteVC2"));
+        }
+    }
+
     @Test public void inlineEncryptedItemWithoutSpadeIsNotPlayedAsPlaintext() throws Exception {
         List<Object> list = Json.arr();
         list.add(item("h264", 720, 1280, "https://v1.qznovelvod.com/nokey.mp4", null));
@@ -485,7 +571,7 @@ public class PlaybackSourceTest {
 
     private static IOException expectRegistrationFailure() {
         try {
-            PlaybackDevice.get();
+            PlaybackDevice.fresh();
             fail("应注册失败");
             return null;
         } catch (IOException e) {

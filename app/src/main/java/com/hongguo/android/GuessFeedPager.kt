@@ -8,7 +8,9 @@ import com.hongguo.account.protocol.GuessBatch
  *
  * The feed returns only a few cards per batch and its has_more flags are unreliable, so a page reads
  * up to [MAX_REQUESTS] batches until [TARGET] new cards arrive, and the round ends after a page that
- * brought nothing new or at [MAX_OFFSET].
+ * brought nothing new or at [MAX_OFFSET]. The server's offset counts rows, so each batch advances it
+ * by the rows it served; stepping by one repeats five of every six cards. A restarted batch replaces the rejected pagination; cards
+ * already shown in this round stay filtered out.
  */
 internal class GuessFeedPager(val owner: String?, private val fetch: suspend (String?, String, Int) -> GuessBatch) {
     private var session = ""
@@ -21,8 +23,9 @@ internal class GuessFeedPager(val owner: String?, private val fetch: suspend (St
         while (cards.size < TARGET && requests < MAX_REQUESTS && offset <= MAX_OFFSET) {
             val batch = fetch(owner, session, offset)
             requests++
+            if (batch.restarted) { session = ""; offset = 0 }
             session = batch.session.ifBlank { session }
-            offset++
+            offset += maxOf(1, batch.served)
             batch.items.forEach { item ->
                 if (seen.add(item.series.id)) cards += DramaCard(item.series.id, item.series.title,
                     item.series.cover, item.episodeCount, item.series.description)
@@ -35,7 +38,7 @@ internal class GuessFeedPager(val owner: String?, private val fetch: suspend (St
     companion object {
         const val TARGET = 6
         const val MAX_REQUESTS = 3
-        const val MAX_OFFSET = 100
+        const val MAX_OFFSET = 600
         const val SEEN_LIMIT = 540
     }
 }

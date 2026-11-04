@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复无法播放：红果播放信息接口 2026-11-02 起对旧请求返回空响应，现改用官方 App 现行接口取片源，旧接口保留为备用，其空响应时换匿名设备后改走备用域名重试。新接口低于 1080P 的档位为设备无法解码的格式，暂时只提供 1080P。'
+        notes = '手机验证码改走官方 App 通道；平台要求验证时会弹窗引导到官方登录页手动完成。猜你喜欢修复登录后错误码 110，失败时换域名重试，翻页不再大量重复。每次取播放信息注册新的匿名设备；只提供 ByteVC2 的集会明确提示；缺加密信息的片源可使用校验通过的备用片源。登录页按手机验证码、官网、扫码分开，列表提前加载下一页。手机号登录如遇问题可改用官网或扫码登录。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

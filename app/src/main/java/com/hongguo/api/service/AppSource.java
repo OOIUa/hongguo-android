@@ -103,7 +103,7 @@ public final class AppSource {
             throw new IllegalArgumentException("分集编号无效");
         }
 
-        PlaybackDevice.Identity identity = PlaybackDevice.get();
+        PlaybackDevice.Identity identity = PlaybackDevice.fresh();
         // ---- 1. 官方 App 现行的 GET video_tab/multi_video_model：2026-11-02 起旧的 POST
         // /novel/player 接口对所有请求返回 200 + 0 字节。只试一次，失败回退旧流程
         // （同步自 hongguoTV 0.1.15）。
@@ -122,7 +122,7 @@ public final class AppSource {
             PlaybackDevice.Identity retry = identity;
             IOException renewal = null;
             try {
-                retry = PlaybackDevice.renew(identity);
+                retry = PlaybackDevice.fresh();
             } catch (IOException re) {
                 renewal = re;
             }
@@ -167,6 +167,17 @@ public final class AppSource {
         playbackTab = tab == null ? AppSource::getTabModel : tab;
     }
 
+    /** 可替换的 fallback_api 请求（JVM 测试注入）。 */
+    interface PlaybackFallback {
+        Map<String, Object> get(String url) throws Exception;
+    }
+
+    private static PlaybackFallback playbackFallback = AppSource::getPlain;
+
+    static void setPlaybackFallbackForTest(PlaybackFallback fallback) {
+        playbackFallback = fallback == null ? AppSource::getPlain : fallback;
+    }
+
     /**
      * 从播放接口响应解析出可播放轨道（包内可见，便于用离线响应做 JVM 测试）。
      * 只取所请求的分集，不借用响应里其他分集的模型。
@@ -187,28 +198,66 @@ public final class AppSource {
         }
 
         // ---- 2. 片源模型：新版直接内联 video_list，旧版跟随 fallback_api 二次请求 ----
-        List<Object> inlineList = Json.optArr(model.get("video_list"));
-        boolean inline = !inlineList.isEmpty();
-        Map<String, Object> info;
-        if (inline) {
-            info = model;
-        } else {
-            String fallback = parseFallback(model.get("fallback_api"));
-            if (fallback == null || fallback.isEmpty()) {
-                throw new IllegalStateException("App 接口未返回本集片源地址");
-            }
-            Map<String, Object> outer = getPlain(checkedUrl(fallback, API_DOMAINS));
-            Map<String, Object> outerInfo = Json.optObj(outer.get("video_info"));
-            if (Json.optInt(outer.get("Code"), 0) != 0
-                    || Json.optInt(outer.get("code"), 0) != 0
-                    || Json.optInt(outerInfo == null ? null : outerInfo.get("Code"), 0) != 0) {
-                throw new IllegalStateException("App 接口暂未提供本集播放信息");
-            }
-            info = outerInfo == null ? null : Json.optObj(outerInfo.get("data"));
+        if (Json.optArr(model.get("video_list")).isEmpty()) {
+            return selectTrack(readFallback(model), quality, false, 0);
         }
+        try {
+            return selectTrack(model, quality, true, 0);
+        } catch (IncompleteEncryption incomplete) {
+            // 内联片源既无密钥也未声明加密状态时才尝试备用接口；备用片源须独立通过编号、
+            // 完整时长、清晰度与加密信息校验（同步自 hongguo-drama 5.5）。
+            String id = Json.optStr(model.get("video_id"), "").trim();
+            double duration = seconds(model.get("video_duration"));
+            String fallback = parseFallback(model.get("fallback_api"));
+            if (id.isEmpty() || duration <= 0 || incomplete.minimumPixels <= 0
+                    || fallback == null || fallback.isEmpty()) {
+                throw incomplete;
+            }
+            Map<String, Object> info = readFallback(model);
+            double other = seconds(info.get("video_duration"));
+            if (!id.equals(Json.optStr(info.get("video_id"), "")) || other <= 0
+                    || Math.abs(other - duration) > 0.5) {
+                throw new IllegalStateException("备用片源编号或完整时长无法确认，已停止取址");
+            }
+            return selectTrack(info, quality, true, incomplete.minimumPixels);
+        }
+    }
+
+    /** 请求 fallback_api 并取出其中的片源模型。 */
+    private static Map<String, Object> readFallback(Map<String, Object> model) throws Exception {
+        String fallback = parseFallback(model.get("fallback_api"));
+        if (fallback == null || fallback.isEmpty()) {
+            throw new IllegalStateException("App 接口未返回本集片源地址");
+        }
+        Map<String, Object> outer = playbackFallback.get(checkedUrl(fallback, API_DOMAINS));
+        Map<String, Object> outerInfo = Json.optObj(outer.get("video_info"));
+        if (Json.optInt(outer.get("Code"), 0) != 0
+                || Json.optInt(outer.get("code"), 0) != 0
+                || Json.optInt(outerInfo == null ? null : outerInfo.get("Code"), 0) != 0) {
+            throw new IllegalStateException("App 接口暂未提供本集播放信息");
+        }
+        Map<String, Object> info = outerInfo == null ? null : Json.optObj(outerInfo.get("data"));
         if (info == null || info.isEmpty()) {
             throw new IllegalStateException("App 接口未返回本集片源模型");
         }
+        return info;
+    }
+
+    private static double seconds(Object value) {
+        if (value instanceof Number) return ((Number) value).doubleValue();
+        try {
+            return value == null ? 0 : Double.parseDouble(value.toString().trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * 从片源模型选出第一条可播放的轨道。[requireEncryption] 时，无密钥的候选必须明确声明为明文；
+     * [minimumPixels] 大于 0 时不接受短边更小的候选，避免备用片源悄悄降低清晰度。
+     */
+    private static Stream.VideoTrack selectTrack(Map<String, Object> info, String quality,
+            boolean requireEncryption, int minimumPixels) throws Exception {
         // video_list 可能是对象 map（fallback 模型），也可能是数组（内联模型）
         List<Object> videoItems = new ArrayList<>();
         Object rawList = info.get("video_list");
@@ -237,6 +286,7 @@ public final class AppSource {
         List<Row> ok = new ArrayList<>();
         for (Row r : rows) {
             if (r.codecRank >= 2) continue;               // 只要 H.264 / HEVC
+            if (minimumPixels > 0 && r.shortSide < minimumPixels) continue;
             if (!auto && wantPx > 0 && r.shortSide < wantPx) continue;
             ok.add(r);
         }
@@ -248,7 +298,15 @@ public final class AppSource {
                     ? a.shortSide - b.shortSide : a.codecRank - b.codecRank);
         }
         if (ok.isEmpty()) {
-            throw new IllegalStateException("本集暂未提供兼容的 H.264/HEVC 片源");
+            boolean compatible = false, byteVc2 = false;
+            for (Row r : rows) {
+                compatible |= r.codecRank < 2;
+                byteVc2 |= r.codec.equals("bytevc2");
+            }
+            // 编码按集锁定，换参数、身份或接口都拿不到别的编码（hongguoTV 0.1.16、hongguo-drama 5.6）。
+            throw new IllegalStateException(!compatible && byteVc2
+                    ? "本集仅提供播放器不支持的 ByteVC2 编码，当前无法播放，请在官方 App 观看"
+                    : "本集暂未提供兼容的 H.264/HEVC 片源");
         }
 
         // ---- 4. 逐候选解 URL 与密钥，取第一个可用的 ----
@@ -256,13 +314,15 @@ public final class AppSource {
         // Stream.offlineDecrypt 统一完成（老路同此约定）。这里只预解一次
         // 用于判断该候选是否可用，不回存解出的 key。
         Exception last = null;
+        boolean incomplete = false;
         for (Row r : ok) {
             String spade = firstNonEmpty(r.item.get("spade_a"),
                     Json.optStr(child(r.item, "encrypt_info").get("spade_a"), ""));
             boolean keyOk = spade.isEmpty();
-            if (spade.isEmpty() && inline && !declaredPlain(r.item)) {
+            if (spade.isEmpty() && requireEncryption && !declaredPlain(r.item)) {
                 // 内联模型声明加密（或未声明）却缺少 spade_a：不能当作明文播放
                 keyOk = false;
+                incomplete |= child(r.item, "encrypt_info").get("encrypt") == null;
             }
             if (!spade.isEmpty()) {
                 keyOk = Spade.isValidKey(Spade.unwrapV1(Crypto.base64Decode(spade), 0));
@@ -285,7 +345,18 @@ public final class AppSource {
                 }
             }
         }
+        if (incomplete) throw new IncompleteEncryption(ok.get(0).shortSide);
         throw new IllegalStateException("本集片源地址或密钥无法解析");
+    }
+
+    /** 选中的内联候选缺少加密信息；调用方可据此尝试受校验的备用片源。 */
+    private static final class IncompleteEncryption extends IllegalStateException {
+        final int minimumPixels;
+
+        IncompleteEncryption(int minimumPixels) {
+            super("本集片源地址或密钥无法解析");
+            this.minimumPixels = minimumPixels;
+        }
     }
 
     // ==================== 请求构造 ====================

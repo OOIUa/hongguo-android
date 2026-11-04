@@ -20,9 +20,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed as staggeredItemsIndexed
@@ -45,7 +47,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -80,7 +81,11 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
     val items = state.home.items
     val ranked = items.take(5)
     val rest = if (items.size > 5) items.drop(5) else emptyList()
-    LazyVerticalStaggeredGrid(columns = StaggeredGridCells.Fixed(2), modifier = Modifier.fillMaxSize().testTag("cards_home"),
+    val grid = rememberLazyStaggeredGridState()
+    // Staggered columns lay out independently, so the last visible entry is not always the highest index.
+    LoadAheadEffect(state.home, { grid.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1 },
+        { grid.layoutInfo.totalItemsCount }, onLoad = model::loadMoreHome)
+    LazyVerticalStaggeredGrid(columns = StaggeredGridCells.Fixed(2), state = grid, modifier = Modifier.fillMaxSize().testTag("cards_home"),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp).plusNavClearance(),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalItemSpacing = 8.dp) {
         item(span = StaggeredGridItemSpan.FullLine) {
@@ -166,12 +171,11 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
         state.home.error?.let { error -> item(span = StaggeredGridItemSpan.FullLine) {
             FailurePanel(error, if (items.isNotEmpty() && state.home.hasMore) model::loadMoreHome else model::refreshHome, "cards_retry")
         } }
-        if (state.home.hasMore && items.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) {
-            OutlinedButton(onClick = model::loadMoreHome, enabled = !state.home.loadingMore && !state.home.loading,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("cards_load_more"), shape = RoundedCornerShape(12.dp)) {
-                if (state.home.loadingMore) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("加载更多", color = Ink, fontSize = 14.sp)
-            }
+        if (state.home.hasMore && items.isNotEmpty() && state.home.error == null) item(span = StaggeredGridItemSpan.FullLine) {
+            LoadAheadFooter("cards_load_more")
+        }
+        if (!state.home.loading && !state.home.hasMore && items.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) {
+            Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
         }
     }
 }
@@ -204,7 +208,10 @@ private fun CardsLoading(label: String) {
 internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
     var showFilters by rememberSaveable { mutableStateOf(false) }
     val items = state.category.items
-    LazyColumn(Modifier.fillMaxSize().testTag("cards_discover"),
+    val list = rememberLazyListState()
+    LoadAheadEffect(state.category, { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+        { list.layoutInfo.totalItemsCount }, state.browseDraft == state.browseApplied, model::loadMoreBrowse)
+    LazyColumn(Modifier.fillMaxSize().testTag("cards_discover"), state = list,
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
@@ -279,15 +286,12 @@ internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
         state.category.error?.let { error -> item {
             FailurePanel(error, if (items.isNotEmpty() && state.category.hasMore) model::loadMoreBrowse else model::applyBrowse, "cards_discover_retry")
         } }
-        if (state.category.hasMore && items.isNotEmpty()) item {
-            OutlinedButton(onClick = model::loadMoreBrowse, enabled = !state.category.loadingMore && !state.category.loading,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("cards_discover_more"), shape = RoundedCornerShape(12.dp)) {
-                if (state.category.loadingMore) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("加载更多", color = Ink, fontSize = 14.sp)
-            }
+        if (state.category.hasMore && items.isNotEmpty() && state.category.error == null) item { LoadAheadFooter("cards_discover_more") }
+        if (!state.category.loading && !state.category.hasMore && items.isNotEmpty()) item {
+            Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
         }
     }
-    // Swiping the sheet away discards unapplied choices, so quick chips and 加载更多 keep working on what is shown.
+    // Swiping the sheet away discards unapplied choices, so quick chips and auto-loading keep working on what is shown.
     if (showFilters) ModalBottomSheet(onDismissRequest = { model.discardBrowseDraft(); showFilters = false }, containerColor = CardSurface) {
         FilterSheetContent(state, model) { showFilters = false }
     }

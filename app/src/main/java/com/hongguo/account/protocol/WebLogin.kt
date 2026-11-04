@@ -20,6 +20,7 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
     private var token = ""
     private var mobile = ""
     private var sent = false
+    private val submittedCodes = HashSet<String>()
     private var nextSmsAt = 0L
 
     data class Qr(val image: ByteArray, val expiresIn: Int)
@@ -71,16 +72,17 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
         val data = reply.optJSONObject("data") ?: throw AccountProtocolException("官网登录返回格式异常")
         if (reply.optString("message") != "success") {
             val code = data.optInt("error_code", -1)
-            val message = if (data.has("verify_center_decision_conf")) "红果要求完成滑块验证，请改用扫码登录"
+            val needsWebsite = data.has("verify_center_decision_conf") || code == 1105
+            val message = if (data.has("verify_center_decision_conf")) "红果要求完成滑块验证，请到官网登录页面完成"
                 else when (code) {
                     13, 1003 -> "登录会话已失效，请重新扫码或重新获取验证码"
-                    1102 -> "验证码有误，请重新获取后再试"
+                    1102 -> "验证码有误，请检查后重新输入"
                     1103, 1104 -> "验证码已失效，请重新获取后再试"
-                    1105 -> "红果要求额外验证，请改用扫码登录"
+                    1105 -> "红果要求额外验证，请到官网登录页面完成"
                     1106, 1107 -> "请求过于频繁，请稍后再试"
                     else -> "官网登录失败，请稍后重试"
                 }
-            throw PhoneLogin.Failure("$message（错误码 $code）", code, false)
+            throw PhoneLogin.Failure("$message（错误码 $code）", code, code == 1102 && !needsWebsite, needsWebsite)
         }
         return data
     }
@@ -124,6 +126,7 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
         check(System.currentTimeMillis() >= nextSmsAt) { "请等待短信冷却后再试" }
         mobile = PhoneLogin.parse(number)
         sent = false
+        submittedCodes.clear()
         if (cookies.none { it.name == "passport_csrf_token" && it.expiresAt > System.currentTimeMillis() }) qr()
         val data = checked(call("/passport/web/send_code/", mapOf("mobile" to mix(mobile), "type" to mix("24"), "mix_mode" to "1", "fixed_mix_mode" to "1")))
         val retry = data.optInt("retry_time", 60).coerceIn(1, 3600)
@@ -137,9 +140,16 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
     fun verify(code: String): AccountCredentials {
         check(sent) { "请先重新获取验证码" }
         require(code.matches(Regex("[0-9]{4,8}"))) { "请输入 4—8 位验证码" }
-        // A submitted code is consumed locally even if the response is lost. Never replay it automatically.
+        // Each code is submitted at most once, even if the response is lost; nothing is ever replayed automatically.
+        // Only a definite rejection (1102) lets the user type a different code in this session.
+        if (!submittedCodes.add(code)) throw PhoneLogin.Failure("这个验证码已提交过，请输入新的验证码", canRetryCode = true)
         sent = false
-        checked(call("/passport/web/sms_login/", mapOf("mobile" to mix(mobile), "code" to mix(code), "login_only" to "true", "mix_mode" to "1", "fixed_mix_mode" to "1")))
+        try {
+            checked(call("/passport/web/sms_login/", mapOf("mobile" to mix(mobile), "code" to mix(code), "login_only" to "true", "mix_mode" to "1", "fixed_mix_mode" to "1")))
+        } catch (failure: PhoneLogin.Failure) {
+            sent = failure.canRetryCode
+            throw failure
+        }
         return credentials()
     }
 

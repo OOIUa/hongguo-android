@@ -22,6 +22,8 @@ data class AccountState(
     val phoneStep: PhoneStep = PhoneStep.IDLE,
     val phoneRemainingSeconds: Int = 0,
     val phoneMasked: String = "",
+    /** The platform asked for a verification only the official login page can show. */
+    val suggestWebsiteLogin: Boolean = false,
     val history: List<LibraryEntry> = emptyList(),
     val favorites: List<LibraryEntry> = emptyList(),
     val reservations: List<LibraryEntry> = emptyList(),

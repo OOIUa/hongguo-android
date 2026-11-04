@@ -74,3 +74,28 @@ The fallback's empty-response retry now renews the identity, waits 300 ms and re
   https://github.com/tsukiyo-zero/hongguoTV/tree/97c5b1d15dc2233e53f6152918c7e3cc3bbebb84/kotlin-tv
 
 Local changes: signed out, the feed is requested anonymously without any cookie or account device; signed in (verified app account only), it carries the account cookie and that account's registered device_id / iid. The request uses the account transport (no redirects, no cookie jar), so the cookie cannot be forwarded to another host. The server session and offset are kept in memory per browse round and discarded on login, logout or account switch. No exposure, click or completion events are reported, and whether the signed-in results match the official App's 猜你喜欢 for the same account has not been verified on a real account.
+
+## 猜你喜欢 110 recovery
+
+A signed-in feed request no longer carries the account's device_id / iid: with them the server answers `110 ILLEGAL_ACCESS`, and with the login cookie alone `0 SUCCESS`. A non-zero `code` now retries the alternate hosts `api5-normal-hl` and `api5-normal-lf` from offset 0 without the old pagination session. Synchronized from tsukiyo-zero/hongguoTV, commits `4131e40`, `6263b54` and `500dc97` (2026-11-03, TV 0.1.17–0.1.19), GPL-3.0-only — `kotlin-tv/core/.../RecommendationFeed.kt`.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/f22bb3f/kotlin-tv
+
+Local changes: the signed-in cookie is the account's own login cookie, without the registration cookies and `install_id` that other app requests add, because that is the form hongguoTV measured. The retry also runs on the first page, where upstream reports the error at once when it holds no session. HTTP and network failures do not rotate hosts. Only the three hosts' anonymous responses were checked (2026-11-04, `code` 0 on each); the signed-in behavior has not been verified on a real account here.
+
+The feed offset now advances by the rows the server sent instead of by one, because the server counts its offset in rows. Taken from tsukiyo-zero/hongguoTV PR #59, still open on 2026-11-04, GPL-3.0-only. Rechecked with anonymous requests on 2026-11-04: six batches stepping by one returned 11 unique titles out of 33 rows, and stepping by rows returned 33 out of 33. The offset limit rose from 100 to 600 to keep the round length.
+
+## Playback source sync (ByteVC2 and inline fallback)
+
+An episode that offers only ByteVC2 now reports that directly. Message and rationale follow jackotom/hongguo-drama 5.6, commit `eaae8da` (2026-11-04), and the per-episode codec finding in tsukiyo-zero/hongguoTV commit `9d26de6` (2026-11-02), both GPL-3.0-only.
+
+Inline rows with neither a key nor a declared encryption state may now use the model's `fallback_api`. The fallback must match the video id and full duration (within 0.5 s), must not be lower quality, and must carry a key or declare itself unencrypted. Synchronized from jackotom/hongguo-drama 5.5, commit `4c0855d` (2026-11-03), GPL-3.0-only — `src/native/app-source.js`, with the alternate source parsing and offline cases credited there to PR #92.
+  https://github.com/jackotom/hongguo-drama/tree/552566d
+
+Every playback model request now registers its own anonymous identity, because an identity may be single-use, and the registration failure cooldown is 10 seconds. Synchronized from jackotom/hongguo-drama 5.5 and 5.6, commits `4c0855d` and `eaae8da`, GPL-3.0-only — `src/native/app-source.js` and `src/native/playback-device.js`. If `video_tab` fails, the fallback request reuses that identity once before registering another on an empty reply.
+
+## App passport SMS login
+
+SMS login now uses the official App's passport channel on `security.snssdk.com`, with the fixed device from upstream's device table, because the website channel demands a slider before sending. Adapted from tsukiyo-zero/hongguoTV `kotlin-tv/core/.../PhoneLogin.kt` at `f22bb3f` (2026-11-03, TV 0.1.17–0.1.19), GPL-3.0-only, whose origin is charlie901208/HGTV `feat/phone-login`. The message for a session without a business account follows hongguoTV commit `d07b655` (TV 0.1.18).
+  https://github.com/tsukiyo-zero/hongguoTV/blob/f22bb3f/kotlin-tv/core/src/main/kotlin/com/hongguotv/core/PhoneLogin.kt
+
+Local changes: redirects are never followed, raw provider text is never shown, one attempt never accepts the same code twice from the user, and 1202 also allows typing a different code. A slider request opens a dialog that sends the user to the official login page to pass it manually; it is not solved or bypassed. The same protocol completed a real number login on iOS 0.1.11 in a simulator; Android has not been verified with a real account.
