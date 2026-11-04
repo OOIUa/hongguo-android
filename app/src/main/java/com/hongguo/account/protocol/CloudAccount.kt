@@ -84,6 +84,11 @@ data class CloudProgress(val series: Series,val episodeId: String,val episodeInd
 
 data class CloudFavorite(val series: Series,val collectedAt: Long)
 
+data class CloudLike(val series: Series,val likedAt: Long)
+
+/** Counters of the signed-in account; null when the platform does not report one. */
+data class CloudStats(val follows: Int? = null, val fans: Int? = null, val likes: Int? = null, val signature: String = "")
+
 data class CloudReservation(val series: Series,val online: Boolean,val publishAt: Long,val publishText: String="")
 
 class CloudAccountClient internal constructor(http: OkHttpClient, private val apiBase: HttpUrl, private val registrationUrl: HttpUrl, private val websiteBase: HttpUrl = apiBase) {
@@ -212,6 +217,47 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
         }
         return progress.map { it.copy(series=series[it.series.id] ?: it.series.copy(title="剧集 ${it.series.id}")) }
     }
+    /** Watch records. Upstream reference: jackotom/hongguo-drama 5.6 account-session.js parseHistory. */
+    fun readHistory(credentials: AccountCredentials): List<CloudProgress> {
+        val records=parseReadHistory(json(credentials,"/reading/bookapi/read_history/list/v1/",mapOf("book_type" to "2","limit" to "0","offset" to "0",
+            "last_min_read_timestamp_ms" to "0","full_field" to "true","is_first_load" to "true","query_soft_deleted" to "false")))
+        val details=detailRows(credentials,records.map { it.series.id })
+        return records.map { it.copy(series=detailedSeries(details[it.series.id],it.series)) }
+    }
+    /** The endpoint intermittently answers with an empty body, so one read is repeated once.
+     *  Protocol reference: charlie901208/HGTV accountLikes.
+     */
+    fun likes(credentials: AccountCredentials): List<CloudLike> {
+        val params=mapOf("count" to "50","object_type_list" to "6,15,10","offset" to "0","action_type" to "3")
+        val raw=try { json(credentials,"/reading/ugc/action/mget/v1/",params) }
+            catch (problem: AccountProtocolException) {
+                if (problem.requiresLogin) throw problem
+                json(credentials,"/reading/ugc/action/mget/v1/",params)
+            }
+        val likes=parseLikes(raw)
+        val details=detailRows(credentials,likes.map { it.series.id })
+        return likes.map { it.copy(series=detailedSeries(details[it.series.id],it.series)) }
+    }
+    /** List rows often carry a synopsis as the title or nothing at all, so names come from the detail batch.
+     *  Only an expired session stops the read: without details the list still shows. */
+    private fun detailRows(credentials: AccountCredentials,ids: List<String>): Map<String,JSONObject> {
+        if(ids.isEmpty()) return emptyMap()
+        return try {
+            json(credentials,"/reading/bookapi/multi-detail/v1/",mapOf("book_id" to ids.joinToString(","),"book_type" to "2"))
+                .optJSONArray("data")?.objects().orEmpty().associateBy { it.str("book_id") }
+        } catch (problem: AccountProtocolException) { if (problem.requiresLogin) throw problem; emptyMap() }
+    }
+    private fun detailedSeries(row: JSONObject?,fallback: Series): Series {
+        if(row==null) return fallback
+        return fallback.copy(title=row.str("book_name").ifBlank { fallback.title },cover=cleanUrl(row.str("thumb_url")).ifBlank { fallback.cover },
+            description=row.str("abstract").ifBlank { fallback.description },badge=episodeBadge(row).ifBlank { fallback.badge })
+    }
+    /** Protocol reference: charlie901208/HGTV AccountParser.profile. */
+    fun stats(credentials: AccountCredentials): CloudStats {
+        val data=json(credentials,"/reading/user/basic_info/get/v1/").optJSONObject("data") ?: return CloudStats()
+        fun count(key: String) = if (data.has(key) && !data.isNull(key)) data.optInt(key).coerceAtLeast(0) else null
+        return CloudStats(count("follow_user_num"),count("fans_num"),count("recv_digg_num"),data.str("author_desc").trim().take(200))
+    }
     /** Read-only video shelf. Protocol reference: charlie901208/HGTV AccountParser.favorites. */
     fun favorites(credentials: AccountCredentials): List<CloudFavorite> =
         parseFavorites(json(credentials,"/reading/bookapi/bookshelf/video/info/v1/"))
@@ -274,6 +320,37 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
         private fun episodeBadge(row: JSONObject): String {
             val count=listOf("episode_cnt","episode_count","drama_chapter_number").map { row.optInt(it) }.firstOrNull { it>0 } ?: 0
             return if(count>0) "全 $count 集" else ""
+        }
+        internal fun parseLikes(raw: JSONObject): List<CloudLike> {
+            val rows=raw.optJSONObject("data")?.optJSONArray("mixed_data_list") ?: return emptyList()
+            return rows.objects().mapNotNull { row ->
+                val video=row.optJSONObject("video_data") ?: row.optJSONObject("book_data") ?: return@mapNotNull null
+                val id=video.str("series_id").ifEmpty { row.str("series_id") }.ifEmpty { row.str("book_id") }
+                val title=row.str("series_title").ifEmpty { video.str("title") }.ifEmpty { row.str("book_name") }
+                if(!id.matches(Regex("[0-9]{1,30}")) || title.isBlank()) return@mapNotNull null
+                val cover=row.str("series_cover_url").ifEmpty { video.str("cover") }.ifEmpty { video.str("cover_url") }.ifEmpty { video.str("thumb_url") }
+                val count=video.optInt("episode_cnt").takeIf { it>0 } ?: video.optInt("episode_count").takeIf { it>0 } ?: row.optInt("episode_cnt").coerceAtLeast(0)
+                val at=video.optLong("user_digg_timestamp_ms").takeIf { it>0 } ?: (video.optLong("create_time")*1000).coerceAtLeast(0)
+                CloudLike(Series(id,title,cleanUrl(cover),row.str("series_intro").ifEmpty { video.str("video_desc") },if(count>0) "全 $count 集" else ""),at)
+            }.distinctBy { it.series.id }.sortedByDescending { it.likedAt }
+        }
+        internal fun parseReadHistory(raw: JSONObject): List<CloudProgress> {
+            val rows=raw.optJSONObject("data")?.optJSONArray("data_list") ?: raw.optJSONArray("data_list")
+                ?: throw AccountProtocolException("云端观看记录格式已变化")
+            return rows.objects().mapNotNull { row ->
+                if(row.optBoolean("is_delete")) return@mapNotNull null
+                val id=row.str("book_id_str").ifEmpty { row.str("book_id") }.ifEmpty { row.str("series_id") }
+                val episode=row.str("vid").ifEmpty { row.str("item_id") }
+                if(!id.matches(Regex("[0-9]{1,30}")) || !episode.matches(Regex("[0-9]{1,30}"))) return@mapNotNull null
+                val stamp=row.optLong("read_timestamp_ms").takeIf { it>0 } ?: row.optLong("last_watch_time")
+                val count=row.optInt("episode_cnt").takeIf { it>0 } ?: row.optInt("episode_count").coerceAtLeast(0)
+                val title=row.str("series_title").ifEmpty { row.str("book_name") }.ifBlank { "剧集 $id" }
+                val cover=row.str("series_cover_url").ifEmpty { row.str("thumb_url") }.ifEmpty { row.str("cover") }
+                CloudProgress(Series(id,title,cleanUrl(cover)),episode,(row.optInt("vid_index")-1).coerceAtLeast(0),
+                    (row.optLong("current_play_position").takeIf { it>0 } ?: row.optLong("current_play_time")).coerceAtLeast(0),
+                    (row.optLong("duration").takeIf { it>0 } ?: row.optLong("current_total_time")).coerceAtLeast(0),
+                    (if(stamp in 1 until 10_000_000_000L) stamp*1000 else stamp).coerceAtLeast(0),count)
+            }.groupBy { it.series.id }.values.map { same -> same.maxBy { it.updatedAt } }.sortedByDescending { it.updatedAt }.take(50)
         }
         fun parseFavorites(raw: JSONObject): List<CloudFavorite> {
             val data=raw.optJSONObject("data") ?: throw IOException("账户收藏数据格式已变化")

@@ -91,16 +91,17 @@ internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
             if (state.history.isNotEmpty()) {
                 item(key = "home_continue", span = { GridItemSpan(maxLineSpan) }) {
                     WarmContinueRail(state.history, onOpen = model::openLibrary,
-                        onHistory = { model.selectTab(AppTab.HISTORY) })
+                        onHistory = { model.openPlayHistory(local = true) })
                 }
             }
             item(key = "home_feeds", span = { GridItemSpan(maxLineSpan) }) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     val tabs = rememberTabIndicator()
-                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())
+                    // 推荐 is the default and sits last, so the row opens scrolled to its end.
+                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState(Int.MAX_VALUE))
                         .slidingIndicator(tabs, state.homeFeed, Orange, width = 32.dp, height = 2.dp),
                         horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                        listOf(HomeFeed.GUESS to "推荐", HomeFeed.RECOMMEND to "热度精选", HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单")
+                        listOf(HomeFeed.RECOMMEND to "热度精选", HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单", HomeFeed.GUESS to "推荐")
                             .forEach { (feed, label) ->
                                 CatalogTextTab(label, state.homeFeed == feed, "home_feed_${feed.name.lowercase(Locale.ROOT)}",
                                     Modifier.tabAnchor(tabs, feed)) { model.selectHomeFeed(feed) }
@@ -207,7 +208,10 @@ internal fun CategoryScreen(state: HongguoUiState, model: HongguoViewModel) {
                     modifier = Modifier.padding(top = 8.dp))
             }
             item(key = "category_search", span = { GridItemSpan(maxLineSpan) }) {
-                CatalogSearchEntry("搜索剧名或关键词", "category_search") { model.selectTab(AppTab.SEARCH) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(Modifier.weight(1f)) { CatalogSearchEntry("搜索剧名或关键词", "category_search") { model.selectTab(AppTab.SEARCH) } }
+                    RankEntryButton(model, "category_rank")
+                }
             }
             item(key = "category_genres", span = { GridItemSpan(maxLineSpan) }) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

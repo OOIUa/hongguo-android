@@ -7,6 +7,8 @@ import com.hongguo.account.protocol.AccountProtocolException
 import com.hongguo.account.protocol.AccountVerificationStage
 import com.hongguo.account.protocol.CloudAccountClient
 import com.hongguo.account.protocol.CloudFavorite
+import com.hongguo.account.protocol.CloudLike
+import com.hongguo.account.protocol.CloudStats
 import com.hongguo.account.protocol.CloudProfile
 import com.hongguo.account.protocol.CloudProgress
 import com.hongguo.account.protocol.CloudReservation
@@ -14,6 +16,7 @@ import com.hongguo.account.protocol.GuessBatch
 import com.hongguo.account.protocol.GuessFeedClient
 import com.hongguo.account.protocol.AppPhoneLogin
 import com.hongguo.account.protocol.PhoneLogin
+import com.hongguo.account.protocol.RelatedWork
 import com.hongguo.account.protocol.Series
 import com.hongguo.account.protocol.WebLogin
 import com.hongguo.account.protocol.WebsiteProfile
@@ -46,7 +49,11 @@ internal interface AccountGateway {
     fun history(credentials: AccountCredentials): List<CloudProgress>
     fun favorites(credentials: AccountCredentials): List<CloudFavorite>
     fun reservations(credentials: AccountCredentials, online: Boolean): List<CloudReservation>
+    fun readHistory(credentials: AccountCredentials): List<CloudProgress>
+    fun likes(credentials: AccountCredentials): List<CloudLike>
+    fun stats(credentials: AccountCredentials): CloudStats
     fun setFavorite(credentials: AccountCredentials, id: String, add: Boolean)
+    fun reserve(credentials: AccountCredentials, work: RelatedWork)
     fun upload(credentials: AccountCredentials, progress: CloudProgress, episodeCount: Int)
     /** 猜你喜欢；credentials 为 null 时请求匿名推荐流。 */
     fun recommendations(credentials: AccountCredentials?, session: String, offset: Int): GuessBatch
@@ -72,7 +79,11 @@ private class LiveAccountGateway : AccountGateway {
     override fun history(credentials: AccountCredentials) = client.history(credentials)
     override fun favorites(credentials: AccountCredentials) = client.favorites(credentials)
     override fun reservations(credentials: AccountCredentials, online: Boolean) = client.reservations(credentials, online)
+    override fun readHistory(credentials: AccountCredentials) = client.readHistory(credentials)
+    override fun likes(credentials: AccountCredentials) = client.likes(credentials)
+    override fun stats(credentials: AccountCredentials) = client.stats(credentials)
     override fun setFavorite(credentials: AccountCredentials, id: String, add: Boolean) = client.setFavorite(credentials, id, add)
+    override fun reserve(credentials: AccountCredentials, work: RelatedWork) = client.reserve(credentials, work)
     override fun upload(credentials: AccountCredentials, progress: CloudProgress, episodeCount: Int) = client.upload(credentials, progress, episodeCount)
     private val guess = GuessFeedClient(accountHttp())
     override fun recommendations(credentials: AccountCredentials?, session: String, offset: Int) = guess.page(credentials, session, offset)
@@ -172,7 +183,7 @@ class AccountRepository internal constructor(
     private fun cacheLocked() = disk.profile?.id?.let { disk.accounts[it] } ?: AccountCache()
     private fun showCacheLocked() {
         val c = cacheLocked()
-        mutableState.value = mutableState.value.copy(profile = disk.profile, history = c.history, favorites = c.favorites,
+        mutableState.value = mutableState.value.copy(profile = disk.profile, history = c.history, favorites = c.favorites, likes = c.likes,
             reservations = c.reservations, reservationOnlineIds = c.reservationOnlineIds, syncEnabled = c.syncEnabled,
             favoriteUncertainIds = c.favoriteAttempts.keys, pendingProgressCount = c.pending.size, lastSyncAt = c.lastSyncAt)
     }
@@ -425,7 +436,12 @@ class AccountRepository internal constructor(
             try {
                 when (section) {
                     AccountSection.HISTORY -> {
-                        val rows = runInterruptible(io) { gateway.history(credentials) }.map(::historyEntry)
+                        val progress = runInterruptible(io) { gateway.history(credentials) }
+                        // Watch records add works the progress list leaves out; a failure there keeps the progress list.
+                        val records = try { runInterruptible(io) { gateway.readHistory(credentials) } }
+                            catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { emptyList() }
+                        val rows = (progress + records).map(::historyEntry)
                         cacheChange(g) { cache ->
                             // Preserve a newer local observation and any queued update while reads are in flight.
                             val merged = (cache.history + rows).groupBy { it.card.id }.values.map { items -> items.maxBy { it.updatedAt } }
@@ -444,6 +460,11 @@ class AccountRepository internal constructor(
                         }
                         if (current(g)) state { it.copy(favoritesError = null) }
                     }
+                    AccountSection.LIKES -> {
+                        val rows = runInterruptible(io) { gateway.likes(credentials) }.map(::likeEntry).take(200)
+                        cacheChange(g) { it.copy(likes = rows) }
+                        if (current(g)) state { it.copy(likesError = null) }
+                    }
                     AccountSection.RESERVATIONS -> {
                         val upcoming = runInterruptible(io) { gateway.reservations(credentials, false) }
                         val online = runInterruptible(io) { gateway.reservations(credentials, true) }
@@ -460,11 +481,16 @@ class AccountRepository internal constructor(
                 state { current -> when (section) {
                     AccountSection.HISTORY -> current.copy(historyError = "历史读取失败，已保留上次记录")
                     AccountSection.FAVORITES -> current.copy(favoritesError = "收藏读取失败，已保留上次记录")
+                    AccountSection.LIKES -> current.copy(likesError = "点赞读取失败，已保留上次记录")
                     AccountSection.RESERVATIONS -> current.copy(reservationsError = "预约读取失败，已保留上次记录")
                 } }
             }
         }
+        val stats = try { runInterruptible(io) { gateway.stats(credentials) } }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
         if (current(g)) {
+            if (stats != null) state { it.copy(stats = stats) }
             if (anySuccess) cacheChange(g) { it.copy(lastSyncAt = now()) }
             state { it.copy(busy = false) }
         }
@@ -536,6 +562,54 @@ class AccountRepository internal constructor(
                 }
             }
         }
+    }
+
+    /** The write is followed by a separate read, because code 0 only acknowledges it. A failure is never retried. */
+    fun reserve(work: RelatedWork, expectedOwner: String? = ownerKey) {
+        val id = work.series.id
+        val g: Long
+        val credentials: AccountCredentials
+        synchronized(lock) {
+            if (expectedOwner == null || expectedOwner != ownerKey) { state { it.copy(message = "账号已变化，请重新确认预约") }; return }
+            if (!work.upcoming || !validContentId(id) || id in mutableState.value.reservationBusyIds) return
+            g = generation; credentials = disk.credentials ?: return
+            mutableState.value = mutableState.value.copy(reservationBusyIds = mutableState.value.reservationBusyIds + id)
+        }
+        val key = "reserve:$id"
+        favoriteJobs[key] = scope.launch(io) {
+            var submitted = false
+            try {
+                if (id in readReservations(g, credentials)) { state { it.copy(message = "已在云端预约") }; return@launch }
+                if (!current(g)) return@launch
+                submitted = true
+                runInterruptible(io) { gateway.reserve(credentials, work) }
+                if (!current(g)) return@launch
+                val confirmed = id in readReservations(g, credentials)
+                if (current(g)) state { it.copy(message = if (confirmed) "已确认云端预约成功" else "云端未确认本次预约，请稍后刷新核对；不会自动重试") }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (current(g)) {
+                    if (requiresLogin(error)) invalidate(g)
+                    else state { it.copy(message = if (submitted) "预约结果不确定，请稍后刷新核对；不会自动重试" else "预约未提交，请检查网络后重试") }
+                }
+            } finally {
+                synchronized(lock) {
+                    if (generation == g) {
+                        mutableState.value = mutableState.value.copy(reservationBusyIds = mutableState.value.reservationBusyIds - id)
+                        favoriteJobs.remove(key)
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun readReservations(g: Long, credentials: AccountCredentials): Set<String> {
+        val upcoming = runInterruptible(io) { gateway.reservations(credentials, false) }
+        val online = runInterruptible(io) { gateway.reservations(credentials, true) }
+        cacheChange(g) { it.copy(reservations = (upcoming + online).distinctBy { row -> row.series.id }.map(::reservationEntry),
+            reservationOnlineIds = online.map { row -> row.series.id }.toSet()) }
+        // An upcoming row without video data is listed under "reservation:" + its item id.
+        return (upcoming + online).map { it.series.id.removePrefix("reservation:") }.toSet()
     }
 
     /** Read only. Clearing the guard permits a new explicit user action, never an automatic replay. */
@@ -777,6 +851,7 @@ class AccountRepository internal constructor(
         fun historyEntry(progress: CloudProgress) = LibraryEntry(card(progress.series, progress.episodeCount), progress.episodeId,
             progress.episodeIndex.coerceAtLeast(0) + 1, progress.position.coerceAtLeast(0), progress.updatedAt.coerceAtLeast(0))
         fun favoriteEntry(favorite: CloudFavorite) = LibraryEntry(card(favorite.series), updatedAt = favorite.collectedAt.coerceAtLeast(0))
+        fun likeEntry(like: CloudLike) = LibraryEntry(card(like.series), updatedAt = like.likedAt.coerceAtLeast(0))
         fun reservationEntry(reservation: CloudReservation) = LibraryEntry(card(reservation.series), updatedAt = reservation.publishAt.coerceAtLeast(0))
         fun cloudProgress(pending: PendingProgress) = pending.entry.let { entry -> CloudProgress(
             Series(entry.card.id, entry.card.title, entry.card.cover, entry.card.summary, "全 ${entry.card.episodeCount} 集"),

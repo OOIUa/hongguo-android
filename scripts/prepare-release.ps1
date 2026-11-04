@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '手机验证码改走官方 App 通道；平台要求验证时会弹窗引导到官方登录页手动完成。猜你喜欢修复登录后错误码 110，失败时换域名重试，翻页不再大量重复。每次取播放信息注册新的匿名设备；只提供 ByteVC2 的集会明确提示；缺加密信息的片源可使用校验通过的备用片源。登录页按手机验证码、官网、扫码分开，列表提前加载下一页。手机号登录如遇问题可改用官网或扫码登录。'
+        notes = '新增完整榜单、搜索联想、相关作品与续季、短剧预约，以及红果账号的观看历史、点赞记录和资料。三套主题都有浅色和深色，可跟随系统。播放时长按左侧 2 倍速会隐藏界面，双指外拉可清屏，轻点或内捏恢复。首页推荐移到最右并默认打开。追剧和播放历史改为三列海报，登录后优先显示红果账号记录；播放历史改为独立页面。收藏按钮区分本机和账号。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

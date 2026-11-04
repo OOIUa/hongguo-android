@@ -221,10 +221,13 @@ class VerticalPlayerFlowTest {
                 assertEquals(preferred, compose.activity.getSharedPreferences("hongguo_local", 0).getFloat("playback_speed", 0f), .001f)
                 assertEquals(1f, player.playbackParameters.pitch, .001f)
             }
+            compose.mainClock.advanceTimeBy(400)
             if (playing) {
-                compose.onNodeWithTag("player_hold_speed").assertExists()
+                // Holding for 2× leaves only the picture.
+                compose.onNodeWithTag("player_top_bar").assertDoesNotExist()
+                compose.onNodeWithTag("player_seek").assertDoesNotExist()
                 captureScreenshot("qa-player-hold-speed.png")
-            } else compose.onNodeWithTag("player_hold_speed").assertDoesNotExist()
+            } else compose.onNodeWithTag("player_top_bar").assertExists()
         } finally {
             compose.mainClock.autoAdvance = clockWasAutomatic
             compose.onNodeWithTag("player_toggle").performTouchInput { up() }
@@ -235,7 +238,7 @@ class VerticalPlayerFlowTest {
             restored
         }
         compose.runOnIdle { assertEquals(playing, player.playWhenReady) }
-        compose.onNodeWithTag("player_hold_speed").assertDoesNotExist()
+        compose.onNodeWithTag("player_top_bar").assertExists()
     }
 
     private fun assertStillPaused(model: HongguoViewModel, index: Int, requestId: Long) {

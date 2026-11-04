@@ -14,7 +14,9 @@ data class Series(val id: String, val title: String, val cover: String = "", val
     }
 }
 
-data class RelatedWork(val series: Series, val season: String, val upcoming: Boolean)
+/** [seasonNumber] is N when the platform labels the work 第N季, otherwise 0 (such as 同IP). */
+data class RelatedWork(val series: Series, val season: String, val upcoming: Boolean,
+    val seasonNumber: Int = 0, val episodeCount: Int = 0)
 
 /** Contains only safe, locally generated messages; no raw provider response or signed URL. */
 class AccountProtocolException(message: String, val errorCode: Int? = null, val requiresLogin: Boolean = false,

@@ -1,5 +1,9 @@
 package com.hongguo.android
 
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.outlined.MoreVert
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -125,7 +129,7 @@ internal fun AccountScreen(
                 IconButton(onClick = { accountModel.cancelLogin(); onBack() }, modifier = Modifier.testTag("account_back")) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回我的", tint = Ink)
                 }
-                Text("红果账号", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text("我的账号", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             }
         }
         if (state.message != null || state.loginDiagnostic != null) {
@@ -156,8 +160,7 @@ internal fun AccountScreen(
             item { AccountNotice(error, "关闭", { webError = null }, tag = "account_web_error") }
         }
         if (state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
-            item { AccountProfileCard(state, onLogout = { logoutRequested = true }) }
-            item { AccountProgressSync(state, accountModel::setSyncEnabled) }
+            item { AccountProfileHeader(state, accountModel, onLogout = { logoutRequested = true }) }
             cloudLibraryItems(state, accountModel, onOpenLibrary, { removeTarget = it })
         } else if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) {
             item {
@@ -281,45 +284,44 @@ private fun AccountAvatar(url: String?, size: Dp) {
     }
 }
 
+/** Profile and counters; actions used rarely wait in the menu so the lists stay near the top. */
 @Composable
-private fun AccountProfileCard(state: AccountState, onLogout: () -> Unit) {
+private fun AccountProfileHeader(state: AccountState, model: AccountViewModel, onLogout: () -> Unit) {
     val profile = state.profile ?: return
-    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AccountAvatar(profile.avatarUrl, 48.dp)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(profile.nickname.ifBlank { "红果用户" }, color = Ink, fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("account_profile"))
-                    Text("账号已连接", color = AccentInk, fontSize = 12.sp)
+    var menuOpen by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AccountAvatar(profile.avatarUrl, 56.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(profile.nickname.ifBlank { "红果用户" }, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("account_profile"))
+                Text("红果号 ${profile.id}", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Box {
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.testTag("account_menu")) { Icon(Icons.Outlined.MoreVert, "账号操作", tint = Ink) }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("同步此后观看进度") }, modifier = Modifier.testTag("account_sync_switch"),
+                        trailingIcon = { Checkbox(checked = state.syncEnabled, onCheckedChange = null) },
+                        onClick = { model.setSyncEnabled(!state.syncEnabled) })
+                    DropdownMenuItem(text = { Text("退出账号") }, modifier = Modifier.testTag("account_logout"),
+                        onClick = { menuOpen = false; onLogout() })
                 }
             }
-            Text("账号 ${profile.id}", color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (state.lastSyncAt > 0) "上次读取 ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(state.lastSyncAt))}"
-                    else "已确认账号，正在准备片单", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = onLogout, modifier = Modifier.testTag("account_logout")) { Text("退出账号") }
-            }
         }
-    }
-}
-
-@Composable
-private fun AccountProgressSync(state: AccountState, onChange: (Boolean) -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("同步此后的观看进度", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                    Text("将新的观看进度保存到当前红果账号，不上传本机旧记录。",
-                        color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
+        state.stats?.takeIf { it.follows != null || it.fans != null || it.likes != null }?.let { stats ->
+            Surface(shape = RoundedCornerShape(14.dp), color = CardSurface, modifier = Modifier.testTag("account_stats")) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                    listOf("关注" to stats.follows, "粉丝" to stats.fans, "获赞" to stats.likes).forEach { (label, value) ->
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(value?.toString() ?: "–", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                            Text(label, color = Muted, fontSize = 12.sp)
+                        }
+                    }
                 }
-                Switch(checked = state.syncEnabled, onCheckedChange = onChange,
-                    modifier = Modifier.testTag("account_sync_switch"))
             }
-            if (state.pendingProgressCount > 0) Text("还有 ${state.pendingProgressCount} 条观看进度待确认",
-                color = Muted, fontSize = 12.sp, modifier = Modifier.testTag("account_pending_progress"))
         }
+        if (state.pendingProgressCount > 0) Text("还有 ${state.pendingProgressCount} 条观看进度待确认",
+            color = Muted, fontSize = 12.sp, modifier = Modifier.testTag("account_pending_progress"))
     }
 }
 

@@ -68,6 +68,19 @@ Local changes: no registration cookie is sent (verified unnecessary on 2026-11-0
 The fallback's empty-response retry now renews the identity, waits 300 ms and retries once on `api5-normal-hl.fqnovel.com` over a fresh connection; if renewal fails it retries with the previous identity instead of giving up. Synchronized from jackotom/hongguo-drama 5.4, commit `93e694e3f4ab` (2026-11-02), GPL-3.0-only — `src/native/app-source.js` `fetchAppPlayUrl`. Its restored request signing is not adopted: hongguoTV reports that fully signed requests to the old endpoint are also answered with 0 bytes.
   https://github.com/jackotom/hongguo-drama/tree/93e694e3f4ab
 
+## Related works, seasons and reservations
+
+`app/src/main/java/com/hongguo/account/protocol/RelatedWorks.kt` (request parameters, cell parsing) is adapted from tsukiyo-zero/hongguoTV, commit `f22bb3f` (2026-11-03), GPL-3.0-only — `kotlin-tv/core/.../RelatedWorks.kt` and `ContentRepository.kt` `related`. The reservation request was already adapted from the same project's `CloudAccount.kt` `reserve`.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/f22bb3f/kotlin-tv
+
+Local changes: content types 1 and 1002 are also accepted, because anonymous requests on 2026-11-04 returned them as a playable drama family. The next season is taken from the single gap in the season numbering, and autoplay only follows that result. Reservations are confirmed by a separate list read and never retried; no reservation has been submitted on a real account here.
+
+## Website boards, suggestions, likes, watch records and account counters
+
+`app/src/main/java/com/hongguo/account/protocol/WebsiteCatalog.kt` (rank routes, page data shape, suggestion request) is adapted from tsukiyo-zero/hongguoTV, commit `f22bb3f` (2026-11-03), GPL-3.0-only — `kotlin-tv/core/.../RankBrowser.kt`, `ComicRank.kt` and `ContentRepository.kt`. The like list and account counters follow charlie901208/HGTV `android/core/.../Account.kt` and `ContentRepository.kt`, GPL-3.0-only. The watch record request and fields follow jackotom/hongguo-drama 5.6, GPL-3.0-only — `src/native/account-session.js`.
+
+Local changes: the rank payload is read with a small attribute parser instead of Jsoup, and the first page omits `?page=1` because the site redirects it. Like and watch record names come from the detail batch, because the list title is often a synopsis. Website requests never carry account cookies. Watch records and account counters are best effort and leave the existing lists unchanged when they fail.
+
 ## 猜你喜欢 (0.7.10)
 
 `app/src/main/java/com/hongguo/account/protocol/GuessFeed.kt` (request parameters, card parsing) is adapted from tsukiyo-zero/hongguoTV, commit `97c5b1d15dc2233e53f6152918c7e3cc3bbebb84` (2026-10-30), GPL-3.0-only — `kotlin-tv/core/.../RecommendationFeed.kt`, whose endpoint path and card shape reference Xanerix/guoapp `native/core/provider_hongguo_recommendations.go`.

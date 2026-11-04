@@ -1,5 +1,6 @@
 package com.hongguo.android
 
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,8 +14,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
@@ -22,6 +26,38 @@ import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+
+/** Fingers moving apart turn the clean screen on, together off; null until the pinch is clear. */
+internal fun pinchCleanScreen(scale: Float): Boolean? = when {
+    scale >= 1.18f -> true
+    scale <= .85f -> false
+    else -> null
+}
+
+/**
+ * Sits above the pager and sees every pointer first: once a second finger lands, the gesture belongs to the pinch, so
+ * neither the page swipe nor the tap and hold below react, including to the finger left down after the other lifts.
+ */
+internal fun Modifier.playerPinch(enabled: Boolean, onDecided: (Boolean) -> Unit): Modifier = pointerInput(enabled) {
+    if (!enabled) return@pointerInput
+    awaitEachGesture {
+        var startSpan = 0f
+        var decided = false
+        do {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val pressed = event.changes.filter { it.pressed }
+            if (pressed.size >= 2) {
+                val span = (pressed[0].position - pressed[1].position).getDistance()
+                if (startSpan == 0f) startSpan = span
+                else if (!decided && startSpan > 0f) pinchCleanScreen(span / startSpan)?.let {
+                    decided = true
+                    onDecided(it)
+                }
+            }
+            if (startSpan != 0f) event.changes.forEach { it.consume() }
+        } while (event.changes.any { it.pressed })
+    }
+}
 
 /**
  * Put below the player's buttons/seek bar. A vertical drag cancels the tap detector before its
@@ -35,6 +71,9 @@ internal fun PlayerInteractionLayer(
     enabled: Boolean = true,
     onTap: () -> Unit,
     onHoldSpeedChange: (Boolean) -> Unit,
+    tapLabel: String = "播放或暂停",
+    cleanScreen: Boolean = false,
+    onCleanScreenChange: ((Boolean) -> Unit)? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val haptics = LocalHapticFeedback.current
@@ -74,7 +113,11 @@ internal fun PlayerInteractionLayer(
         .semantics {
             role = Role.Button
             if (!enabled || !foreground) disabled()
-            onClick(label = "播放或暂停") {
+            // A pinch has no screen-reader equivalent.
+            onCleanScreenChange?.let { change ->
+                customActions = listOf(CustomAccessibilityAction(if (cleanScreen) "退出清屏" else "清屏播放") { change(!cleanScreen); true })
+            }
+            onClick(label = tapLabel) {
                 if (currentEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                     currentTap()
                     true

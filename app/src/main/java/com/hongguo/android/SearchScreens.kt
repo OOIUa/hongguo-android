@@ -1,5 +1,8 @@
 package com.hongguo.android
 
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.clickable
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -87,6 +90,19 @@ internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel, trendi
             Button(onClick = submit, enabled = state.query.isNotBlank(), shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                 modifier = Modifier.heightIn(min = 48.dp).testTag("search_button")) { Text("搜索", fontSize = 14.sp) }
+        }
+        if (state.suggestions.isNotEmpty() && !state.searching) {
+            Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).testTag("search_suggestions")) {
+                state.suggestions.forEach { suggestion ->
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) {
+                        keyboard?.hide(); focus.clearFocus(); model.pickSuggestion(suggestion)
+                    }.heightIn(min = 44.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Outlined.Search, null, tint = Muted, modifier = Modifier.size(20.dp))
+                        Text(suggestion, color = Ink, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
         if (state.searching) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -27,6 +27,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -274,6 +275,40 @@ class PlayerHoldSpeedGestureTest {
             assertEquals(1, finished)
             assertEquals(0, taps)
             assertTrue(changes.isEmpty())
+        }
+    }
+}
+
+/** A pinch decides once per gesture and takes the touch from the pager and the tap below it. */
+@RunWith(AndroidJUnit4::class)
+class PlayerPinchGestureTest {
+    @get:Rule val compose = createComposeRule()
+
+    @Test fun spreadThenSqueezeReportOnceEachWithoutTappingOrPaging() {
+        val decided = mutableListOf<Boolean>()
+        var taps = 0
+        lateinit var pager: PagerState
+        compose.setContent {
+            MaterialTheme {
+                pager = rememberPagerState(pageCount = { 3 })
+                Box(Modifier.fillMaxSize().testTag("pinch_root").playerPinch(true, decided::add)) {
+                    VerticalPager(pager, Modifier.fillMaxSize()) {
+                        PlayerInteractionLayer(onTap = { taps++ }, onHoldSpeedChange = {})
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("pinch_root").performTouchInput {
+            pinch(center - Offset(30f, 60f), center - Offset(150f, 300f), center + Offset(30f, 60f), center + Offset(150f, 300f), 300)
+        }
+        compose.runOnIdle { assertEquals(listOf(true), decided) }
+        compose.onNodeWithTag("pinch_root").performTouchInput {
+            pinch(center - Offset(150f, 300f), center - Offset(30f, 60f), center + Offset(150f, 300f), center + Offset(30f, 60f), 300)
+        }
+        compose.runOnIdle {
+            assertEquals(listOf(true, false), decided)
+            assertEquals(0, taps)
+            assertEquals(0, pager.currentPage)
         }
     }
 }

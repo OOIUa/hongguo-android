@@ -4,6 +4,10 @@ import com.hongguo.account.AccountViewModel
 
 import android.content.res.Configuration
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
 import androidx.activity.enableEdgeToEdge
@@ -107,7 +111,9 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
     val activity = LocalActivity.current
     // Portrait is the normal vertical-drama view: system bars stay visible (transparent, white icons), so the
     // system does not treat the app as full screen. Only landscape hides them for full-screen viewing.
-    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation)
+    // Holding for 2× and the clean screen show only the picture, so they take the bars away too.
+    var chromeHidden by remember { mutableStateOf(false) }
+    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation) || chromeHidden
     val currentFullScreen by rememberUpdatedState(fullScreen)
     // [active] is false while the closing player fades out: the bars and foreground state are handed back at once,
     // and taken again if the player is reopened before the fade ends.
@@ -143,7 +149,7 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
     LaunchedEffect(activity, view, fullScreen, active) {
         if (active) activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
     }
-    key(detail.id) { EpisodePager(state, model, detail, accountModel, active) }
+    key(detail.id) { EpisodePager(state, model, detail, accountModel, active) { chromeHidden = it } }
 }
 
 /** Full screen (hidden status and navigation bars) only in landscape; portrait keeps the system bars. */
@@ -154,7 +160,7 @@ private data class PagerMovement(val scrolling: Boolean, val settled: Int, val s
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail, accountModel: AccountViewModel?,
-                         active: Boolean) {
+                         active: Boolean, onChromeHiddenChange: (Boolean) -> Unit) {
     if (detail.episodes.isEmpty()) return
     val selected = state.episodePosition.coerceIn(detail.episodes.indices)
     val pager = rememberPagerState(initialPage = selected, pageCount = { detail.episodes.size })
@@ -166,6 +172,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     var doubleSpeedHeld by remember(state.video?.requestId) { mutableStateOf(false) }
     var seeking by remember(state.video?.requestId) { mutableStateOf(false) }
     var seekFraction by remember(state.video?.requestId) { mutableStateOf<Float?>(null) }
+    // 清屏: only the picture remains until a tap, an inward pinch or back brings the controls back.
+    var cleanScreen by rememberSaveable(detail.id) { mutableStateOf(false) }
 
     // Model-driven changes (continue, sheet selection and autoplay) never count as a user swipe. They slide like a
     // swipe. User scrolling is off until the slide ends, so a touch cannot stop it half-way on another episode.
@@ -199,6 +207,15 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     val temporaryDoubleSpeed = doubleSpeedHeld && activeVideo != null && !sheetOpen
     val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null,
         playbackSpeed = if (temporaryDoubleSpeed) 2f else state.playbackSpeed)
+    val chromeHidden = cleanScreen || temporaryDoubleSpeed
+    LaunchedEffect(chromeHidden) { onChromeHiddenChange(chromeHidden) }
+    BackHandler(enabled = cleanScreen) { cleanScreen = false }
+    // Anything the viewer has to act on brings the controls back: an error, a pause they did not ask for, or an
+    // ending with nothing playing next. Pinching while already paused stays clean, since this only runs on a change.
+    val endedForGood = playback.ended && !(state.autoPlayNext && selected + 1 < detail.episodes.size)
+    LaunchedEffect(playback.playWhenReady, endedForGood, state.playbackError) {
+        if (!playback.playWhenReady || endedForGood || state.playbackError != null) cleanScreen = false
+    }
     LaunchedEffect(activeVideo?.requestId, playback.playWhenReady, playback.ended, sheetOpen) {
         if (activeVideo == null || !playback.playWhenReady || playback.ended || sheetOpen) doubleSpeedHeld = false
     }
@@ -222,7 +239,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     val activity = LocalActivity.current
     val view = LocalView.current
     // A sheet owns another window and can reveal system bars or change their icons without resuming the Activity.
-    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation)
+    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation) || chromeHidden
     LaunchedEffect(sheetOpen, activity, view, fullScreen, active) {
         if (active && !sheetOpen) activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
     }
@@ -243,7 +260,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         Unit
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black).semantics { testTagsAsResourceId = true }) {
+    Box(Modifier.fillMaxSize().background(Color.Black).semantics { testTagsAsResourceId = true }
+        .playerPinch(active && !sheetOpen) { cleanScreen = it }) {
         VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("episode_pager"),
             key = { detail.episodes[it].id }, beyondViewportPageCount = 1,
             userScrollEnabled = active && synchronizing == null && !showEpisodes && !showSpeed && !showFavorites && !seeking) { page ->
@@ -252,10 +270,12 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     VideoSurface(playback, Modifier.fillMaxSize())
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = pictureCover.value }.background(Color.Black))
                     PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),
-                        enabled = !sheetOpen, onTap = togglePlayback, onHoldSpeedChange = { holding ->
+                        enabled = !sheetOpen, onTap = { if (cleanScreen) cleanScreen = false else togglePlayback() },
+                        onHoldSpeedChange = { holding ->
                             // Holding a paused video must not resume it or change the saved speed.
                             doubleSpeedHeld = holding && playback.isPlaying && !sheetOpen
-                        })
+                        }, tapLabel = if (cleanScreen) "退出清屏" else "播放或暂停",
+                        cleanScreen = cleanScreen, onCleanScreenChange = { cleanScreen = it })
                 }
                 when {
                     // Neighbouring episodes carry their number, so a swipe visibly brings the next one in.
@@ -263,6 +283,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     // While sliding to an episode that has no picture yet, show its number rather than an empty frame.
                     pager.isScrollInProgress -> if (activeVideo == null || playback.player == null)
                         EpisodePlaceholder(detail.episodes[page].index, detail.title)
+                    // Only the picture while it can show; loading with no picture and errors still appear.
+                    chromeHidden && !state.preparing && playback.player != null && state.playbackError == null -> Unit
                     state.playbackError != null -> Column(Modifier.padding(horizontal = 34.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(state.playbackError, color = Color.White, fontSize = 14.sp, lineHeight = 23.sp,
@@ -291,12 +313,14 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             }
         }
 
-        PlayerTopBar(episodeIndex = visibleEpisode.index, episodeCount = detail.episodes.size,
-            onBack = model::closePlayer, onShowEpisodes = { showEpisodes = true },
-            temporaryDoubleSpeed = temporaryDoubleSpeed, modifier = Modifier.align(Alignment.TopCenter))
+        AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.TopCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
+            PlayerTopBar(episodeIndex = visibleEpisode.index, episodeCount = detail.episodes.size,
+                onBack = model::closePlayer, onShowEpisodes = { showEpisodes = true })
+        }
 
         // Keep the middle and subtitle area clear. Controls occupy only the lower edge of the frame.
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+        AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.BottomCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
+        Column(Modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .74f))))
             .navigationBarsPadding().padding(start = 23.dp, end = 21.dp, top = 14.dp, bottom = 10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -338,6 +362,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                         fontWeight = FontWeight.Medium)
                 }
             }
+        }
         }
     }
 
@@ -442,7 +467,6 @@ internal fun PlayerTopBar(
     onBack: () -> Unit,
     onShowEpisodes: () -> Unit,
     modifier: Modifier = Modifier,
-    temporaryDoubleSpeed: Boolean = false,
     statusBarInsets: WindowInsets = WindowInsets.statusBarsIgnoringVisibility,
     cutoutInsets: WindowInsets = WindowInsets.displayCutout,
 ) {
@@ -463,12 +487,6 @@ internal fun PlayerTopBar(
                     Text("选集", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Icon(Icons.Rounded.ChevronRight, null, tint = Color.White, modifier = Modifier.size(21.dp))
                 }
-            }
-        }
-        if (temporaryDoubleSpeed) Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
-            Surface(color = Color.Black.copy(alpha = .4f), shape = RoundedCornerShape(50)) {
-                Text("2倍速播放中", color = Color.White, fontSize = 12.sp,
-                    modifier = Modifier.testTag("player_hold_speed").padding(horizontal = 13.dp, vertical = 7.dp))
             }
         }
     }

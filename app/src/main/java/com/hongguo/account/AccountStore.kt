@@ -137,6 +137,7 @@ internal object AccountDiskCodec {
             "library" to library(cache),
             "reservations" to Json.parse(LibraryCodec.encode(LibrarySnapshot(history = cache.reservations))),
             "online" to cache.reservationOnlineIds.toList(),
+            "likes" to Json.parse(LibraryCodec.encode(LibrarySnapshot(history = cache.likes))),
             "pending" to cache.pending.mapValues { (_, progress) -> mapOf("entry" to entry(progress.entry), "duration" to progress.durationMs, "revision" to progress.revision) },
             "attempts" to cache.favoriteAttempts.mapValues { (_, attempt) -> mapOf("add" to attempt.add, "at" to attempt.startedAt) },
             "syncEnabled" to cache.syncEnabled, "lastSyncAt" to cache.lastSyncAt,
@@ -161,8 +162,10 @@ internal object AccountDiskCodec {
             val cache = map(raw)
             val library = LibraryCodec.decode(Json.stringify(cache["library"]))
             val reservations = LibraryCodec.decode(Json.stringify(cache["reservations"])).history
+            // Absent in data saved by versions before 0.7.14.
+            val likes = cache["likes"]?.let { LibraryCodec.decode(Json.stringify(it)).history }.orEmpty()
             AccountCache(
-                history = library.history, favorites = library.favorites, reservations = reservations,
+                history = library.history, favorites = library.favorites, likes = likes, reservations = reservations,
                 reservationOnlineIds = list(cache["online"]).filterIsInstance<String>().filter(::validContentId).toSet(),
                 pending = map(cache["pending"]).entries.mapNotNull { (id, item) ->
                     val pending = map(item)

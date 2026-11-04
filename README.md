@@ -16,14 +16,14 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.13**（versionCode 24）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.14**（versionCode 25）· Android **8.0 / API 26** 及以上。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.13 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/hongguo-android-0.7.13.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/hongguo-android-0.7.13.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/hongguo-android-0.7.13.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.13 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/hongguo-android-0.7.13-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.13/SHA256SUMS-0.7.13.txt) |
+| GitHub 直连 | [下载 v0.7.14 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.14/hongguo-android-0.7.14.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.14/hongguo-android-0.7.14.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.14/hongguo-android-0.7.14.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.14 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.14/hongguo-android-0.7.14-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.14/SHA256SUMS-0.7.14.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -54,7 +54,8 @@
 | 发现与搜索 | 浏览短剧、漫剧、AI 剧，按上游提供的条件筛选；从首页或发现进入独立搜索页 |
 | 竖屏播放 | 上划下一集、下划上一集，也可打开选集面板跳转；竖屏保留状态栏，横屏为全屏 |
 | 播放控制 | 暂停 / 继续、拖动进度、缓冲进度显示、播放失败重试 |
-| 长按临时加速 | 播放中长按视频左半屏临时以2倍速播放；松手、取消、离开页面后恢复原速度，不改变保存的倍速 |
+| 长按临时加速 | 播放中长按视频左半屏临时以2倍速播放，同时隐藏界面文字和按钮；松手、取消、离开页面后恢复原速度和界面，不改变保存的倍速 |
+| 清屏播放 | 播放中双指外拉只显示视频画面；轻点屏幕、双指内捏或返回键恢复 |
 | 六档倍速 | 0.5×、0.75×、1×、1.25×、1.5×、2×，自动记住选择 |
 | 连播与预加载 | 可分别开关自动连播、下一集预加载，末集不循环 |
 | 片单与续播 | 本机与红果账号切换来源；本机保存收藏、观看历史、集数与集内位置，支持单条移除与清空 |

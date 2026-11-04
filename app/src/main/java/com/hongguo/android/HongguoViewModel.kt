@@ -1,5 +1,9 @@
 package com.hongguo.android
 
+import com.hongguo.account.protocol.RankBoard
+import com.hongguo.account.protocol.RankEntry
+import com.hongguo.account.protocol.RelatedWork
+import com.hongguo.account.protocol.RelatedWorks
 import android.app.Application
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
@@ -8,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +30,7 @@ import com.hongguo.account.AccountSessionStatus
 private val mediaCleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 /** SETTINGS and THEME_STYLE are pages of their own (no bottom bar), opened from 我的 and closed back to where they came from. */
-enum class AppTab { HOME, CATEGORY, SEARCH, FAVORITES, MINE, HISTORY, ACCOUNT, SETTINGS, THEME_STYLE }
+enum class AppTab { HOME, CATEGORY, SEARCH, FAVORITES, MINE, HISTORY, ACCOUNT, SETTINGS, THEME_STYLE, RANK, PLAY_HISTORY, LOCAL_FAVORITES }
 
 data class FeedState(
     val items: List<DramaCard> = emptyList(),
@@ -40,6 +45,8 @@ data class FeedState(
 data class HongguoUiState(
     val tab: AppTab = AppTab.HOME,
     val homeFeed: HomeFeed = HomeFeed.GUESS,
+    /** 播放历史 page: this device's records rather than the signed-in account's. */
+    val playHistoryLocal: Boolean = false,
     val home: FeedState = FeedState(),
     val category: FeedState = FeedState(),
     val browseDraft: BrowseSelection = BrowseSelection(),
@@ -62,6 +69,15 @@ data class HongguoUiState(
     val detail: DramaDetail? = null,
     val loadingDetail: Boolean = false,
     val detailError: String? = null,
+    /** Other seasons and same-IP works of the selected drama; empty when unavailable. */
+    val related: List<RelatedWork> = emptyList(),
+    val suggestions: List<String> = emptyList(),
+    val rankBoard: RankBoard = RankBoard.ALL,
+    val rankEntries: List<RankEntry> = emptyList(),
+    val rankPage: Int = 0,
+    val rankTotalPages: Int = 0,
+    val rankLoading: Boolean = false,
+    val rankError: String? = null,
     val episodePosition: Int = -1,
     val preparing: Boolean = false,
     val preparationStage: String = "",
@@ -77,7 +93,7 @@ data class HongguoUiState(
     val preloadNext: Boolean = true,
     val playbackSpeed: Float = 1f,
     val themeStyle: AppThemeStyle = AppThemeStyle.WARM,
-    val darkFollowsSystem: Boolean = false,
+    val themeMode: ThemeMode? = null,
     val navBarStyle: NavBarStyle = NavBarStyle.CLASSIC,
     val themeOnboardingPending: Boolean = false,
     /** Confirmation after the first-launch picker; cleared only once the snackbar has been shown. */
@@ -94,7 +110,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         playbackSpeed = runCatching { preferences.getFloat("playback_speed", 1f) }.getOrDefault(1f)
             .takeIf { it in PlaybackSpeeds } ?: 1f,
         themeStyle = AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
-        darkFollowsSystem = preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false),
+        themeMode = ThemeMode.stored(preferences.getString(ThemePreferences.MODE, null),
+            preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false)),
         navBarStyle = NavBarStyle.resolve(preferences.getString(ThemePreferences.NAV_BAR_STYLE, null), SystemRom.isHyperOs),
         themeOnboardingPending = !preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, false) ||
             preferences.getInt(ThemePreferences.ONBOARDING_VERSION, 1) < ThemePreferences.CURRENT_ONBOARDING_VERSION))
@@ -115,6 +132,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var prefetchAttemptedFor = -1L
     private var homeJob: Job? = null
     private var guessPager: GuessFeedPager? = null
+    private var relatedJob: Job? = null
     private var categoryJob: Job? = null
     private var filtersJob: Job? = null
     private var pendingLibrary: LibraryEntry? = null
@@ -135,17 +153,80 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var categoryVersion = 0
     private var filtersVersion = 0
     private var searchOrigin = AppTab.HOME
+    private var rankOrigin = AppTab.HOME
+    private var librarySourceChosen = false
+    private var rankJob: Job? = null
+    private var rankVersion = 0L
+    private var suggestionJob: Job? = null
     private var accountOrigin = AppTab.MINE
     private var libraryOrigin = AppTab.HOME
+    private var myLibraryOrigin = AppTab.MINE
     private var settingsOrigin = AppTab.MINE
     private var themeOrigin = AppTab.SETTINGS
 
     fun closeSearch() = navigate(searchOrigin, rememberOrigin = false)
+    fun closeRank() = navigate(rankOrigin, rememberOrigin = false)
+
+    fun openRank() {
+        selectTab(AppTab.RANK)
+        if (state.value.rankEntries.isEmpty() && !state.value.rankLoading) loadRank(state.value.rankBoard, 1)
+    }
+
+    fun selectRankBoard(board: RankBoard) {
+        if (board == state.value.rankBoard) return
+        mutableState.update { it.copy(rankBoard = board, rankEntries = emptyList(), rankPage = 0, rankTotalPages = 0, rankError = null) }
+        loadRank(board, 1)
+    }
+
+    /** Boards are 100 works across a few pages; the next one loads as the list reaches its end. */
+    fun loadMoreRank() {
+        val current = state.value
+        if (current.rankLoading || current.rankError != null || current.rankPage >= current.rankTotalPages) return
+        loadRank(current.rankBoard, current.rankPage + 1)
+    }
+
+    fun retryRank() {
+        mutableState.update { it.copy(rankError = null) }
+        loadRank(state.value.rankBoard, state.value.rankPage + 1)
+    }
+
+    private fun loadRank(board: RankBoard, page: Int) {
+        rankJob?.cancel()
+        val version = ++rankVersion
+        mutableState.update { it.copy(rankLoading = true, rankError = null) }
+        rankJob = viewModelScope.launch {
+            try {
+                val result = repository.rank(board, page)
+                if (version == rankVersion) mutableState.update { it.copy(rankLoading = false, rankPage = result.page, rankTotalPages = result.totalPages,
+                    rankEntries = (it.rankEntries + result.entries).distinctBy { row -> row.series.id }) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (version == rankVersion) mutableState.update { it.copy(rankLoading = false, rankError = readableFailure(error, "加载榜单")) }
+            }
+        }
+    }
     fun closeAccount() = navigate(accountOrigin, rememberOrigin = false)
     fun closeLibrary() = navigate(libraryOrigin, rememberOrigin = false)
+    /** 播放历史 is a page of where it was opened from, so back returns there; it is not the 追剧 tab. */
+    fun openPlayHistory(local: Boolean = false) {
+        mutableState.update { it.copy(playHistoryLocal = local) }
+        selectTab(AppTab.PLAY_HISTORY)
+    }
+    fun selectPlayHistorySource(local: Boolean) = mutableState.update { it.copy(playHistoryLocal = local) }
+    fun closeMyLibrary() = navigate(myLibraryOrigin, rememberOrigin = false)
     fun closeSettings() = navigate(settingsOrigin, rememberOrigin = false)
     fun closeThemeStyle() = navigate(themeOrigin, rememberOrigin = false)
-    fun selectLibrarySource(cloud: Boolean) { mutableState.update { it.copy(libraryCloud = cloud) } }
+    fun selectLibrarySource(cloud: Boolean) {
+        librarySourceChosen = true
+        mutableState.update { it.copy(libraryCloud = cloud) }
+    }
+
+    /** A signed-in account's records come first, until the user picks a source themself. Signing out resets this. */
+    fun onAccountSession(signedIn: Boolean) {
+        if (!signedIn) librarySourceChosen = false
+        if (!librarySourceChosen) mutableState.update { it.copy(libraryCloud = signedIn) }
+    }
 
     init {
         mutableState.update { it.copy(favorites = library.state.value.favorites, history = library.state.value.history) }
@@ -168,13 +249,13 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     private fun navigate(tab: AppTab, rememberOrigin: Boolean) {
         if (rememberOrigin && tab == AppTab.SEARCH && state.value.tab != AppTab.SEARCH) searchOrigin = state.value.tab
+        if (rememberOrigin && tab == AppTab.RANK && state.value.tab != AppTab.RANK) rankOrigin = state.value.tab
         if (rememberOrigin && tab == AppTab.ACCOUNT && state.value.tab != AppTab.ACCOUNT) accountOrigin = state.value.tab
         if (rememberOrigin && tab == AppTab.SETTINGS && state.value.tab != AppTab.SETTINGS) settingsOrigin = state.value.tab
         if (rememberOrigin && tab == AppTab.THEME_STYLE && state.value.tab != AppTab.THEME_STYLE) themeOrigin = state.value.tab
-        if (rememberOrigin && tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) && state.value.tab !in setOf(AppTab.HISTORY, AppTab.FAVORITES, AppTab.ACCOUNT)) {
-            libraryOrigin = state.value.tab
-            mutableState.update { it.copy(libraryCloud = false) }
-        }
+        if (rememberOrigin && tab in setOf(AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES) && state.value.tab !in setOf(AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES)) myLibraryOrigin = state.value.tab
+        // The source stays as onAccountSession or the user left it: a signed-in account's records come first.
+        if (rememberOrigin && tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) && state.value.tab !in setOf(AppTab.HISTORY, AppTab.FAVORITES, AppTab.ACCOUNT)) libraryOrigin = state.value.tab
         if (state.value.selectedCard != null) backToSearch()
         mutableState.update { it.copy(tab = tab) }
         when (tab) {
@@ -339,9 +420,9 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         preferences.edit { putString(ThemePreferences.NAV_BAR_STYLE, style.key) }
         mutableState.update { it.copy(navBarStyle = style) }
     }
-    fun setDarkFollowsSystem(enabled: Boolean) {
-        preferences.edit { putBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, enabled) }
-        mutableState.update { it.copy(darkFollowsSystem = enabled) }
+    fun setThemeMode(mode: ThemeMode) {
+        preferences.edit { putString(ThemePreferences.MODE, mode.key) }
+        mutableState.update { it.copy(themeMode = mode) }
     }
     /** Answers the first-launch picker. A null [choice] keeps the current style ("暂不选择"). Shown only once. */
     fun completeThemeOnboarding(choice: AppThemeStyle?) {
@@ -364,11 +445,32 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         mutableState.update { it.copy(playbackSpeed = speed) }
     }
 
-    fun updateQuery(value: String) { mutableState.update { it.copy(query = value) } }
+    fun updateQuery(value: String) {
+        mutableState.update { it.copy(query = value) }
+        suggestionJob?.cancel()
+        val query = value.trim()
+        if (query.isEmpty() || query == state.value.searchedQuery) { mutableState.update { it.copy(suggestions = emptyList()) }; return }
+        suggestionJob = viewModelScope.launch {
+            delay(250)
+            // Optional help while typing: a failure simply shows no suggestions.
+            val rows = try { repository.suggestions(query) }
+                catch (error: CancellationException) { throw error }
+                catch (_: Exception) { emptyList() }
+            if (state.value.query.trim() == query) mutableState.update { it.copy(suggestions = rows) }
+        }
+    }
+
+    fun pickSuggestion(value: String) {
+        suggestionJob?.cancel()
+        mutableState.update { it.copy(query = value, suggestions = emptyList()) }
+        search()
+    }
 
     fun search() {
         val query = state.value.query.trim()
         if (query.isEmpty()) return
+        suggestionJob?.cancel()
+        mutableState.update { it.copy(suggestions = emptyList()) }
         cancelSearch()
         cancelDetailAndMedia()
         preferences.edit().putString("last_query", query).apply()
@@ -447,9 +549,17 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         cancelDetailAndMedia()
         val version = ++detailVersion
         mutableState.update {
-            it.copy(selectedCard = card, detail = null, loadingDetail = true, detailError = null,
+            it.copy(selectedCard = card, detail = null, loadingDetail = true, detailError = null, related = emptyList(),
                 video = null, preparing = false, preparationStage = "", playbackError = null,
                 episodePosition = -1, playbackStatus = "", firstFrameRendered = false, resumePositionMs = 0, playerOpen = false)
+        }
+        relatedJob?.cancel()
+        relatedJob = viewModelScope.launch {
+            // Secondary content: a failure leaves the section out without affecting the drama itself.
+            val works = try { repository.related(card.id) }
+                catch (error: CancellationException) { throw error }
+                catch (_: Exception) { return@launch }
+            if (version == detailVersion) mutableState.update { it.copy(related = works) }
         }
         detailJob = viewModelScope.launch {
             try {
@@ -674,7 +784,15 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         savePosition(episodeId, 0, requestId, completed = true)
         if (current.episodePosition < (current.detail?.episodes?.lastIndex ?: -1)) {
             if (current.autoPlayNext) nextEpisode() else onPlaybackStatus(episodeId, requestId, "本集已播完，上滑观看下一集")
-        } else onPlaybackStatus(episodeId, requestId, "已播完最后一集")
+        } else {
+            val next = RelatedWorks.nextSeason(current.related)
+            when {
+                next == null -> onPlaybackStatus(episodeId, requestId, "已播完最后一集")
+                next.upcoming -> onPlaybackStatus(episodeId, requestId, "已播完最后一集，${next.season}待上线，可在详情页预约")
+                current.autoPlayNext -> playDrama(next.toCard())
+                else -> onPlaybackStatus(episodeId, requestId, "已播完最后一集，${next.season}可在详情页观看")
+            }
+        }
     }
 
     fun savePosition(episodeId: String, positionMs: Long, requestId: Long? = null,

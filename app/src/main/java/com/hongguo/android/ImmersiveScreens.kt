@@ -186,7 +186,7 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
             Row(Modifier.weight(1f).slidingIndicator(tabs, state.homeFeed, Color.White),
                 horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.Bottom) {
-                listOf(HomeFeed.GUESS to "推荐", HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
+                listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧", HomeFeed.GUESS to "推荐").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
                     val color by animatedTabColor(selected, Color.White, Color.White.copy(alpha = .7f))
                     Column(Modifier.tabAnchor(tabs, feed).quietSelectable(selected) { model.selectHomeFeed(feed) }
@@ -326,6 +326,7 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
                                 .testTag("theater_genre_$genre"))
                     }
                 }
+                RankEntryButton(model, "theater_rank")
                 IconButton(onClick = { model.selectTab(AppTab.SEARCH) }, modifier = Modifier.testTag("theater_search")) {
                     Icon(Icons.Outlined.Search, "搜索", tint = Ink)
                 }
@@ -352,7 +353,7 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
                         Row(Modifier.fillMaxWidth().clickable { model.openDrama(card) }.padding(vertical = 8.dp)
                             .testTag("theater_rank_$index"),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("${index + 1}", color = listOf(AccentInk, Color(0xFFFFB35C), Gold)[index], fontSize = 24.sp,
+                            Text("${index + 1}", color = if (LocalHongguoPalette.current.isDark) listOf(AccentInk, Color(0xFFFFB35C), Gold)[index] else AccentInk, fontSize = 24.sp,
                                 fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, modifier = Modifier.width(22.dp))
                             Cover(card.cover, card.title, Modifier.width(48.dp).height(64.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -490,29 +491,18 @@ internal fun ImmersiveLibrary(state: HongguoUiState, model: HongguoViewModel, ac
                 SectionTitle("继续看", if (canManage) (if (managing) "完成" else "管理") else null,
                     "immersive_manage") { managing = !managing }
             }
-            item {
-                if (state.history.isEmpty()) Text("开始播放后，这里会记住看到哪一集。", color = Muted, fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp))
-                else LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(state.history, key = { it.card.id }) { entry ->
-                        Column(Modifier.animateItem().width(132.dp).clickable { model.openLibrary(entry) }.testTag("immersive_history_${entry.card.id}"),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Box(Modifier.fillMaxWidth().height(176.dp).clip(RoundedCornerShape(10.dp))) {
-                                PosterImage(entry.card.cover, Modifier.fillMaxSize())
-                                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(60.dp)
-                                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .75f)))))
-                                Text("第 ${entry.episodeIndex.coerceAtLeast(1)} 集", color = Color.White, fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.BottomStart).padding(8.dp, 0.dp, 8.dp, 10.dp))
-                                WatchProgress(entry, track = Color.White.copy(alpha = .25f), fill = Orange,
-                                    modifier = Modifier.align(Alignment.BottomCenter))
-                                if (managing) RemoveBadge("删除${entry.card.title}的记录", Modifier.align(Alignment.TopEnd)) {
-                                    model.removeHistory(entry.card.id)
-                                }
-                            }
-                            Text(entry.card.title, color = Ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2,
-                                overflow = TextOverflow.Ellipsis)
-                        }
+            if (state.history.isEmpty()) item {
+                Text("开始播放后，这里会记住看到哪一集。", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            items(state.history.chunked(3), key = { row -> "history_" + row.first().card.id }) { row ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { entry ->
+                        LibraryPosterCell(entry, "第 ${entry.episodeIndex.coerceAtLeast(1)} 集", "immersive_history_${entry.card.id}", Modifier.weight(1f),
+                            showProgress = true, onOpen = { model.openLibrary(entry) }, badge = {
+                                if (managing) RemoveBadge("删除${entry.card.title}的记录", Modifier.align(Alignment.TopEnd)) { model.removeHistory(entry.card.id) }
+                            })
                     }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
             item { SectionTitle("我的追剧", null, "") {} }
@@ -571,14 +561,16 @@ internal fun ImmersiveDetail(state: HongguoUiState, model: HongguoViewModel, acc
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             // The picture runs up under the transparent status bar; the back button stays below it.
-            val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            // In the light mode the page starts below the status bar instead, so its dark icons stay readable.
+            val underStatusBar = LocalHongguoPalette.current.isDark
+            val statusTop = if (underStatusBar) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp
             Box(Modifier.fillMaxWidth().height(360.dp + statusTop)) {
                 PosterImage(detail?.cover ?: card.cover, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxWidth().height(statusTop + 56.dp).background(Brush.verticalGradient(
                     listOf(Color.Black.copy(alpha = .45f), Color.Transparent))))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                     .35f to Color.Transparent, 1f to Canvas)))
-                IconButton(onClick = model::backToSearch, modifier = Modifier.statusBarsPadding().padding(6.dp).clip(CircleShape)
+                IconButton(onClick = model::backToSearch, modifier = Modifier.then(if (underStatusBar) Modifier.statusBarsPadding() else Modifier).padding(6.dp).clip(CircleShape)
                     .background(Color.Black.copy(alpha = .35f)).testTag("detail_back")) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Color.White)
                 }
@@ -601,17 +593,7 @@ internal fun ImmersiveDetail(state: HongguoUiState, model: HongguoViewModel, acc
                     Text(when { episodeLabel != null -> "播放第 $episodeLabel 集"; detail != null -> "暂无可播放剧集"
                         state.loadingDetail -> "正在读取选集"; else -> "暂时无法播放" }, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { model.toggleFavorite(card) }, modifier = Modifier.weight(1f).testTag("favorite_toggle")) {
-                        Icon(if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder, null,
-                            tint = if (favorite) Gold else Ink, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (favorite) "已追剧" else "追剧", color = Ink, fontSize = 14.sp)
-                    }
-                    Box(Modifier.weight(1.4f), contentAlignment = Alignment.Center) {
-                        AccountFavoriteAction(card, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
-                    }
-                }
+                FavoritePair(card, favorite, { model.toggleFavorite(card) }, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
                 Text(if (state.autoPlayNext) "自动连播已开启" else "自动连播已关闭", color = Muted, fontSize = 12.sp)
             }
         }
@@ -622,6 +604,7 @@ internal fun ImmersiveDetail(state: HongguoUiState, model: HongguoViewModel, acc
                 Text(detail.summary, color = Muted, fontSize = 14.sp, lineHeight = 22.sp, maxLines = 5,
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 16.dp))
             }
+            item { RelatedWorksSection(state, model, accountModel, horizontalPadding = 16) }
             val ranges = detail.episodes.indices.chunked(30)
             val current = if (range in ranges.indices) range
                 else ranges.indexOfFirst { state.episodePosition in it }.coerceAtLeast(0)

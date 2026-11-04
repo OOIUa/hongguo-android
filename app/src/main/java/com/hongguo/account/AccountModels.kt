@@ -2,11 +2,12 @@ package com.hongguo.account
 
 import com.hongguo.account.protocol.AccountCredentials
 import com.hongguo.account.protocol.CloudProfile
+import com.hongguo.account.protocol.CloudStats
 import com.hongguo.account.protocol.WebsiteProfile
 import com.hongguo.android.LibraryEntry
 
 enum class AccountSessionStatus { SIGNED_OUT, RESTORING, NEEDS_VERIFICATION, LOGGED_IN, WEBSITE_ONLY }
-enum class AccountSection { HISTORY, FAVORITES, RESERVATIONS }
+enum class AccountSection { HISTORY, FAVORITES, LIKES, RESERVATIONS }
 enum class PhoneStep { IDLE, CODE_SENT }
 
 /** Presentation state never contains a cookie, verification code or device credential. */
@@ -26,9 +27,12 @@ data class AccountState(
     val suggestWebsiteLogin: Boolean = false,
     val history: List<LibraryEntry> = emptyList(),
     val favorites: List<LibraryEntry> = emptyList(),
+    val likes: List<LibraryEntry> = emptyList(),
+    val stats: CloudStats? = null,
     val reservations: List<LibraryEntry> = emptyList(),
     val reservationOnlineIds: Set<String> = emptySet(),
     val historyError: String? = null,
+    val likesError: String? = null,
     val favoritesError: String? = null,
     val reservationsError: String? = null,
     val syncEnabled: Boolean = false,
@@ -36,6 +40,7 @@ data class AccountState(
     val selectedSection: AccountSection = AccountSection.HISTORY,
     val favoriteUncertainIds: Set<String> = emptySet(),
     val favoriteBusyIds: Set<String> = emptySet(),
+    val reservationBusyIds: Set<String> = emptySet(),
     val pendingProgressCount: Int = 0,
     val lastSyncAt: Long = 0,
     /** Session is stopped in memory, but the private credential file still needs explicit cleanup. */
@@ -50,6 +55,7 @@ internal data class FavoriteAttempt(val add: Boolean, val startedAt: Long)
 internal data class AccountCache(
     val history: List<LibraryEntry> = emptyList(),
     val favorites: List<LibraryEntry> = emptyList(),
+    val likes: List<LibraryEntry> = emptyList(),
     val reservations: List<LibraryEntry> = emptyList(),
     val reservationOnlineIds: Set<String> = emptySet(),
     val pending: Map<String, PendingProgress> = emptyMap(),

@@ -57,6 +57,21 @@ class AccountRepositoryTest {
     }
 
     private inner class Gateway : AccountGateway {
+        var readHistoryValue = emptyList<CloudProgress>()
+        var readHistoryError: Exception? = null
+        var likesValue = emptyList<com.hongguo.account.protocol.CloudLike>()
+        var statsValue = com.hongguo.account.protocol.CloudStats()
+        override fun readHistory(credentials: AccountCredentials): List<CloudProgress> { readHistoryError?.let { throw it }; return readHistoryValue }
+        override fun likes(credentials: AccountCredentials) = likesValue
+        override fun stats(credentials: AccountCredentials) = statsValue
+        val reserved = mutableListOf<String>()
+        var applyReserve = true
+        var reserveError: Exception? = null
+        override fun reserve(credentials: AccountCredentials, work: com.hongguo.account.protocol.RelatedWork) {
+            reserveError?.let { throw it }
+            reserved += work.series.id
+            if (applyReserve) reservationsValue = reservationsValue + CloudReservation(work.series, false, 0)
+        }
         var profileValue = CloudProfile(uid, "测试账号")
         var profileError: Exception? = null
         var historyError: Exception? = null
@@ -127,6 +142,70 @@ class AccountRepositoryTest {
         store, api, { login }, backgroundScope, StandardTestDispatcher(testScheduler), { 1700000000000 + testScheduler.currentTime })
 
     private fun signedStore(cache: AccountCache = AccountCache()) = MemoryStore(AccountDisk(credentials, CloudProfile(uid, "测试账号"), mapOf(uid to cache)))
+
+    private val upcomingWork get() = com.hongguo.account.protocol.RelatedWork(series, "第2季", true, 2)
+
+    @Test fun refreshLoadsLikesStatsAndMergesWatchRecords() = runTest {
+        val api = Gateway(); val other = Series("7000000000000000009", "另一部")
+        api.likesValue = listOf(com.hongguo.account.protocol.CloudLike(series, 1700000000000))
+        api.statsValue = com.hongguo.account.protocol.CloudStats(follows = 1, fans = 2, likes = 3)
+        api.readHistoryValue = listOf(CloudProgress(other, "7100000000000000001", 4, 5000, 60000, 1700000000000))
+        val repo = repository(signedStore(), api); runCurrent()
+        repo.refresh(); runCurrent()
+        assertEquals(listOf(series.id), repo.state.value.likes.map { it.card.id })
+        assertEquals(3, repo.state.value.stats?.likes)
+        val merged = repo.state.value.history.single { it.card.id == other.id }
+        assertEquals(5, merged.episodeIndex)
+    }
+
+    @Test fun watchRecordFailureKeepsTheProgressList() = runTest {
+        val api = Gateway(); api.readHistoryError = java.io.IOException("offline")
+        val repo = repository(signedStore(), api); runCurrent()
+        repo.refresh(); runCurrent()
+        assertNull(repo.state.value.historyError)
+    }
+
+    @Test fun reservationIsConfirmedByASeparateRead() = runTest {
+        val api = Gateway(); val repo = repository(signedStore(), api); runCurrent()
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertEquals(listOf(series.id), api.reserved)
+        assertTrue(repo.state.value.reservations.any { it.card.id == series.id })
+        assertTrue(repo.state.value.reservationBusyIds.isEmpty())
+        assertTrue(repo.state.value.message!!.contains("确认"))
+    }
+
+    @Test fun existingReservationIsNotWrittenAgain() = runTest {
+        val api = Gateway(); api.reservationsValue = listOf(CloudReservation(series, false, 0))
+        val repo = repository(signedStore(), api); runCurrent()
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertTrue(api.reserved.isEmpty())
+    }
+
+    @Test fun upcomingRowListedByItemIdCountsAsReserved() = runTest {
+        val api = Gateway(); api.reservationsValue = listOf(CloudReservation(series.copy(id = "reservation:" + series.id), false, 0))
+        val repo = repository(signedStore(), api); runCurrent()
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertTrue(api.reserved.isEmpty())
+    }
+
+    @Test fun unconfirmedOrFailedReservationIsReportedAndNotRetried() = runTest {
+        val api = Gateway(); api.applyReserve = false
+        val repo = repository(signedStore(), api); runCurrent()
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertEquals(1, api.reserved.size)
+        assertTrue(repo.state.value.message!!.contains("未确认"))
+        api.reserveError = java.io.IOException("offline")
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertEquals(1, api.reserved.size)
+        assertTrue(repo.state.value.message!!.contains("不确定"))
+    }
+
+    @Test fun reservationNeedsTheSameOwnerAndAnUpcomingWork() = runTest {
+        val api = Gateway(); val repo = repository(signedStore(), api); runCurrent()
+        repo.reserve(upcomingWork, "other-owner"); runCurrent()
+        repo.reserve(upcomingWork.copy(upcoming = false), repo.ownerKey); runCurrent()
+        assertTrue(api.reserved.isEmpty())
+    }
 
     @Test fun networkRestorePreservesCredentialsAndCachedListsButDoesNotAllowWrites() = runTest {
         val store = signedStore(AccountCache(history = listOf(entry), syncEnabled = true))

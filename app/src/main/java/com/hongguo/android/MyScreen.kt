@@ -118,10 +118,10 @@ internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MyStat("本机收藏", state.favorites.size, Icons.Outlined.StarBorder, Modifier.weight(1f).testTag("my_favorites")) {
-                    model.selectTab(AppTab.FAVORITES)
+                    model.selectTab(AppTab.LOCAL_FAVORITES)
                 }
                 MyStat("本机看过", state.history.size, Icons.Outlined.History, Modifier.weight(1f).testTag("my_history")) {
-                    model.selectTab(AppTab.HISTORY)
+                    model.openPlayHistory(local = true)
                 }
             }
         }
@@ -245,8 +245,6 @@ internal fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel
 
 @Composable
 internal fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, onBack: () -> Unit) {
-    val systemDark = isSystemInDarkTheme()
-    val overridden = state.darkFollowsSystem && systemDark && state.themeStyle != AppThemeStyle.IMMERSIVE
     LazyColumn(Modifier.fillMaxSize().testTag("theme_screen").padding(horizontal = 20.dp),
         contentPadding = PaddingValues(0.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -258,7 +256,7 @@ internal fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, on
         item {
             Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 AppThemeStyle.entries.forEach { style ->
-                    ThemeOption(style, selected = state.themeStyle == style, modifier = Modifier.weight(1f)) {
+                    ThemeOption(style, selected = state.themeStyle == style, modifier = Modifier.weight(1f), previewDark = LocalHongguoPalette.current.isDark) {
                         model.setThemeStyle(style)
                     }
                 }
@@ -268,19 +266,33 @@ internal fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, on
             Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(state.themeStyle.palette().accent))
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(Orange))
                         Text(state.themeStyle.label, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     }
                     Text(state.themeStyle.summary, color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
-                    if (overridden) Text("系统当前为深色模式，正在临时使用「沉浸暗场」。", color = AccentText,
-                        fontSize = 12.sp, lineHeight = 19.sp, modifier = Modifier.testTag("theme_dark_override_note"))
                 }
             }
         }
         item {
             Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-                SettingSwitch("深色模式时自动切换", "系统进入深色模式时使用「沉浸暗场」，退出后恢复所选主题",
-                    state.darkFollowsSystem, "settings_theme_dark_follow", model::setDarkFollowsSystem)
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("外观模式", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    val current = state.themeMode.orDefaultFor(state.themeStyle)
+                    Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ThemeMode.entries.forEach { mode ->
+                            val selected = current == mode
+                            Box(Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) SoftOrange else Cream)
+                                .selectable(selected = selected, role = Role.RadioButton) { model.setThemeMode(mode) }
+                                .testTag("theme_mode_${mode.key}"), contentAlignment = Alignment.Center) {
+                                Text(mode.label, color = if (selected) AccentInk else Muted, fontSize = 14.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                            }
+                        }
+                    }
+                    Text("三套主题都有浅色和深色。选择“跟随系统”后，会随系统自动切换。沉浸暗场的刷剧画面始终保持深色。",
+                        color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
+                }
             }
         }
         item { Spacer(Modifier.height(28.dp)) }
@@ -288,7 +300,7 @@ internal fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, on
 }
 
 @Composable
-internal fun ThemeOption(style: AppThemeStyle, selected: Boolean, modifier: Modifier, onSelect: () -> Unit) {
+internal fun ThemeOption(style: AppThemeStyle, selected: Boolean, modifier: Modifier, previewDark: Boolean? = null, onSelect: () -> Unit) {
     val ring = if (selected) Orange else Color.Transparent
     Column(modifier.clip(RoundedCornerShape(16.dp))
         .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
@@ -298,7 +310,7 @@ internal fun ThemeOption(style: AppThemeStyle, selected: Boolean, modifier: Modi
         .background(CardSurface)
         .padding(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ThemePreview(style)
+        ThemePreview(style, previewDark)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)) {
             if (selected) Box(Modifier.size(18.dp).clip(CircleShape).background(Orange), Alignment.Center) {
@@ -316,8 +328,8 @@ private val PreviewTones = listOf(Color(0xFF7B3B2C), Color(0xFF8A4F62), Color(0x
 
 /** A miniature of each theme's home screen, always drawn in that theme's own colors. */
 @Composable
-private fun ThemePreview(style: AppThemeStyle) {
-    val p = style.palette()
+private fun ThemePreview(style: AppThemeStyle, dark: Boolean?) {
+    val p = if (dark == null) style.palette() else style.palette(dark)
     Box(Modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(10.dp)).background(p.canvas)
         .border(1.dp, p.line, RoundedCornerShape(10.dp))) {
         when (style) {
@@ -449,7 +461,7 @@ private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, update
             Surface(color = CardSurface, shape = RoundedCornerShape(16.dp)) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
                     listOf(
-                        Triple(Icons.Outlined.History, "历史 ${state.history.size}") { model.selectTab(AppTab.HISTORY) },                        Triple(Icons.Outlined.StarBorder, "追剧 ${state.favorites.size}") { model.selectTab(AppTab.FAVORITES) },
+                        Triple(Icons.Outlined.History, "历史 ${state.history.size}") { model.openPlayHistory(local = true) },                        Triple(Icons.Outlined.StarBorder, "追剧 ${state.favorites.size}") { model.selectTab(AppTab.LOCAL_FAVORITES) },
                         Triple(Icons.Outlined.CloudQueue, "云片单") { model.selectTab(AppTab.FAVORITES); model.selectLibrarySource(true) },
                         Triple(Icons.Outlined.Palette, "主题", openTheme),
                     ).forEachIndexed { index, (icon, label, action) ->

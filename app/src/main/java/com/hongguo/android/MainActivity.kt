@@ -1,5 +1,6 @@
 package com.hongguo.android
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -55,29 +56,36 @@ import com.hongguo.account.AccountViewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyThemeWindow(storedThemeStyle().palette())
+        applyThemeWindow(storedThemePalette())
         setContent {
             val model: HongguoViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
             val snackbar = remember { SnackbarHostState() }
-            // The theme in effect picks both the colors and each page's layout.
-            val layout = resolveThemeStyle(state.themeStyle, state.darkFollowsSystem)
+            // The style picks each page's layout; the mode picks light or dark colors for it.
+            val layout = state.themeStyle
+            val dark = resolveDark(state.themeMode, layout, isSystemInDarkTheme())
+            // 沉浸暗场's video feed stays dark in every mode, with its status bar and bottom bar.
+            val feedDark = layout == AppThemeStyle.IMMERSIVE && state.tab == AppTab.HOME && state.selectedCard == null
             // The player owns the system bars while open; the theme re-applies them when it closes.
-            HongguoTheme(layout, applyToWindow = !state.playerOpen) {
+            HongguoTheme(layout, dark = dark, windowDark = dark || feedDark, applyToWindow = !state.playerOpen) {
                 val pageStates = rememberSaveableStateHolder()
                 val accountModel: AccountViewModel = viewModel()
                 val accountState by accountModel.state.collectAsStateWithLifecycle()
                 val updateModel: UpdateViewModel = viewModel()
                 val updateState by updateModel.state.collectAsStateWithLifecycle()
+                val signedIn = accountState.sessionStatus == AccountSessionStatus.LOGGED_IN
+                LaunchedEffect(signedIn) { model.onAccountSession(signedIn) }
                 BackHandler(enabled = state.playerOpen || state.selectedCard != null || state.tab != AppTab.HOME) {
                     when {
                         state.playerOpen -> model.closePlayer()
                         state.selectedCard != null -> model.backToSearch()
                         state.tab == AppTab.SEARCH -> model.closeSearch()
+                        state.tab == AppTab.RANK -> model.closeRank()
                         state.tab == AppTab.ACCOUNT -> model.closeAccount()
                         state.tab == AppTab.SETTINGS -> model.closeSettings()
                         state.tab == AppTab.THEME_STYLE -> model.closeThemeStyle()
                         state.tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) -> model.closeLibrary()
+                        state.tab in setOf(AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES) -> model.closeMyLibrary()
                         else -> model.selectTab(AppTab.HOME)
                     }
                 }
@@ -92,7 +100,7 @@ class MainActivity : ComponentActivity() {
                 val playerActive = transition.targetState == EnterExitState.Visible
                 if (playerShown) EpisodePlayerScreen(state, model, accountModel, active = playerActive)
                 else {
-                    val showNav = state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE)
+                    val showNav = state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.RANK, AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE, AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES)
                     // 悬浮玻璃: the bar floats as a liquid-glass capsule and the page runs underneath it.
                     val floatingNav = showNav && state.navBarStyle == NavBarStyle.GLASS
                     val backdrop = rememberGlassBackdrop()
@@ -100,7 +108,9 @@ class MainActivity : ComponentActivity() {
                     Scaffold(containerColor = Canvas,
                         snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")
                             .padding(bottom = if (floatingNav) 76.dp else 0.dp)) }, bottomBar = {
-                        if (showNav && !floatingNav) AppNavigation(state.tab, model::selectTab, style = layout)
+                        if (showNav && !floatingNav) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
+                            AppNavigation(state.tab, model::selectTab, style = layout)
+                        }
                     }) { insets ->
                         val direction = LocalLayoutDirection.current
                         // The top inset is applied per page: 沉浸暗场's feed and detail picture run up under the transparent
@@ -124,7 +134,7 @@ class MainActivity : ComponentActivity() {
                         pageStates.SaveableStateProvider(key) {
                         Box(Modifier.fillMaxSize()) {
                         Column(Modifier.fillMaxSize().background(Canvas)
-                            .padding(top = if (drawsUnderStatusBar(key, layout)) 0.dp else topInset)) {
+                            .padding(top = if (drawsUnderStatusBar(key, layout, dark)) 0.dp else topInset)) {
                             // Each page draws its own state: a leaving detail page keeps its drama, never the next one.
                             val detailState = when {
                                 !key.startsWith("detail_") -> null
@@ -143,7 +153,7 @@ class MainActivity : ComponentActivity() {
                             val tabState = if (state.tab == keyTab) state else state.copy(tab = keyTab)
                             when (keyTab) {
                                 AppTab.HOME -> when (layout) {
-                                    AppThemeStyle.IMMERSIVE -> ImmersiveHome(state, model)
+                                    AppThemeStyle.IMMERSIVE -> HongguoTheme(layout, dark = true, applyToWindow = false) { ImmersiveHome(state, model) }
                                     AppThemeStyle.CARDS -> CardsHome(state, model)
                                     AppThemeStyle.WARM -> {
                                         BrandHeader()
@@ -155,6 +165,7 @@ class MainActivity : ComponentActivity() {
                                     AppThemeStyle.CARDS -> CardsDiscover(state, model)
                                     AppThemeStyle.WARM -> CategoryScreen(state, model)
                                 }
+                                AppTab.RANK -> RankScreen(state, model)
                                 AppTab.SEARCH -> SearchScreen(state, model,
                                     trending = if (layout == AppThemeStyle.CARDS) state.home.items.take(10) else emptyList())
                                 AppTab.FAVORITES, AppTab.HISTORY -> when (layout) {
@@ -178,6 +189,8 @@ class MainActivity : ComponentActivity() {
                                 AppTab.SETTINGS -> SystemSettingsScreen(tabState, model, updateState, updateModel,
                                     onTheme = { model.selectTab(AppTab.THEME_STYLE) }, onBack = model::closeSettings)
                                 AppTab.THEME_STYLE -> ThemeStyleScreen(tabState, model, model::closeThemeStyle)
+                                AppTab.PLAY_HISTORY -> PlayHistoryScreen(tabState, model, accountModel)
+                                AppTab.LOCAL_FAVORITES -> LocalFavoritesScreen(tabState, model)
                             }
                             }
                         }
@@ -191,8 +204,10 @@ class MainActivity : ComponentActivity() {
                         }
                         }
                         }
-                        if (floatingNav) AppNavigation(state.tab, model::selectTab, Modifier.align(Alignment.BottomCenter),
-                            style = layout, backdrop = backdrop)
+                        if (floatingNav) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
+                            AppNavigation(state.tab, model::selectTab, Modifier.align(Alignment.BottomCenter),
+                                style = layout, backdrop = backdrop)
+                        }
                         }
                     }
                 }
@@ -222,11 +237,14 @@ class MainActivity : ComponentActivity() {
  * The system's starting window (themes.xml) is drawn earlier and stays light; a dark splash would need a
  * separate starting theme.
  */
-private fun ComponentActivity.storedThemeStyle(): AppThemeStyle {
+private fun ComponentActivity.storedThemePalette(): HongguoPalette {
     val preferences = getSharedPreferences(ThemePreferences.FILE, android.content.Context.MODE_PRIVATE)
     val systemDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-    return resolveThemeStyle(AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
-        preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false), systemDark)
+    val style = AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null))
+    val mode = ThemeMode.stored(preferences.getString(ThemePreferences.MODE, null),
+        preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false))
+    // 沉浸暗场 opens on its always-dark feed.
+    return style.palette(resolveDark(mode, style, systemDark) || style == AppThemeStyle.IMMERSIVE)
 }
 
 @Composable
@@ -243,7 +261,8 @@ private fun BrandHeader() {
 private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, to: String): ContentTransform {
     fun depth(key: String) = when {
         key.startsWith("detail_") || key == "tab_${AppTab.THEME_STYLE.name}" -> 2
-        key == "tab_${AppTab.SEARCH.name}" || key == "tab_${AppTab.ACCOUNT.name}" || key == "tab_${AppTab.SETTINGS.name}" -> 1
+        key == "tab_${AppTab.SEARCH.name}" || key == "tab_${AppTab.RANK.name}" || key == "tab_${AppTab.ACCOUNT.name}" || key == "tab_${AppTab.SETTINGS.name}" ||
+            key == "tab_${AppTab.PLAY_HISTORY.name}" || key == "tab_${AppTab.LOCAL_FAVORITES.name}" -> 1
         else -> 0
     }
     val forward = depth(to) > depth(from)
@@ -260,8 +279,8 @@ private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, 
 }
 
 /** Pages whose own picture fills the area behind the status bar (they pad their top controls themselves). */
-private fun drawsUnderStatusBar(key: String, layout: AppThemeStyle): Boolean =
-    layout == AppThemeStyle.IMMERSIVE && (key == "tab_${AppTab.HOME.name}" || key.startsWith("detail_"))
+private fun drawsUnderStatusBar(key: String, layout: AppThemeStyle, dark: Boolean): Boolean =
+    layout == AppThemeStyle.IMMERSIVE && (key == "tab_${AppTab.HOME.name}" || (dark && key.startsWith("detail_")))
 
 /** False while a page is animating out, so its back handlers and taps stand down. */
 internal val LocalPageActive = compositionLocalOf { true }

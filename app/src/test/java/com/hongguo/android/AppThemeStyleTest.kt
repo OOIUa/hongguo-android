@@ -3,6 +3,8 @@ package com.hongguo.android
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -16,8 +18,33 @@ class AppThemeStyleTest {
     }
 
     @Test
-    fun onlyImmersiveIsDark() {
+    fun everyLayoutHasALightAndADarkPalette() {
+        AppThemeStyle.entries.forEach { style ->
+            assertTrue(style.palette(dark = true).isDark)
+            assertFalse(style.palette(dark = false).isDark)
+        }
+    }
+
+    @Test
+    fun withoutAChoiceEachLayoutKeepsItsNaturalLook() {
         assertEquals(listOf(AppThemeStyle.IMMERSIVE), AppThemeStyle.entries.filter { it.palette().isDark })
+        assertFalse(resolveDark(null, AppThemeStyle.WARM, systemDark = true))
+        assertTrue(resolveDark(null, AppThemeStyle.IMMERSIVE, systemDark = false))
+    }
+
+    @Test
+    fun modeDecidesDarkAndTheOldSwitchMeansFollowingTheSystem() {
+        AppThemeStyle.entries.forEach { style ->
+            assertTrue(resolveDark(ThemeMode.DARK, style, systemDark = false))
+            assertFalse(resolveDark(ThemeMode.LIGHT, style, systemDark = true))
+            assertTrue(resolveDark(ThemeMode.SYSTEM, style, systemDark = true))
+            assertFalse(resolveDark(ThemeMode.SYSTEM, style, systemDark = false))
+        }
+        assertEquals(listOf("system", "light", "dark"), ThemeMode.entries.map { it.key })
+        assertEquals(ThemeMode.SYSTEM, ThemeMode.stored(null, legacyFollowsSystem = true))
+        assertEquals(ThemeMode.LIGHT, ThemeMode.stored("light", legacyFollowsSystem = true))
+        assertNull(ThemeMode.stored(null, legacyFollowsSystem = false))
+        assertNull(ThemeMode.stored("removed", legacyFollowsSystem = false))
     }
 
     @Test
@@ -30,8 +57,7 @@ class AppThemeStyleTest {
 
     @Test
     fun textColorsMeetContrastOnEveryTheme() {
-        AppThemeStyle.entries.forEach { style ->
-            val p = style.palette()
+        AppThemeStyle.entries.flatMap { listOf(it.palette(true), it.palette(false)) }.forEach { p ->
             val textAccent = if (p.isDark) p.accentText else p.accent
             listOf(
                 "button label" to contrast(p.onAccent, p.accent),
@@ -41,7 +67,7 @@ class AppThemeStyleTest {
                 "secondary on card" to contrast(p.muted, p.card),
                 "accent text on card" to contrast(textAccent, p.card),
                 "notice" to contrast(p.noticeText, p.noticeBackground),
-            ).forEach { (name, ratio) -> assertTrue("${style.key} $name contrast $ratio", ratio >= 4.5) }
+            ).forEach { (name, ratio) -> assertTrue("${p.canvas} $name contrast $ratio", ratio >= 4.5) }
         }
     }
 

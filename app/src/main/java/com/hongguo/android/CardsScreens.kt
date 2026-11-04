@@ -98,7 +98,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
                     Text(ranked.firstOrNull()?.title ?: "搜索剧名或关键词", color = Muted, fontSize = 14.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                IconButton(onClick = { model.selectTab(AppTab.HISTORY) }, modifier = Modifier.testTag("cards_history")) {
+                IconButton(onClick = { model.openPlayHistory() }, modifier = Modifier.testTag("cards_history")) {
                     Icon(Icons.Outlined.History, "观看历史", tint = Ink)
                 }
             }
@@ -107,10 +107,11 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
             // 分类 used to sit at the end of this row as a fifth "channel", but it only opened the 发现 tab that the
             // bottom bar already offers, and looked selectable like the feeds beside it.
             val tabs = rememberTabIndicator()
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp)
+            // 推荐 is the default and sits last, so the row opens scrolled to its end.
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(Int.MAX_VALUE)).padding(horizontal = 4.dp)
                 .slidingIndicator(tabs, state.homeFeed, Orange, width = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
-                listOf(HomeFeed.GUESS to "推荐", HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧").forEach { (feed, label) ->
+                listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧", HomeFeed.GUESS to "推荐").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
                     val color by animatedTabColor(selected, Ink, Muted)
                     Column(Modifier.tabAnchor(tabs, feed).quietSelectable(selected) { model.selectHomeFeed(feed) }
@@ -217,6 +218,7 @@ internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("发现", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                RankEntryButton(model, "cards_discover_rank")
                 IconButton(onClick = { model.selectTab(AppTab.SEARCH) }, modifier = Modifier.testTag("cards_discover_search")) {
                     Icon(Icons.Outlined.Search, "搜索", tint = Ink)
                 }
@@ -419,24 +421,14 @@ internal fun CardsDetail(state: HongguoUiState, model: HongguoViewModel, account
                 val label = detail?.episodes?.getOrNull(state.episodePosition)?.index ?: detail?.episodes?.firstOrNull()?.index
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = model::openPlayer, enabled = detail != null && detail.episodes.isNotEmpty(),
-                        shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(2f).heightIn(min = 46.dp).testTag("open_player")) {
+                        shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp).testTag("open_player")) {
                         Icon(Icons.Outlined.PlayArrow, null, Modifier.size(18.dp))
                         Text(when { label != null -> "播放第 $label 集"; detail != null -> "暂无剧集"; state.loadingDetail -> "读取中"
                             else -> "无法播放" }, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
-                    Surface(onClick = { model.toggleFavorite(card) }, shape = RoundedCornerShape(10.dp), color = Canvas,
-                        modifier = Modifier.weight(1f).heightIn(min = 46.dp).testTag("favorite_toggle")) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(vertical = 4.dp)) {
-                            Icon(if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder, null,
-                                tint = if (favorite) Color(0xFFF2A900) else Ink, modifier = Modifier.size(18.dp))
-                            Text(if (favorite) "已收藏" else "收藏", color = Ink, fontSize = 12.sp)
-                        }
-                    }
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("红果账号", color = Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                    AccountFavoriteAction(card, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
+                Box(Modifier.padding(top = 8.dp)) {
+                    FavoritePair(card, favorite, { model.toggleFavorite(card) }, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
                 }
             }
         }
@@ -449,6 +441,7 @@ internal fun CardsDetail(state: HongguoUiState, model: HongguoViewModel, account
                     Text(detail.summary, color = Muted, fontSize = 13.sp, lineHeight = 21.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 }
             }
+            if (state.related.isNotEmpty()) item { CardBlock { RelatedWorksSection(state, model, accountModel) } }
             item {
                 CardBlock {
                     Row(verticalAlignment = Alignment.CenterVertically) {

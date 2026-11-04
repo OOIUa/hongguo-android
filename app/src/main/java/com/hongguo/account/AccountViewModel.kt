@@ -2,6 +2,7 @@ package com.hongguo.account
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.hongguo.account.protocol.RelatedWork
 import com.hongguo.android.DramaCard
 import com.hongguo.android.HongguoApplication
 import com.hongguo.android.LibraryEntry
@@ -25,6 +26,7 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     fun setSyncEnabled(enabled: Boolean) = repository.setSyncEnabled(enabled)
     fun setFavorite(card: DramaCard, add: Boolean, expectedOwner: String? = ownerKey) = repository.setFavorite(card, add, expectedOwner)
     fun resolveFavorite(seriesId: String) = repository.resolveFavorite(seriesId)
+    fun reserve(work: RelatedWork, expectedOwner: String? = ownerKey) = repository.reserve(work, expectedOwner)
     fun selectSection(section: AccountSection) = repository.selectSection(section)
     fun consumeMessage() = repository.consumeMessage()
     fun reportProgress(entry: LibraryEntry, durationMs: Long, force: Boolean = false, ownerKey: String? = this.ownerKey) =

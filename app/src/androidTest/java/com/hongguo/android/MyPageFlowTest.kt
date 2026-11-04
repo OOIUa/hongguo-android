@@ -33,7 +33,7 @@ class MyPageFlowTest {
             compose.onNodeWithTag("nav_mine").performClick()
             compose.onNodeWithTag("my_screen").assertExists()
             compose.onNodeWithTag("my_history").performScrollTo().performClick()
-            assertEquals(AppTab.HISTORY, model.state.value.tab)
+            assertEquals(AppTab.PLAY_HISTORY, model.state.value.tab)
             pressBack()
             compose.waitUntil(5_000) { model.state.value.tab == AppTab.MINE }
             compose.onNodeWithTag("my_settings").performScrollTo().performClick()

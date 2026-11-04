@@ -46,27 +46,11 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
                         Text(detail?.let { "共 ${it.episodes.size} 集" }
                             ?: if (card.episodeCount > 0) "共 ${card.episodeCount} 集" else "正在读取剧集信息",
                             fontSize = 13.sp, color = Muted)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = { model.toggleFavorite(card) },
-                                modifier = Modifier.testTag("favorite_toggle"),
-                                contentPadding = PaddingValues(end = 8.dp)) {
-                                Icon(if (favorite) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                                    contentDescription = null, Modifier.size(20.dp))
-                                Spacer(Modifier.width(5.dp))
-                                Text(if (favorite) "本机已收藏" else "本机收藏", fontSize = 13.sp)
-                            }
-                        }
                     }
                 }
             }
             item {
-                Surface(color = CardSurface, shape = RoundedCornerShape(16.dp)) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("红果账号", fontSize = 14.sp, color = Muted, modifier = Modifier.weight(1f))
-                        AccountFavoriteAction(card, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
-                    }
-                }
+                FavoritePair(card, favorite, { model.toggleFavorite(card) }, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
             }
             if (state.loadingDetail) item {
                 Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.Center,
@@ -83,6 +67,7 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
                         Text(detail.summary, color = Muted, fontSize = 14.sp, lineHeight = 23.sp)
                     }
                 }
+                item { RelatedWorksSection(state, model, accountModel) }
                 item {
                     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("选集", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

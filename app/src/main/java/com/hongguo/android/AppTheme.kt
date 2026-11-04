@@ -14,7 +14,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -43,20 +42,43 @@ import androidx.core.graphics.drawable.toDrawable
 
 /** User-selectable interface styles. The key is what is persisted, so never rename an existing key. */
 enum class AppThemeStyle(val key: String, val label: String, val summary: String) {
-    WARM("warm", "暖白精修", "温暖浅色的经典布局：推荐位、继续观看横滑和三列封面，适合日常找剧。"),
-    IMMERSIVE("immersive", "沉浸暗场", "全深色竖屏布局：首页上下滑动刷剧，剧场看榜单，追剧页接着看。"),
-    CARDS("cards", "内容卡片", "浅灰底白卡片布局：频道切换、热度榜和双列瀑布流，信息更紧凑。");
+    WARM("warm", "暖白精修", "温暖留白的经典布局：推荐位、继续观看横滑和三列封面，适合日常找剧。"),
+    IMMERSIVE("immersive", "沉浸暗场", "竖屏沉浸布局：首页上下滑动刷剧，剧场看榜单，追剧页接着看。"),
+    CARDS("cards", "内容卡片", "卡片式布局：频道切换、热度榜和双列瀑布流，信息更紧凑。");
 
     companion object {
         fun fromKey(key: String?): AppThemeStyle = entries.firstOrNull { it.key == key } ?: WARM
     }
 }
 
+/** Whether the interface is light or dark, independent of the layout. */
+enum class ThemeMode(val key: String, val label: String) {
+    SYSTEM("system", "跟随系统"), LIGHT("light", "浅色"), DARK("dark", "深色");
+
+    companion object {
+        /** The old switch meant following the system. Null means nothing was chosen yet. */
+        fun stored(savedKey: String?, legacyFollowsSystem: Boolean): ThemeMode? =
+            entries.firstOrNull { it.key == savedKey } ?: if (legacyFollowsSystem) SYSTEM else null
+    }
+}
+
+/** The mode in effect: without a choice 沉浸暗场 is dark and the other layouts are light. */
+internal fun ThemeMode?.orDefaultFor(style: AppThemeStyle): ThemeMode = this ?: if (style == AppThemeStyle.IMMERSIVE) ThemeMode.DARK else ThemeMode.LIGHT
+
+internal fun resolveDark(mode: ThemeMode?, style: AppThemeStyle, systemDark: Boolean): Boolean = when (mode.orDefaultFor(style)) {
+    ThemeMode.SYSTEM -> systemDark
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
+
 /** Preference keys in the "hongguo_local" store. Never rename: they are persisted on users' devices. */
 internal object ThemePreferences {
     const val FILE = "hongguo_local"
     const val STYLE = "theme_style"
+    /** The 0.7.13 switch 深色模式时自动切换; read only to carry its choice over to [MODE]. */
     const val DARK_FOLLOWS_SYSTEM = "theme_dark_follows_system"
+    /** 跟随系统, 浅色 or 深色; absent until the user picks one, so each layout keeps its natural look. */
+    const val MODE = "theme_mode"
     /** Set once the user has answered the first-launch theme picker (0.7.3+). */
     const val ONBOARDING_DONE = "theme_onboarding_done"
     /** Which picker the user answered. 0.7.4 gave each theme its own layout, so 0.7.3 answers are asked again once. */
@@ -109,6 +131,36 @@ internal val WarmPalette = HongguoPalette(
     noticeBackground = Color(0xFFFFEFE7), noticeText = Color(0xFF96492F),
 )
 
+internal val WarmDarkPalette = HongguoPalette(
+    isDark = true,
+    accent = Color(0xFFC94426), onAccent = Color.White,
+    accentText = Color(0xFFFF9B7A), accentBorder = Color(0xFF7A4030), softAccent = Color(0xFF3A241C),
+    ink = Color(0xFFF5EEE8), muted = Color(0xFFB8ACA3),
+    canvas = Color(0xFF1A1512), cream = Color(0xFF2C2520), line = Color(0xFF3A322C), card = Color(0xFF241E1A),
+    navMuted = Color(0xFF9C9087), navDivider = Color(0xFF2C2520),
+    noticeBackground = Color(0xFF33221B), noticeText = Color(0xFFFFB8A0),
+)
+
+internal val ImmersiveLightPalette = HongguoPalette(
+    isDark = false,
+    accent = Color(0xFFD63A24), onAccent = Color.White,
+    accentText = Color(0xFFB8301C), accentBorder = Color(0xFFF0B5A8), softAccent = Color(0xFFFDE9E4),
+    ink = Color(0xFF17171B), muted = Color(0xFF62626C),
+    canvas = Color(0xFFF6F6F8), cream = Color(0xFFE9E9ED), line = Color(0xFFDFDFE5), card = Color.White,
+    navMuted = Color(0xFF6E6E78), navDivider = Color(0xFFE4E4E9),
+    noticeBackground = Color(0xFFFDEDE9), noticeText = Color(0xFF9A2E1E),
+)
+
+internal val CardsDarkPalette = HongguoPalette(
+    isDark = true,
+    accent = Color(0xFFD42E24), onAccent = Color.White,
+    accentText = Color(0xFFFF8A80), accentBorder = Color(0xFF7A2E28), softAccent = Color(0xFF3A1C1A),
+    ink = Color(0xFFF2F3F5), muted = Color(0xFFA5A9B1),
+    canvas = Color(0xFF0F1012), cream = Color(0xFF23252A), line = Color(0xFF2C2F35), card = Color(0xFF1A1B1F),
+    navMuted = Color(0xFF8F939B), navDivider = Color(0xFF23252A),
+    noticeBackground = Color(0xFF2C1A18), noticeText = Color(0xFFFFB4AB),
+)
+
 internal val ImmersivePalette = HongguoPalette(
     isDark = true,
     accent = Color(0xFFD63A24), onAccent = Color.White,
@@ -129,10 +181,10 @@ internal val CardsPalette = HongguoPalette(
     noticeBackground = Color(0xFFFDEDEB), noticeText = Color(0xFF9A2A21),
 )
 
-internal fun AppThemeStyle.palette(): HongguoPalette = when (this) {
-    AppThemeStyle.WARM -> WarmPalette
-    AppThemeStyle.IMMERSIVE -> ImmersivePalette
-    AppThemeStyle.CARDS -> CardsPalette
+internal fun AppThemeStyle.palette(dark: Boolean = this == AppThemeStyle.IMMERSIVE): HongguoPalette = when (this) {
+    AppThemeStyle.WARM -> if (dark) WarmDarkPalette else WarmPalette
+    AppThemeStyle.IMMERSIVE -> if (dark) ImmersivePalette else ImmersiveLightPalette
+    AppThemeStyle.CARDS -> if (dark) CardsDarkPalette else CardsPalette
 }
 
 internal val LocalHongguoPalette = staticCompositionLocalOf { WarmPalette }
@@ -156,11 +208,6 @@ internal val NavDivider: Color @Composable @ReadOnlyComposable get() = LocalHong
 internal val NoticeBackground: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.noticeBackground
 internal val NoticeText: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.noticeText
 
-/** Resolves the style actually shown, honouring the optional "dark system → immersive" switch. */
-@Composable
-internal fun resolveThemeStyle(selected: AppThemeStyle, darkFollowsSystem: Boolean): AppThemeStyle =
-    resolveThemeStyle(selected, darkFollowsSystem, isSystemInDarkTheme())
-
 private val LightNavigationScrim = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
 private val DarkNavigationScrim = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)
 
@@ -178,22 +225,19 @@ internal fun ComponentActivity.applyThemeWindow(palette: HongguoPalette) {
     )
 }
 
-/** Same rule as [resolveThemeStyle], for code that runs before composition (window background at cold start). */
-internal fun resolveThemeStyle(selected: AppThemeStyle, darkFollowsSystem: Boolean, systemDark: Boolean): AppThemeStyle =
-    if (darkFollowsSystem && systemDark) AppThemeStyle.IMMERSIVE else selected
-
 /**
  * Native Android type and shared surfaces across content, forms and system dialogs.
  * [applyToWindow] is false for nested previews, and while the player owns the system bars. Turning it back on
  * re-applies the theme after the player restores its saved bar state, which may predate a rotation.
  */
 @Composable
-internal fun HongguoTheme(style: AppThemeStyle = AppThemeStyle.WARM, applyToWindow: Boolean = true,
-                          content: @Composable () -> Unit) {
-    val palette = style.palette()
+internal fun HongguoTheme(style: AppThemeStyle = AppThemeStyle.WARM, dark: Boolean = style == AppThemeStyle.IMMERSIVE,
+                          windowDark: Boolean = dark, applyToWindow: Boolean = true, content: @Composable () -> Unit) {
+    val palette = style.palette(dark)
+    val windowPalette = style.palette(windowDark)
     val view = LocalView.current
     if (applyToWindow && !view.isInEditMode) {
-        LaunchedEffect(palette) { (view.context as? ComponentActivity)?.applyThemeWindow(palette) }
+        LaunchedEffect(windowPalette) { (view.context as? ComponentActivity)?.applyThemeWindow(windowPalette) }
     }
     CompositionLocalProvider(LocalHongguoPalette provides palette) {
         MaterialTheme(

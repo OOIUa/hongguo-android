@@ -1,6 +1,17 @@
 package com.hongguo.android
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.size
@@ -29,7 +40,7 @@ import com.hongguo.account.AccountViewModel
 /** A deliberate cloud action alongside the existing device-only favorite. */
 @Composable
 internal fun AccountFavoriteAction(card: DramaCard, model: AccountViewModel, dark: Boolean = false,
-                                   compact: Boolean = false,
+                                   compact: Boolean = false, chip: Boolean = false, modifier: Modifier = Modifier,
                                    onSignIn: () -> Unit = {}) {
     val state by model.state.collectAsStateWithLifecycle()
     val owner = model.ownerKey
@@ -38,11 +49,18 @@ internal fun AccountFavoriteAction(card: DramaCard, model: AccountViewModel, dar
     val present = state.favorites.any { it.card.id == card.id }
     val uncertain = card.id in state.favoriteUncertainIds
     val busy = card.id in state.favoriteBusyIds
-    TextButton(onClick = {
+    val onClick = {
         if (!signedIn) onSignIn()
         else if (uncertain) model.resolveFavorite(card.id)
         else confirmation = !present
-    }, enabled = !busy && !state.busy,
+    }
+    if (chip) FavoriteChip(Icons.Outlined.CloudQueue, when {
+        busy -> "正在核对"
+        uncertain -> "核对账号收藏"
+        present -> "账号已收藏"
+        else -> "账号收藏"
+    }, if (signedIn) "同步红果账号" else "登录后同步", present, !busy && !state.busy, modifier.testTag("account_favorite_toggle"), onClick)
+    else TextButton(onClick = onClick, enabled = !busy && !state.busy,
         modifier = Modifier.testTag("account_favorite_toggle").then(if (dark && !compact) Modifier.widthIn(max = 104.dp) else Modifier)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (dark && !compact) Icon(if (present) Icons.Outlined.CloudDone else Icons.Outlined.CloudQueue, null,
@@ -67,5 +85,30 @@ internal fun AccountFavoriteAction(card: DramaCard, model: AccountViewModel, dar
                     if (owner != null && owner == model.ownerKey) model.setFavorite(card, add, expectedOwner = owner)
                 }, modifier = Modifier.testTag("confirm_account_favorite")) { Text("确认") }
             }, dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } })
+    }
+}
+
+/** The two favorites side by side, so where each one is kept is visible: this device or the Hongguo account. */
+@Composable
+internal fun FavoritePair(card: DramaCard, localFavorite: Boolean, onToggleLocal: () -> Unit, model: AccountViewModel, onSignIn: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FavoriteChip(Icons.Outlined.PhoneAndroid, if (localFavorite) "本机已收藏" else "本机收藏", "仅存这台设备", localFavorite, true,
+            Modifier.weight(1f).testTag("favorite_toggle"), onToggleLocal)
+        AccountFavoriteAction(card, model, chip = true, modifier = Modifier.weight(1f), onSignIn = onSignIn)
+    }
+}
+
+@Composable
+private fun FavoriteChip(icon: ImageVector, title: String, caption: String, selected: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Surface(onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 56.dp), shape = RoundedCornerShape(12.dp), color = Cream,
+        border = BorderStroke(1.dp, if (selected) Orange else Color.Transparent)) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(if (selected && icon == Icons.Outlined.CloudQueue) Icons.Outlined.CloudDone else icon, null, Modifier.size(22.dp), tint = if (selected) AccentInk else Muted)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, color = if (selected) AccentInk else Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(caption, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }

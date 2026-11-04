@@ -104,6 +104,31 @@ internal fun CloudLibraryContent(
     })
 }
 
+/** The account's watch history alone, for the 播放历史 page. */
+@Composable
+internal fun AccountHistoryList(accountModel: AccountViewModel, onOpenLibrary: (LibraryEntry) -> Unit, modifier: Modifier) {
+    val state by accountModel.state.collectAsStateWithLifecycle()
+    val owner = accountModel.ownerKey
+    LaunchedEffect(owner, state.sessionStatus) {
+        if (owner != null && state.sessionStatus == AccountSessionStatus.LOGGED_IN && !state.busy) accountModel.refresh()
+    }
+    LazyColumn(modifier.testTag("play_history_account"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp).plusNavClearance(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        state.historyError?.let { item { AccountNotice(it, "重试", accountModel::refresh, !state.busy, "account_list_error") } }
+        if (state.history.isEmpty() && state.historyError == null) item {
+            AccountNotice(if (state.busy) "正在读取观看记录…" else "暂时没有读取到观看记录", tag = "account_empty")
+        }
+        items(state.history.chunked(3), key = { row -> row.first().card.id }) { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { entry ->
+                    AccountLibraryCell(entry, AccountSection.HISTORY, true, false, false, Modifier.weight(1f), { onOpenLibrary(entry) }, {}, {})
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
 /** Shared account library entries, also embedded in the account page without nested scrolling. */
 internal fun LazyListScope.cloudLibraryItems(
     state: AccountState,
@@ -123,24 +148,26 @@ internal fun LazyListScope.cloudLibraryItems(
         }
         TabRow(selectedTabIndex = state.selectedSection.ordinal, containerColor = Canvas, contentColor = AccentInk,
             divider = { HorizontalDivider(color = Cream) }) {
-            listOf(AccountSection.HISTORY to "历史", AccountSection.FAVORITES to "收藏", AccountSection.RESERVATIONS to "预约").forEach { (section, title) ->
+            listOf(AccountSection.HISTORY to "历史", AccountSection.FAVORITES to "收藏", AccountSection.LIKES to "点赞", AccountSection.RESERVATIONS to "预约").forEach { (section, title) ->
                 Tab(selected = state.selectedSection == section, onClick = { accountModel.selectSection(section) },
                     modifier = Modifier.testTag("account_section_${section.name.lowercase(Locale.ROOT)}"),
                     selectedContentColor = AccentInk, unselectedContentColor = Muted,
                     text = { Text(title, fontSize = 16.sp, fontWeight = if (state.selectedSection == section) FontWeight.SemiBold else FontWeight.Normal) })
             }
         }
-        Text("最近读取的账号记录 · 与本机片单分别保存", color = Muted, fontSize = 12.sp,
-            modifier = Modifier.padding(top = 12.dp))
+        // The account page shows these in its header.
+        if (!showTitle) accountStatsLine(state)?.let { Text(it, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp).testTag("account_stats")) }
     }
     val entries = when (state.selectedSection) {
         AccountSection.HISTORY -> state.history
         AccountSection.FAVORITES -> state.favorites
+        AccountSection.LIKES -> state.likes
         AccountSection.RESERVATIONS -> state.reservations
     }
     val error = when (state.selectedSection) {
         AccountSection.HISTORY -> state.historyError
         AccountSection.FAVORITES -> state.favoritesError
+        AccountSection.LIKES -> state.likesError
         AccountSection.RESERVATIONS -> state.reservationsError
     }
     error?.let { item { AccountNotice(it, "重试", accountModel::refresh, !state.busy, "account_list_error") } }
@@ -148,52 +175,52 @@ internal fun LazyListScope.cloudLibraryItems(
         AccountNotice(if (state.busy) "正在读取账号片单…" else when (state.selectedSection) {
             AccountSection.HISTORY -> "暂时没有读取到观看记录"
             AccountSection.FAVORITES -> "暂时没有读取到收藏作品"
+            AccountSection.LIKES -> "暂时没有读取到点赞作品"
             AccountSection.RESERVATIONS -> "暂时没有读取到预约作品"
         }, tag = "account_empty")
     }
-    items(entries, key = { state.selectedSection.name + ":" + it.card.id }) { entry ->
-        AccountLibraryRow(entry, state.selectedSection, state.selectedSection != AccountSection.RESERVATIONS || entry.card.id in state.reservationOnlineIds,
-            entry.card.id in state.favoriteUncertainIds, entry.card.id in state.favoriteBusyIds,
-            { onOpenLibrary(entry) }, { onRemove(entry) }, { accountModel.resolveFavorite(entry.card.id) })
+    items(entries.chunked(3), key = { row -> state.selectedSection.name + ":" + row.first().card.id }) { row ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            row.forEach { entry ->
+                AccountLibraryCell(entry, state.selectedSection, state.selectedSection != AccountSection.RESERVATIONS || entry.card.id in state.reservationOnlineIds,
+                    entry.card.id in state.favoriteUncertainIds, entry.card.id in state.favoriteBusyIds, Modifier.weight(1f),
+                    { onOpenLibrary(entry) }, { onRemove(entry) }, { accountModel.resolveFavorite(entry.card.id) })
+            }
+            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+        }
     }
     item {
-        Text("历史每次读取最近50条；预约按上线状态各读取20条。收藏与历史各缓存最多200部。",
+        Text("历史每次读取最近50条；预约按上线状态各读取20条。收藏与历史各缓存最多200部。与本机片单分别保存。" +
+            if (showTitle) "“同步此后观看进度”默认关闭，只同步此后实际播放的进度，不上传本机旧记录。" else "",
             color = Muted, fontSize = 12.sp, lineHeight = 19.sp, modifier = Modifier.padding(vertical = 12.dp))
     }
 }
 
+/** 红果号与平台计数；计数取不到时不显示。 */
+internal fun accountStatsLine(state: AccountState): String? {
+    val stats = state.stats
+    return listOfNotNull(state.profile?.id?.takeIf { it.isNotBlank() }?.let { "红果号 $it" },
+        stats?.follows?.let { "关注 $it" }, stats?.fans?.let { "粉丝 $it" }, stats?.likes?.let { "获赞 $it" })
+        .joinToString(" · ").ifEmpty { null }
+}
+
 @Composable
-private fun AccountLibraryRow(entry: LibraryEntry, section: AccountSection, canOpen: Boolean, uncertain: Boolean,
-                              favoriteBusy: Boolean, onOpen: () -> Unit, onRemove: () -> Unit, onResolve: () -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().clickable(enabled = canOpen, onClick = onOpen).padding(vertical = 8.dp)
-            .testTag("account_entry_${entry.card.id}"), horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Cover(entry.card.cover, entry.card.title, Modifier.width(82.dp).height(110.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(entry.card.title, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
-                    lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(when (section) {
-                    AccountSection.HISTORY -> "第 ${entry.episodeIndex.coerceAtLeast(1)} 集 · ${accountPosition(entry.positionMs)}"
-                    AccountSection.FAVORITES -> if (entry.card.episodeCount > 0) "${entry.card.episodeCount} 集 · 账号收藏" else "账号收藏"
-                    AccountSection.RESERVATIONS -> if (canOpen) "已上线，可以观看" else "等待上线"
-                }, color = if (canOpen) Muted else AccentInk, fontSize = 12.sp)
-                if (canOpen) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (section == AccountSection.HISTORY) "继续观看" else "查看剧集", color = AccentInk, fontSize = 14.sp)
-                    Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp), tint = AccentInk)
-                }
-            }
-        }
-        if (section == AccountSection.FAVORITES) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (uncertain) "上次操作结果待确认" else "保存在红果账号", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+private fun AccountLibraryCell(entry: LibraryEntry, section: AccountSection, canOpen: Boolean, uncertain: Boolean, favoriteBusy: Boolean,
+                               modifier: Modifier, onOpen: () -> Unit, onRemove: () -> Unit, onResolve: () -> Unit) {
+    val count = if (entry.card.episodeCount > 0) "${entry.card.episodeCount} 集" else "查看剧集"
+    LibraryPosterCell(entry, when (section) {
+        AccountSection.HISTORY -> "第 ${entry.episodeIndex.coerceAtLeast(1)} 集 · ${accountPosition(entry.positionMs)}"
+        AccountSection.FAVORITES, AccountSection.LIKES -> count
+        AccountSection.RESERVATIONS -> if (canOpen) "已上线" else "等待上线"
+    }, "account_entry_${entry.card.id}", modifier, enabled = canOpen, showProgress = section == AccountSection.HISTORY, onOpen = onOpen, footer = {
+        if (section == AccountSection.FAVORITES) {
             if (favoriteBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            if (uncertain) TextButton(onClick = onResolve, enabled = !favoriteBusy,
-                modifier = Modifier.testTag("account_favorite_resolve_${entry.card.id}")) { Text("核对状态", fontSize = 14.sp) }
-            else TextButton(onClick = onRemove, enabled = !favoriteBusy,
-                modifier = Modifier.testTag("account_favorite_remove_${entry.card.id}")) { Text("取消收藏", fontSize = 14.sp) }
+            else if (uncertain) TextButton(onClick = onResolve, contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.testTag("account_favorite_resolve_${entry.card.id}")) { Text("核对状态", fontSize = 12.sp, maxLines = 1) }
+            else TextButton(onClick = onRemove, contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.testTag("account_favorite_remove_${entry.card.id}")) { Text("取消收藏", fontSize = 12.sp, maxLines = 1) }
         }
-        HorizontalDivider(color = Cream, modifier = Modifier.padding(top = 12.dp))
-    }
+    })
 }
 
 @Composable

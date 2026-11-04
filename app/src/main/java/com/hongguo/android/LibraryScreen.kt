@@ -86,74 +86,81 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
             HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = Line)
             Text(if (history) "本机观看记录" else "本机收藏", fontSize = 12.sp, color = Muted,
                 modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
-            LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("${kind}_list"),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp).plusNavClearance()) {
-                if (entries.isEmpty()) item {
-                    EmptyPrompt(if (history) "还没有观看记录" else "还没有收藏的剧集",
-                        if (history) "开始播放后，这里会记住集数和进度。" else "在剧集详情或播放器中收藏，喜欢的故事就会留在这里。")
-                }
-                itemsIndexed(entries, key = { _, entry -> entry.card.id }) { index, entry ->
-                    // Removing an entry lets the rows below slide up instead of jumping.
-                    Column(Modifier.animateItem()) {
-                    LibraryRow(entry, history, index, managing,
-                        onOpen = { model.openLibrary(entry) },
-                        onRemove = { if (history) model.removeHistory(entry.card.id) else model.toggleFavorite(entry.card) })
-                    if (index < entries.lastIndex) HorizontalDivider(color = Line.copy(alpha = .6f))
-                    }
-                }
-                item {
-                    Text("本机记录仅保存在这台设备。", fontSize = 12.sp, color = Muted,
-                        modifier = Modifier.padding(top = 24.dp, bottom = 24.dp))
-                }
-            }
+            LocalLibraryList(entries, history, managing, model, Modifier.fillMaxWidth().weight(1f))
         }
     }
-    if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false },
-        title = { Text(if (history) "清空观看历史？" else "清空本机收藏？") },
-        text = { Text(if (history) "将移除这台设备上的全部观看记录。" else "将移除这台设备上的全部收藏。") },
-        confirmButton = { TextButton(onClick = {
-            confirmClear = false
-            if (history) model.clearHistory() else model.clearFavorites()
-        }, modifier = Modifier.testTag("confirm_clear_$kind")) { Text("确认清空") } },
-        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } })
+    if (confirmClear) LocalClearDialog(history, model) { confirmClear = false }
 }
 
+private fun entryCaption(entry: LibraryEntry) = when {
+    entry.episodeIndex > 0 -> "第${entry.episodeIndex}集 · ${libraryPositionLabel(entry.positionMs)}"
+    entry.card.episodeCount > 0 -> "${entry.card.episodeCount} 集"
+    else -> "查看剧集"
+}
+
+/** One poster of the three-across library grid, shaped like the 剧场 grid. */
 @Composable
-private fun LibraryRow(entry: LibraryEntry, history: Boolean, index: Int, managing: Boolean,
-                       onOpen: () -> Unit, onRemove: () -> Unit) {
-    val kind = if (history) "history" else "favorite"
-    val stackAction = (LocalDensity.current.fontScale >= 1.3f || LocalConfiguration.current.screenWidthDp < 360) &&
-        (managing || (index == 0 && entry.episodeId.isNotBlank()))
-    Row(Modifier.fillMaxWidth().clickable(onClick = onOpen).testTag("${kind}_item_$index").padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Cover(entry.card.cover, entry.card.title, Modifier.width(64.dp).height(88.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text(entry.card.title, fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(if (entry.episodeIndex > 0) "第${entry.episodeIndex}集 · ${libraryPositionLabel(entry.positionMs)}"
-                else if (entry.card.episodeCount > 0) "${entry.card.episodeCount}集" else "查看完整选集",
-                fontSize = 12.sp, color = Muted)
-            if (stackAction) LibraryRowAction(entry, history, index, managing, onOpen, onRemove)
+internal fun LibraryPosterCell(entry: LibraryEntry, caption: String?, tag: String, modifier: Modifier, enabled: Boolean = true,
+                               showProgress: Boolean = false, onOpen: () -> Unit,
+                               badge: @Composable BoxScope.() -> Unit = {}, footer: @Composable ColumnScope.() -> Unit = {}) {
+    Column(modifier.clickable(enabled = enabled, role = Role.Button, onClick = onOpen).testTag(tag), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(.75f).clip(RoundedCornerShape(12.dp))) {
+            Cover(entry.card.cover, entry.card.title, Modifier.fillMaxSize())
+            if (showProgress) WatchProgress(entry, track = Color.White.copy(alpha = .3f), fill = Orange, modifier = Modifier.align(Alignment.BottomCenter))
+            badge()
         }
-        if (!stackAction) LibraryRowAction(entry, history, index, managing, onOpen, onRemove)
-    }
-}
-
-@Composable
-private fun LibraryRowAction(entry: LibraryEntry, history: Boolean, index: Int, managing: Boolean,
-                             onOpen: () -> Unit, onRemove: () -> Unit) {
-    val kind = if (history) "history" else "favorite"
-    if (managing) TextButton(onClick = onRemove, modifier = Modifier.testTag("${kind}_remove_$index"),
-        contentPadding = PaddingValues(horizontal = 6.dp)) { Text(if (history) "删除" else "取消收藏", fontSize = 12.sp) }
-    else if (index == 0 && entry.episodeId.isNotBlank()) Button(onClick = onOpen, shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)) { Text("继续看", fontSize = 14.sp) }
-    else IconButton(onClick = onOpen) {
-        Icon(Icons.Outlined.ChevronRight, contentDescription = if (entry.episodeId.isNotBlank()) "继续观看" else "查看选集",
-            tint = Muted, modifier = Modifier.size(24.dp))
+        Text(entry.card.title, color = Ink, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (caption != null) Text(caption, color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        footer()
     }
 }
 
 internal fun libraryPositionLabel(positionMs: Long): String {
     val seconds = positionMs.coerceAtLeast(0) / 1000
     return String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60)
+}
+
+/** The device's own records in three columns, shared by 追剧/片单 and the pages opened from 我的. */
+@Composable
+internal fun LocalLibraryList(entries: List<LibraryEntry>, history: Boolean, managing: Boolean, model: HongguoViewModel, modifier: Modifier) {
+    val kind = if (history) "history" else "favorites"
+    LazyColumn(modifier.testTag("${kind}_list"),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp).plusNavClearance()) {
+        if (entries.isEmpty()) item {
+            EmptyPrompt(if (history) "还没有观看记录" else "还没有收藏的剧集",
+                if (history) "开始播放后，这里会记住集数和进度。" else "在剧集详情或播放器中收藏，喜欢的故事就会留在这里。")
+        }
+        itemsIndexed(entries.chunked(3), key = { _, row -> row.first().card.id }) { rowIndex, row ->
+            Row(Modifier.fillMaxWidth().animateItem().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEachIndexed { column, entry ->
+                    val index = rowIndex * 3 + column
+                    LibraryPosterCell(entry, entryCaption(entry), "${kind}_item_$index", Modifier.weight(1f),
+                        showProgress = history, onOpen = { model.openLibrary(entry) }, badge = {
+                            if (managing) RemoveBadge(if (history) "删除${entry.card.title}的记录" else "取消收藏${entry.card.title}",
+                                Modifier.align(Alignment.TopEnd).testTag("${kind}_remove_$index")) {
+                                if (history) model.removeHistory(entry.card.id) else model.toggleFavorite(entry.card)
+                            }
+                        })
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+        item {
+            Text("本机记录仅保存在这台设备。", fontSize = 12.sp, color = Muted,
+                modifier = Modifier.padding(top = 24.dp, bottom = 24.dp))
+        }
+    }
+}
+
+@Composable
+internal fun LocalClearDialog(history: Boolean, model: HongguoViewModel, onDismiss: () -> Unit) {
+    val kind = if (history) "history" else "favorites"
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text(if (history) "清空观看历史？" else "清空本机收藏？") },
+        text = { Text(if (history) "将移除这台设备上的全部观看记录。" else "将移除这台设备上的全部收藏。") },
+        confirmButton = { TextButton(onClick = {
+            onDismiss()
+            if (history) model.clearHistory() else model.clearFavorites()
+        }, modifier = Modifier.testTag("confirm_clear_$kind")) { Text("确认清空") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
 }

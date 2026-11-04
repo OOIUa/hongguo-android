@@ -39,7 +39,7 @@ class ThemeSettingsFlowTest {
         lateinit var model: HongguoViewModel
         compose.runOnIdle { model = ViewModelProvider(compose.activity)[HongguoViewModel::class.java] }
         val originalStyle = model.state.value.themeStyle
-        val originalFollow = model.state.value.darkFollowsSystem
+        val originalMode = model.state.value.themeMode
         try {
             compose.runOnIdle { model.setThemeStyle(AppThemeStyle.WARM) }
             compose.onNodeWithTag("nav_mine").performClick()
@@ -55,10 +55,10 @@ class ThemeSettingsFlowTest {
             compose.onNodeWithTag("theme_option_warm").assertIsNotSelected()
 
             compose.onNodeWithTag("theme_option_cards").performClick()
-            compose.onNodeWithTag("settings_theme_dark_follow").performScrollTo().performClick()
+            compose.onNodeWithTag("theme_mode_dark").performScrollTo().performClick()
             compose.runOnIdle {
                 assertEquals(AppThemeStyle.CARDS, model.state.value.themeStyle)
-                assertEquals(!originalFollow, model.state.value.darkFollowsSystem)
+                assertEquals(ThemeMode.DARK, model.state.value.themeMode)
             }
 
             val app = compose.activity.application
@@ -68,7 +68,7 @@ class ThemeSettingsFlowTest {
                 compose.runOnIdle {
                     val fresh = ViewModelProvider(store, ViewModelProvider.AndroidViewModelFactory(app))[HongguoViewModel::class.java]
                     assertEquals(AppThemeStyle.CARDS, fresh.state.value.themeStyle)
-                    assertEquals(!originalFollow, fresh.state.value.darkFollowsSystem)
+                    assertEquals(ThemeMode.DARK, fresh.state.value.themeMode)
                 }
             } finally { compose.runOnIdle { store.clear() } }
 
@@ -79,7 +79,7 @@ class ThemeSettingsFlowTest {
         } finally {
             compose.runOnIdle {
                 model.setThemeStyle(originalStyle)
-                model.setDarkFollowsSystem(originalFollow)
+                originalMode?.let(model::setThemeMode)
             }
         }
     }

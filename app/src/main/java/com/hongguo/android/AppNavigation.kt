@@ -67,7 +67,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
     val focus = LocalFocusManager.current
     val active = when (selected) {
         AppTab.HISTORY -> AppTab.FAVORITES
-        AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE -> AppTab.MINE
+        AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE, AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES -> AppTab.MINE
         else -> selected
     }
     // Same four destinations in every theme; labels, icons and the selection mark differ per layout.

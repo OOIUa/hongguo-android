@@ -1,5 +1,12 @@
 package com.hongguo.android
 
+import com.hongguo.account.protocol.RankBoard
+import com.hongguo.account.protocol.RankPage
+import com.hongguo.account.protocol.RelatedWork
+import com.hongguo.account.protocol.WebsiteCatalogClient
+import com.hongguo.account.protocol.RelatedWorksClient
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
 import com.hongguo.api.service.Client
 import com.hongguo.api.service.Stream
 import com.hongguo.api.service.ProgressiveMedia
@@ -91,6 +98,17 @@ class DramaRepository {
         }
         DramaPage(cards, page.hasMore, page.nextSkip)
     }
+
+    private val publicHttp by lazy { OkHttpClient.Builder().callTimeout(25, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build() }
+    private val relatedClient by lazy { RelatedWorksClient(publicHttp) }
+    private val websiteClient by lazy { WebsiteCatalogClient(publicHttp) }
+
+    suspend fun rank(board: RankBoard, page: Int): RankPage = runInterruptible(Dispatchers.IO) { websiteClient.rank(board, page) }
+
+    suspend fun suggestions(query: String): List<String> = runInterruptible(Dispatchers.IO) { websiteClient.suggestions(query) }
+
+    suspend fun related(id: String): List<RelatedWork> = runInterruptible(Dispatchers.IO) { relatedClient.related(id) }
 
     suspend fun details(card: DramaCard): DramaDetail = runInterruptible(Dispatchers.IO) {
         val result = Client.getEpisodes(card.id)
