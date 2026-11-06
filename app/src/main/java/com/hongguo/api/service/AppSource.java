@@ -1,5 +1,6 @@
 package com.hongguo.api.service;
 
+import com.hongguo.api.core.PureSign;
 import com.hongguo.api.core.Spade;
 import com.hongguo.api.util.Crypto;
 import com.hongguo.api.util.Http;
@@ -10,6 +11,7 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -41,7 +43,7 @@ import java.util.Map;
  * <p><b>2026-10-27 上游变化</b>（同步自 sunnysky123/hongguo-web 1.1.5 {@code 79babdf}、
  * jackotom/hongguo-drama 3.9 {@code 5febca2}、tsukiyo-zero/hongguoTV {@code 3889318}）：
  * 播放接口开始校验设备身份，每次随机合成、互不关联的 iid/device_id 会被软拦截
- * （HTTP 200 + 0 字节）；该接口也不再接受签名请求。现改为：
+ * （HTTP 200 + 0 字节）。当时改为：
  * <ol>
  *   <li>{@link PlaybackDevice} 向 device_register 注册匿名设备，进程内复用；</li>
  *   <li>播放请求 query 使用注册身份的 device_id / iid / cdid，<b>不带任何签名头</b>；</li>
@@ -51,6 +53,10 @@ import java.util.Map;
  *   <li>空响应不再笼统报「未返回数据」，单独提示疑似设备身份被拒。</li>
  * </ol>
  * 目录、搜索等其他接口不受影响，仍走 {@link Client} 原有签名链路。
+ *
+ * <p><b>2026-11-05 上游变化</b>（同步自 tsukiyo-zero/hongguoTV 0.1.22–0.1.25）：无签名请求一律返回
+ * 200 + 0 字节，上面「不带签名头」已失效。现在 GET 和 POST 都带完整签名、注册下发的 Cookie 与 x-ss-stub，
+ * 见 {@link #signPlayback} 和 {@link #fetch}。
  */
 public final class AppSource {
 
@@ -71,12 +77,16 @@ public final class AppSource {
             + "Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 "
             + "QuicVersion:c67e9834 2025-09-08)";
 
-    /** 播放请求 UA（与「注册身份 + 无签名」路径配套）。 */
+    /** 官方播放器 UA。 */
     static final String PLAYBACK_UA =
             "com.phoenix.read/71532 (Linux; U; Android 9; SM-N9860; "
             + "Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)";
 
     private static final String VERSION_NAME = "7.1.3.32";
+
+    /** 官方播放器版本：query 与签名里保持一致。 */
+    private static final String PLAYBACK_VERSION_CODE = "73932";
+    private static final String PLAYBACK_VERSION_NAME = "7.3.9.32";
 
     /** 请求域名白名单（他的 checkedUrl 域名表，防签名 body 被带往第三方）。 */
     private static final String[] API_DOMAINS = {"fqnovel.com", "snssdk.com"};
@@ -103,38 +113,73 @@ public final class AppSource {
             throw new IllegalArgumentException("分集编号无效");
         }
 
-        PlaybackDevice.Identity identity = PlaybackDevice.fresh();
-        // ---- 1. 官方 App 现行的 GET video_tab/multi_video_model：2026-11-02 起旧的 POST
-        // /novel/player 接口对所有请求返回 200 + 0 字节。只试一次，失败回退旧流程
-        // （同步自 hongguoTV 0.1.15）。
-        Map<String, Object> tab = playbackTab.get(vid, identity);
-        if (tab != null) return parseModel(vid, tab, quality);
-
-        // ---- 2. 回退：无签名 POST multi_video_model/v1（使用注册的匿名身份）----
         byte[] body = Json.stringify(payload(vid)).getBytes(StandardCharsets.UTF_8);
-        Map<String, Object> j;
-        try {
-            j = playbackPost.post(body, identity, VIDEO_API_HOST);
-        } catch (EmptyPlaybackResponseException e) {
-            // 空响应多为当前匿名身份被拒：换一个新注册的身份，隔 300ms 经备用域名、新连接只重试一次。
-            // 换身份失败（冷却或离线）时仍用原身份试备用域名（同步自 hongguo-drama 5.4）。
-            if (Thread.currentThread().isInterrupted()) throw e;
-            PlaybackDevice.Identity retry = identity;
-            IOException renewal = null;
-            try {
-                retry = PlaybackDevice.fresh();
-            } catch (IOException re) {
-                renewal = re;
+        PlaybackDevice.Identity identity = PlaybackDevice.fresh();
+        // 2026-11-05 起无签名请求一律返回 200 + 0 字节；带完整签名的请求仍随「身份 × 路径」偶发为空，
+        // 新身份通常能恢复（hongguoTV 0.1.22–0.1.25）。所以先走官方 GET，再 POST，然后换新身份走 GET
+        // 和备用域名，全程有总时限。
+        long started = System.currentTimeMillis();
+        Exception failure = null;
+        IOException renewal = null;
+        for (PlaybackRoute route : PLAYBACK_ROUTES) {
+            if (System.currentTimeMillis() - started >= PLAYBACK_BUDGET_MS) break;
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("播放请求已取消");
+            if (route.renewsIdentity) {
+                try {
+                    identity = PlaybackDevice.fresh();
+                } catch (IOException e) {
+                    // 换身份失败（冷却或离线）时仍用原身份试完剩余路径。
+                    if (Thread.currentThread().isInterrupted()) throw e;
+                    renewal = e;
+                }
             }
-            Thread.sleep(300);
+            Map<String, Object> j;
             try {
-                j = playbackPost.post(body, retry, RETRY_HOST);
-            } catch (EmptyPlaybackResponseException again) {
-                if (renewal != null) again.addSuppressed(renewal);
-                throw again;
+                j = route.post ? playbackPost.post(body, identity, route.host) : playbackTab.get(vid, identity);
+            } catch (EmptyPlaybackResponseException e) {
+                continue;
+            } catch (PlaybackHttpException | IOException e) {
+                if (Thread.currentThread().isInterrupted()) throw e;
+                failure = e;
+                continue;
             }
+            if (j != null) return parseModel(vid, j, quality);
         }
-        return parseModel(vid, j, quality);
+        if (failure != null) throw failure;
+        EmptyPlaybackResponseException empty = new EmptyPlaybackResponseException();
+        if (renewal != null) empty.addSuppressed(renewal);
+        throw empty;
+    }
+
+    /** 一条候选路径：GET 或 POST、主机、是否先换新身份。 */
+    static final class PlaybackRoute {
+        final boolean post;
+        final String host;
+        final boolean renewsIdentity;
+
+        PlaybackRoute(boolean post, String host, boolean renewsIdentity) {
+            this.post = post;
+            this.host = host;
+            this.renewsIdentity = renewsIdentity;
+        }
+    }
+
+    static final PlaybackRoute[] PLAYBACK_ROUTES = {
+            new PlaybackRoute(false, VIDEO_API_HOST, false),
+            new PlaybackRoute(true, VIDEO_API_HOST, false),
+            new PlaybackRoute(false, VIDEO_API_HOST, true),
+            new PlaybackRoute(true, RETRY_HOST, false),
+    };
+
+    /** 一次取片源的总时限；单次请求另有 {@link #PLAYBACK_TIMEOUT_MS}。 */
+    static final long PLAYBACK_BUDGET_MS = 20_000L;
+    private static final int PLAYBACK_TIMEOUT_MS = 8_000;
+
+    /** 播放接口 HTTP 状态异常：换路径可能恢复，与业务或格式错误不同。 */
+    static final class PlaybackHttpException extends IllegalStateException {
+        PlaybackHttpException(int status) {
+            super("App 接口 HTTP " + status);
+        }
     }
 
     /** 播放接口返回空响应：疑似匿名身份被拒，fetch 会换新身份重试一次。 */
@@ -419,54 +464,91 @@ public final class AppSource {
         return d;
     }
 
-    /**
-     * 播放请求 URL：基础参数后依次追加注册身份的 device_id / iid / cdid 与 _rticket。
-     *
-     * <p>query 编码沿用 python urllib.parse.quote 的兜底行为：
-     * {@code !'()* } 也编成 %XX（resolution=1280*2772 里的 * 就在此列）。
-     */
-    static String playbackUrl(PlaybackDevice.Identity identity, long rticket) {
-        return playbackUrl(identity, rticket, VIDEO_API_HOST);
+    /** 已签名的播放请求：URL 与签名头绑定，发送时不能再改动。 */
+    static final class SignedPlayback {
+        final String url;
+        final Map<String, String> headers;
+
+        SignedPlayback(String url, Map<String, String> headers) {
+            this.url = url;
+            this.headers = headers;
+        }
     }
 
-    static String playbackUrl(PlaybackDevice.Identity identity, long rticket, String host) {
-        Map<String, Object> q = deviceBase();
-        q.put("device_id", identity.deviceId);
+    /**
+     * 官方播放器形态的签名请求（同步自 hongguoTV 0.1.25 {@code playbackRequest}）：注册身份同时进入 query 和
+     * medusa，版本号用官方播放器版本，只接受 hash 分支 0，靠抖动 _rticket 选到它。
+     */
+    static SignedPlayback signPlayback(String base, PlaybackDevice.Identity identity, Map<String, String> extra,
+            byte[] body, long nowMs) {
+        Map<String, String> q = new LinkedHashMap<>();
         q.put("iid", identity.iid);
-        q.put("cdid", identity.cdid);
-        q.put("_rticket", String.valueOf(rticket));
-        StringBuilder qs = new StringBuilder();
-        for (Map.Entry<String, Object> e : q.entrySet()) {
-            if (qs.length() > 0) qs.append('&');
-            qs.append(pyEncode(e.getKey())).append('=')
-              .append(pyEncode(String.valueOf(e.getValue())));
+        q.put("device_id", identity.deviceId);
+        for (Map.Entry<String, Object> e : deviceBase().entrySet()) q.put(e.getKey(), String.valueOf(e.getValue()));
+        for (String name : new String[]{"version_code", "manifest_version_code", "update_version_code", "pv_player"}) {
+            q.put(name, PLAYBACK_VERSION_CODE);
         }
-        return VIDEO_API.replace(VIDEO_API_HOST, host) + "?" + qs;
+        q.put("version_name", PLAYBACK_VERSION_NAME);
+        q.put("cdid", identity.cdid);
+        q.putAll(extra);
+        StringBuilder qs = new StringBuilder();
+        for (Map.Entry<String, String> e : q.entrySet()) {
+            if (qs.length() > 0) qs.append('&');
+            qs.append(queryEncode(e.getKey())).append('=').append(queryEncode(e.getValue()));
+        }
+        long khronos = nowMs / 1000L;
+        for (int offset = 0; offset < 128; offset++) {
+            long ticket = nowMs + offset;
+            String url = base + "?" + qs + "&_rticket=" + ticket;
+            if (PureSign.branchOf(url, body, khronos) != 0) continue;
+            Map<String, String> headers = new LinkedHashMap<>();
+            headers.put("User-Agent", PLAYBACK_UA);
+            headers.put("Accept", "application/json; charset=utf-8,application/x-protobuf");
+            headers.put("x-ss-req-ticket", String.valueOf(ticket));
+            headers.put("sdk-version", "2");
+            headers.put("x-xs-from-web", "0");
+            headers.putAll(PureSign.sign(url, body, khronos));
+            if (body != null) {
+                headers.put("Content-Type", "application/json; charset=utf-8");
+                headers.put("x-ss-stub", Crypto.md5HexUpper(body));
+            }
+            if (!identity.cookie.isEmpty()) headers.put("Cookie", identity.cookie);
+            return new SignedPlayback(url, headers);
+        }
+        throw new IllegalStateException("无法生成播放签名");
+    }
+
+    /** 与官方请求一致：* 不编码，其余同 {@link #pyEncode}。 */
+    private static String queryEncode(String raw) {
+        return pyEncode(raw).replace("%2A", "*");
     }
 
     /** video_tab 接口地址（与旧接口同主机）。 */
     private static final String TAB_API = "https://" + VIDEO_API_HOST
             + "/reading/bookapi/video_tab/multi_video_model/v1/";
 
-    /**
-     * video_tab 请求 URL：设备参数、注册身份与 _rticket 之后追加 GetVideoModelRequest 的全部字段，
-     * 缺任一字段服务端回 100103 PARAM_INVALID。该接口一次只接受一集。
-     */
-    static String tabUrl(PlaybackDevice.Identity identity, String vid, long rticket) {
-        String url = playbackUrl(identity, rticket);
-        return TAB_API + url.substring(url.indexOf('?'))
-                + "&video_id=" + vid + "&video_id_type=0&device_level=1&need_all_video_definition=1"
-                + "&need_mp4_align=0&use_os_player=0&video_platform=1024&source=0&from_video_id=";
+    /** GetVideoModelRequest 的全部字段：缺任一字段服务端回 100103 PARAM_INVALID。该接口一次只接受一集。 */
+    static Map<String, String> tabQuery(String vid) {
+        Map<String, String> q = new LinkedHashMap<>();
+        q.put("video_id", vid);
+        q.put("video_id_type", "0");
+        q.put("device_level", "1");
+        q.put("need_all_video_definition", "1");
+        q.put("need_mp4_align", "0");
+        q.put("use_os_player", "0");
+        q.put("video_platform", "1024");
+        q.put("source", "0");
+        q.put("from_video_id", "");
+        return q;
     }
 
-    /** 单次 GET video_tab；网络、HTTP 或结构问题一律返回 null，由 fetch 回退旧流程。 */
+    /** 单次签名 GET video_tab；空响应、网络、HTTP 或结构问题一律返回 null，由 fetch 换下一条路径。 */
     private static Map<String, Object> getTabModel(String vid, PlaybackDevice.Identity identity)
             throws Exception {
-        Http.Req req = new Http.Req(tabUrl(identity, vid, System.currentTimeMillis()))
-                .method("GET").timeout(15000);
+        SignedPlayback signed = signPlayback(TAB_API, identity, tabQuery(vid), null, System.currentTimeMillis());
+        Http.Req req = new Http.Req(signed.url).method("GET").timeout(PLAYBACK_TIMEOUT_MS);
         req.followRedirect = false;
-        req.header("User-Agent", PLAYBACK_UA);
-        req.header("Accept", "application/json; charset=utf-8");
+        for (Map.Entry<String, String> e : signed.headers.entrySet()) req.header(e.getKey(), e.getValue());
         Http.Resp res;
         try {
             res = Http.send(req);
@@ -503,31 +585,17 @@ public final class AppSource {
         return j;
     }
 
-    /** 播放请求头：无任何签名头（x-gorgon / x-argus / x-medusa 等）。 */
-    static Map<String, String> playbackHeaders() {
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("User-Agent", PLAYBACK_UA);
-        headers.put("Accept", "application/json; charset=utf-8,application/x-protobuf");
-        headers.put("Content-Type", "application/json; charset=UTF-8");
-        return headers;
-    }
-
-    /** 无签名 POST（2026-10-27 起该接口不再接受签名请求）。 */
+    /** 单次签名 POST。 */
     private static Map<String, Object> postPlayback(byte[] body, PlaybackDevice.Identity identity,
             String host) throws Exception {
-        String url = playbackUrl(identity, System.currentTimeMillis(), host);
-        Http.Req req = new Http.Req(url).method("POST").timeout(15000);
+        SignedPlayback signed = signPlayback(VIDEO_API.replace(VIDEO_API_HOST, host), identity,
+                new LinkedHashMap<>(), body, System.currentTimeMillis());
+        Http.Req req = new Http.Req(signed.url).method("POST").timeout(PLAYBACK_TIMEOUT_MS);
         req.followRedirect = false;
-        for (Map.Entry<String, String> e : playbackHeaders().entrySet()) {
-            req.header(e.getKey(), e.getValue());
-        }
-        // 重试强制新连接，避免粘在同一后端节点。
-        if (!VIDEO_API_HOST.equals(host)) req.header("Connection", "close");
+        for (Map.Entry<String, String> e : signed.headers.entrySet()) req.header(e.getKey(), e.getValue());
         req.body(body);
         Http.Resp res = Http.send(req);
-        if (res.status != 200) {
-            throw new IllegalStateException("App 接口 HTTP " + res.status);
-        }
+        if (res.status != 200) throw new PlaybackHttpException(res.status);
         return parsePlaybackResponse(res.text());
     }
 

@@ -77,6 +77,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -557,20 +558,20 @@ internal fun ImmersiveDetail(state: HongguoUiState, model: HongguoViewModel, acc
     val detail = state.detail
     val favorite = state.favorites.any { it.card.id == card.id }
     var range by rememberSaveable(card.id) { mutableIntStateOf(-1) }
-    LazyColumn(Modifier.fillMaxSize().testTag("immersive_detail"), contentPadding = PaddingValues(bottom = 28.dp),
+    val list = rememberLazyListState()
+    // The picture runs up under the transparent status bar; the back button stays below it.
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize().testTag("immersive_detail"), state = list, contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            // The picture runs up under the transparent status bar; the back button stays below it.
-            // In the light mode the page starts below the status bar instead, so its dark icons stay readable.
-            val underStatusBar = LocalHongguoPalette.current.isDark
-            val statusTop = if (underStatusBar) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp
             Box(Modifier.fillMaxWidth().height(360.dp + statusTop)) {
                 PosterImage(detail?.cover ?: card.cover, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxWidth().height(statusTop + 56.dp).background(Brush.verticalGradient(
                     listOf(Color.Black.copy(alpha = .45f), Color.Transparent))))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                     .35f to Color.Transparent, 1f to Canvas)))
-                IconButton(onClick = model::backToSearch, modifier = Modifier.then(if (underStatusBar) Modifier.statusBarsPadding() else Modifier).padding(6.dp).clip(CircleShape)
+                IconButton(onClick = model::backToSearch, modifier = Modifier.statusBarsPadding().padding(6.dp).clip(CircleShape)
                     .background(Color.Black.copy(alpha = .35f)).testTag("detail_back")) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Color.White)
                 }
@@ -639,5 +640,8 @@ internal fun ImmersiveDetail(state: HongguoUiState, model: HongguoViewModel, acc
                 }
             }
         }
+    }
+    // The picture fades into the page from about here on, so the bar switches to the page before that.
+    DetailStatusBar(list, (360.dp + statusTop) * .55f)
     }
 }

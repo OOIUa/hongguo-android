@@ -37,7 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,8 +68,12 @@ class MainActivity : ComponentActivity() {
             val dark = resolveDark(state.themeMode, layout, isSystemInDarkTheme())
             // 沉浸暗场's video feed stays dark in every mode, with its status bar and bottom bar.
             val feedDark = layout == AppThemeStyle.IMMERSIVE && state.tab == AppTab.HOME && state.selectedCard == null
+            // A detail page's picture sits behind the status bar, so its icons stay light until the picture scrolls away.
+            var detailPictureUnderBar by remember(state.selectedCard?.id) { mutableStateOf(true) }
+            val statusBarOverPicture = state.selectedCard != null && layout != AppThemeStyle.WARM && detailPictureUnderBar
             // The player owns the system bars while open; the theme re-applies them when it closes.
-            HongguoTheme(layout, dark = dark, windowDark = dark || feedDark, applyToWindow = !state.playerOpen) {
+            HongguoTheme(layout, dark = dark, windowDark = dark || feedDark, statusBarOverPicture = statusBarOverPicture, applyToWindow = !state.playerOpen) {
+                CompositionLocalProvider(LocalDetailPictureUnderBar provides { detailPictureUnderBar = it }) {
                 val pageStates = rememberSaveableStateHolder()
                 val accountModel: AccountViewModel = viewModel()
                 val accountState by accountModel.state.collectAsStateWithLifecycle()
@@ -134,7 +140,7 @@ class MainActivity : ComponentActivity() {
                         pageStates.SaveableStateProvider(key) {
                         Box(Modifier.fillMaxSize()) {
                         Column(Modifier.fillMaxSize().background(Canvas)
-                            .padding(top = if (drawsUnderStatusBar(key, layout, dark)) 0.dp else topInset)) {
+                            .padding(top = if (drawsUnderStatusBar(key, layout)) 0.dp else topInset)) {
                             // Each page draws its own state: a leaving detail page keeps its drama, never the next one.
                             val detailState = when {
                                 !key.startsWith("detail_") -> null
@@ -227,6 +233,7 @@ class MainActivity : ComponentActivity() {
                 }
                 // A startup update prompt waits until the theme picker has been answered, so two dialogs never stack.
                 UpdateDialogs(updateState, updateModel, this@MainActivity, deferred = state.themeOnboardingPending)
+                }
             }
         }
     }
@@ -279,8 +286,12 @@ private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, 
 }
 
 /** Pages whose own picture fills the area behind the status bar (they pad their top controls themselves). */
-private fun drawsUnderStatusBar(key: String, layout: AppThemeStyle, dark: Boolean): Boolean =
-    layout == AppThemeStyle.IMMERSIVE && (key == "tab_${AppTab.HOME.name}" || (dark && key.startsWith("detail_")))
+private fun drawsUnderStatusBar(key: String, layout: AppThemeStyle): Boolean = when (layout) {
+    AppThemeStyle.IMMERSIVE -> key == "tab_${AppTab.HOME.name}" || key.startsWith("detail_")
+    AppThemeStyle.CARDS -> key.startsWith("detail_")
+    // 暖白精修's detail page has no picture at the top: its header already runs on into the status bar's color.
+    AppThemeStyle.WARM -> false
+}
 
 /** False while a page is animating out, so its back handlers and taps stand down. */
 internal val LocalPageActive = compositionLocalOf { true }

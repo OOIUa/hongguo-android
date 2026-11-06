@@ -1,3 +1,14 @@
+# 0.7.15 修复无法播放、详情页状态栏沉浸
+
+验证日期：2026-11-06（Asia/Shanghai）。versionName 0.7.15、versionCode 26。对应 iOS 0.1.13。
+
+- 播放：2026-11-05 起未签名请求返回 HTTP 200 + 0 字节，0.7.14 及更早版本无法取得播放信息。`AppSource.fetch` 改为带完整签名（x-gorgon、khronos、ladon、argus、helios、medusa），带上注册返回的 Cookie 和 POST 的 `x-ss-stub`。在 20 秒预算内依次尝试 GET、POST、换新身份 GET、备用域名 POST，单次请求最多 8 秒。协议参考 hongguoTV 0.1.25。
+- 详情页：沉浸暗场和内容卡片的封面铺到状态栏下方，封面在状态栏后时用浅色图标，滚走后状态栏盖上页面底色并换回主题图标色（新增 `DetailStatusBar`）。暖白精修顶部没有大图，未改动。
+- 实网（匿名）：临时 JVM 测试连续取 20 集播放信息全部成功，测试文件随后删除。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:testDebugUnitTest :app:assembleDebug :app:lintDebug :app:compileDebugAndroidTestKotlin` 通过，单元测试 317 个全部通过，lint 无错误。
+- 未验证：没有真机或模拟器，Android 端未实际下载和播放视频，详情页状态栏未实际查看。第一条路线之后的重试路线只有单元测试，实网未触发过。相同播放协议的 iOS 0.1.13 已在模拟器上实际播放。
+- 已知风险：每次取播放信息都注册新身份，与上游复用身份的做法不同；平台若限制注册会表现为播放失败。
+
 # 0.7.14 榜单、相关作品、账号记录、亮暗主题与清屏播放
 
 验证日期：2026-11-04（Asia/Shanghai）。versionName 0.7.14、versionCode 25。对应 iOS 0.1.12。

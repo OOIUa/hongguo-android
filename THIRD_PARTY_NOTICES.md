@@ -112,3 +112,8 @@ SMS login now uses the official App's passport channel on `security.snssdk.com`,
   https://github.com/tsukiyo-zero/hongguoTV/blob/f22bb3f/kotlin-tv/core/src/main/kotlin/com/hongguotv/core/PhoneLogin.kt
 
 Local changes: redirects are never followed, raw provider text is never shown, one attempt never accepts the same code twice from the user, and 1202 also allows typing a different code. A slider request opens a dialog that sends the user to the official login page to pass it manually; it is not solved or bypassed. The same protocol completed a real number login on iOS 0.1.11 in a simulator; Android has not been verified with a real account.
+
+### Signed playback requests (2026-11)
+
+`AppSource.signPlayback` and the route order in `AppSource.fetch` follow tsukiyo-zero/hongguoTV 0.1.22–0.1.25, commit `0c639bc` (2026-11-06), GPL-3.0-only — `kotlin-tv/core/.../ContentRepository.kt` `playbackRequest`, `Signer.signPlayback` and `PLAYBACK_STABILITY.md`. Since 2026-11-05 the model endpoints answer unsigned requests with an empty body; requests now carry the full signature, the registration cookies and `x-ss-stub`.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/0c639bc/kotlin-tv

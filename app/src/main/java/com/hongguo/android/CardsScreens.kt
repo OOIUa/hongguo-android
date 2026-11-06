@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -388,14 +392,17 @@ internal fun CardsDetail(state: HongguoUiState, model: HongguoViewModel, account
     val detail = state.detail
     val favorite = state.favorites.any { it.card.id == card.id }
     var showAll by rememberSaveable(card.id) { mutableStateOf(false) }
-    LazyColumn(Modifier.fillMaxSize().testTag("cards_detail"), contentPadding = PaddingValues(bottom = 24.dp),
+    val list = rememberLazyListState()
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize().testTag("cards_detail"), state = list, contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            // The header image ends at 170dp; the title column sits entirely below it and grows downward with large
+            // The header image runs up under the transparent status bar and ends 170dp below it; the title column sits entirely below it and grows downward with large
             // text, while the poster overlaps the image edge.
             Box(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth()) {
-                    Box(Modifier.fillMaxWidth().height(170.dp)) {
+                    Box(Modifier.fillMaxWidth().height(170.dp + statusTop)) {
                         PosterImage(detail?.cover ?: card.cover, Modifier.fillMaxSize())
                         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .35f)))
                     }
@@ -407,10 +414,10 @@ internal fun CardsDetail(state: HongguoUiState, model: HongguoViewModel, account
                             color = Muted, fontSize = 12.sp)
                     }
                 }
-                IconButton(onClick = model::backToSearch, modifier = Modifier.padding(4.dp).testTag("detail_back")) {
+                IconButton(onClick = model::backToSearch, modifier = Modifier.statusBarsPadding().padding(4.dp).testTag("detail_back")) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Color.White)
                 }
-                Box(Modifier.padding(start = 16.dp, top = 123.dp).width(100.dp).height(133.dp).clip(RoundedCornerShape(10.dp))
+                Box(Modifier.padding(start = 16.dp, top = 123.dp + statusTop).width(100.dp).height(133.dp).clip(RoundedCornerShape(10.dp))
                     .border(3.dp, CardSurface, RoundedCornerShape(10.dp))) {
                     PosterImage(detail?.cover ?: card.cover, Modifier.fillMaxSize())
                 }
@@ -471,6 +478,8 @@ internal fun CardsDetail(state: HongguoUiState, model: HongguoViewModel, account
                 }
             }
         }
+    }
+    DetailStatusBar(list, 170.dp + statusTop)
     }
 }
 

@@ -1,5 +1,6 @@
 package com.hongguo.api.service;
 
+import com.hongguo.api.core.PureSign;
 import com.hongguo.api.util.Config;
 import com.hongguo.api.util.Crypto;
 import com.hongguo.api.util.Json;
@@ -121,7 +122,7 @@ public class PlaybackSourceTest {
     @Test public void responseIdsKeepNineteenDigitsExactly() throws Exception {
         Map<String, Object> j = Json.parseObject("{\"device_id\":" + DEVICE_ID
                 + ",\"install_id\":" + INSTALL_ID + ",\"code\":0}");
-        PlaybackDevice.Identity id = PlaybackDevice.parse(j, "c");
+        PlaybackDevice.Identity id = PlaybackDevice.parse(j, "c", "");
         assertEquals(DEVICE_ID, id.deviceId);
         assertEquals(INSTALL_ID, id.iid);
         assertEquals("c", id.cdid);
@@ -150,7 +151,7 @@ public class PlaybackSourceTest {
     @Test(expected = IOException.class)
     public void registrationRejectedByBusinessCode() throws Exception {
         PlaybackDevice.parse(Json.parseObject("{\"code\":1,\"device_id_str\":\"" + DEVICE_ID
-                + "\",\"install_id_str\":\"" + INSTALL_ID + "\"}"), "c");
+                + "\",\"install_id_str\":\"" + INSTALL_ID + "\"}"), "c", "");
     }
 
     // ==================== 进程内共享与失败冷却 ====================
@@ -224,28 +225,82 @@ public class PlaybackSourceTest {
         expectRegistrationFailure();
     }
 
-    // ==================== 无签名播放请求 ====================
+    // ==================== 签名播放请求 ====================
 
-    @Test public void playbackRequestUsesRegisteredIdentityWithoutSignature() throws Exception {
-        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+    @Test public void playbackRequestIsSignedWithTheRegisteredIdentityAndCookie() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> new PlaybackDevice.Reply(200, okReply().text,
+                Arrays.asList("install_id=11; Path=/; Domain=fqnovel.com", "ttreq=1$abc; Path=/", "other=secret; Path=/")));
         PlaybackDevice.Identity id = PlaybackDevice.fresh();
-        String url = AppSource.playbackUrl(id, 1_793_000_000_123L);
+        assertEquals("install_id=11; ttreq=1$abc", id.cookie);
+        byte[] body = "{\"a\":1}".getBytes(StandardCharsets.UTF_8);
+        String base = "https://" + AppSource.RETRY_HOST + "/novel/player/multi_video_model/v1/";
+        AppSource.SignedPlayback post = AppSource.signPlayback(base, id, new java.util.LinkedHashMap<>(), body, 1_793_000_000_123L);
 
-        assertTrue(url.startsWith("https://" + AppSource.VIDEO_API_HOST + "/novel/player/multi_video_model/v1/?"));
-        String query = url.substring(url.indexOf('?') + 1);
-        assertTrue(query.contains("&device_id=" + DEVICE_ID + "&iid=" + INSTALL_ID + "&cdid=" + id.cdid
-                + "&_rticket=1793000000123"));
-        assertTrue("resolution 的 * 按 python quote 编码", query.contains("resolution=1280%2A2772"));
-        assertFalse("无签名路径不带 ts", query.contains("&ts="));
-        assertTrue(AppSource.playbackUrl(id, 1L, AppSource.RETRY_HOST)
-                .startsWith("https://" + AppSource.RETRY_HOST + "/novel/player/multi_video_model/v1/?"));
+        String query = post.url.substring(post.url.indexOf('?') + 1);
+        assertTrue(query.startsWith("iid=" + INSTALL_ID + "&device_id=" + DEVICE_ID + "&"));
+        assertTrue(query.contains("&cdid=" + id.cdid + "&_rticket="));
+        assertTrue(query.contains("version_code=73932") && query.contains("version_name=7.3.9.32") && query.contains("pv_player=73932"));
+        assertFalse(query.contains("71332"));
+        assertTrue("resolution 的 * 不编码", query.contains("resolution=1280*2772"));
+        assertFalse(query.contains("&ts="));
         assertEquals(1, count(query, "device_id="));
+        assertEquals("只接受分支 0", 0, PureSign.branchOf(post.url, body, 1_793_000_000L));
+        assertEquals(post.headers.get("x-ss-req-ticket"), query.substring(query.indexOf("_rticket=") + 9));
+        for (String name : new String[]{"x-gorgon", "x-khronos", "x-ladon", "x-argus", "x-helios", "x-medusa"}) {
+            assertFalse(name, post.headers.getOrDefault(name, "").isEmpty());
+        }
+        assertEquals(AppSource.PLAYBACK_UA, post.headers.get("User-Agent"));
+        assertEquals("install_id=11; ttreq=1$abc", post.headers.get("Cookie"));
+        assertEquals("application/json; charset=utf-8", post.headers.get("Content-Type"));
+        assertEquals(Crypto.md5HexUpper(body), post.headers.get("x-ss-stub"));
 
-        Map<String, String> headers = AppSource.playbackHeaders();
-        assertEquals(AppSource.PLAYBACK_UA, headers.get("User-Agent"));
-        for (String k : headers.keySet()) assertFalse(k, isSignatureHeader(k));
+        AppSource.SignedPlayback get = AppSource.signPlayback(base, id, AppSource.tabQuery("7600000000000000001"), null, 1_793_000_000_123L);
+        assertFalse(get.headers.containsKey("x-ss-stub"));
+        assertFalse(get.headers.containsKey("Content-Type"));
+        assertEquals("install_id=11; ttreq=1$abc", get.headers.get("Cookie"));
         assertFalse(AppSource.deviceBase().containsKey("iid"));
         assertFalse(AppSource.deviceBase().containsKey("device_id"));
+    }
+
+    @Test public void registrationWithoutCookiesStillSignsWithoutCookieHeader() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        PlaybackDevice.Identity id = PlaybackDevice.fresh();
+        assertEquals("", id.cookie);
+        assertFalse(AppSource.signPlayback("https://h/p", id, new java.util.LinkedHashMap<>(), null, 1L).headers.containsKey("Cookie"));
+    }
+
+    @Test public void httpRejectionMovesToTheNextRouteAndIsReportedLast() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        List<String> hosts = new ArrayList<>();
+        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+            hosts.add(host);
+            throw new AppSource.PlaybackHttpException(403);
+        });
+        try {
+            AppSource.fetch("7600000000000000001", "auto");
+            fail();
+        } catch (AppSource.PlaybackHttpException e) {
+            assertEquals("App 接口 HTTP 403", e.getMessage());
+        }
+        assertEquals(Arrays.asList(AppSource.VIDEO_API_HOST, AppSource.RETRY_HOST), hosts);
+    }
+
+    @Test public void renewedIdentityRetriesTheOfficialRouteBeforeTheAlternateHost() throws Exception {
+        AtomicInteger registrations = new AtomicInteger();
+        PlaybackDevice.resetForTest((url, headers, body) -> registrations.incrementAndGet() == 1
+                ? okReply() : reply("7432109876543219999", "7432109876543218888"));
+        List<String> tabIdentities = new ArrayList<>();
+        Map<String, Object> model = Json.obj();
+        List<Object> list = Json.arr();
+        list.add(item("bytevc1", 1080, 1920, "https://v1.qznovelvod.com/1080.mp4", VALID_SPADE));
+        model.put("video_list", list);
+        AppSource.setPlaybackTabForTest((vid, identity) -> {
+            tabIdentities.add(identity.deviceId);
+            return tabIdentities.size() == 1 ? null : response(vid, model);
+        });
+        AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+        assertEquals("https://v1.qznovelvod.com/1080.mp4", AppSource.fetch("7600000000000000001", "auto").url);
+        assertEquals(Arrays.asList(DEVICE_ID, "7432109876543219999"), tabIdentities);
     }
 
     @Test public void emptyPlaybackResponseIsReportedAsIdentityRejection() {
@@ -338,14 +393,12 @@ public class PlaybackSourceTest {
     @Test public void tabRequestCarriesEveryVideoModelField() throws Exception {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
         PlaybackDevice.Identity id = PlaybackDevice.fresh();
-        String url = AppSource.tabUrl(id, "7600000000000000001", 1_793_000_000_123L);
-        assertTrue(url.startsWith("https://" + AppSource.VIDEO_API_HOST
-                + "/reading/bookapi/video_tab/multi_video_model/v1/?"));
+        String url = AppSource.signPlayback("https://" + AppSource.VIDEO_API_HOST + "/reading/bookapi/video_tab/multi_video_model/v1/",
+                id, AppSource.tabQuery("7600000000000000001"), null, 1_793_000_000_123L).url;
         String query = url.substring(url.indexOf('?') + 1);
-        assertTrue(query.contains("&device_id=" + DEVICE_ID + "&iid=" + INSTALL_ID));
-        assertTrue(query.endsWith("&_rticket=1793000000123&video_id=7600000000000000001&video_id_type=0"
+        assertTrue(query.contains("&cdid=" + id.cdid + "&video_id=7600000000000000001&video_id_type=0"
                 + "&device_level=1&need_all_video_definition=1&need_mp4_align=0&use_os_player=0"
-                + "&video_platform=1024&source=0&from_video_id="));
+                + "&video_platform=1024&source=0&from_video_id=&_rticket="));
         assertEquals(1, count(query, "device_id="));
     }
 
@@ -391,7 +444,7 @@ public class PlaybackSourceTest {
             AppSource.fetch("7600000000000000001", "auto");
             fail();
         } catch (IllegalStateException e) {
-            assertEquals("reached old endpoint", e.getMessage());
+            assertEquals("业务或格式错误不再继续试", "reached old endpoint", e.getMessage());
         }
         assertEquals(1, tabs.get());
         assertEquals(1, posts.get());

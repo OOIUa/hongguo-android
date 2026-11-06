@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '新增完整榜单、搜索联想、相关作品与续季、短剧预约，以及红果账号的观看历史、点赞记录和资料。三套主题都有浅色和深色，可跟随系统。播放时长按左侧 2 倍速会隐藏界面，双指外拉可清屏，轻点或内捏恢复。首页推荐移到最右并默认打开。追剧和播放历史改为三列海报，登录后优先显示红果账号记录；播放历史改为独立页面。收藏按钮区分本机和账号。'
+        notes = '修复无法播放：取播放信息改为带完整签名的请求，并在 20 秒内依次尝试备用线路。沉浸暗场和内容卡片的短剧详情页，封面现在铺到状态栏下方，滚动后状态栏随页面变色。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

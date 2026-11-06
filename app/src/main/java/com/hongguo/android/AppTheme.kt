@@ -215,11 +215,11 @@ private val DarkNavigationScrim = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 
  * Window background plus system-bar styles for [palette]. Going through enableEdgeToEdge keeps icons, the
  * API 26-28 navigation-bar scrim and the API 29+ contrast handling consistent with the theme, not the system mode.
  */
-internal fun ComponentActivity.applyThemeWindow(palette: HongguoPalette) {
+internal fun ComponentActivity.applyThemeWindow(palette: HongguoPalette, statusBarOverPicture: Boolean = false) {
     window.setBackgroundDrawable(palette.canvas.toArgb().toDrawable())
     val transparent = android.graphics.Color.TRANSPARENT
     enableEdgeToEdge(
-        statusBarStyle = if (palette.isDark) SystemBarStyle.dark(transparent) else SystemBarStyle.light(transparent, transparent),
+        statusBarStyle = if (palette.isDark || statusBarOverPicture) SystemBarStyle.dark(transparent) else SystemBarStyle.light(transparent, transparent),
         navigationBarStyle = if (palette.isDark) SystemBarStyle.dark(DarkNavigationScrim)
             else SystemBarStyle.light(LightNavigationScrim, DarkNavigationScrim),
     )
@@ -232,12 +232,13 @@ internal fun ComponentActivity.applyThemeWindow(palette: HongguoPalette) {
  */
 @Composable
 internal fun HongguoTheme(style: AppThemeStyle = AppThemeStyle.WARM, dark: Boolean = style == AppThemeStyle.IMMERSIVE,
-                          windowDark: Boolean = dark, applyToWindow: Boolean = true, content: @Composable () -> Unit) {
+                          windowDark: Boolean = dark, statusBarOverPicture: Boolean = false, applyToWindow: Boolean = true,
+                          content: @Composable () -> Unit) {
     val palette = style.palette(dark)
     val windowPalette = style.palette(windowDark)
     val view = LocalView.current
     if (applyToWindow && !view.isInEditMode) {
-        LaunchedEffect(windowPalette) { (view.context as? ComponentActivity)?.applyThemeWindow(windowPalette) }
+        LaunchedEffect(windowPalette, statusBarOverPicture) { (view.context as? ComponentActivity)?.applyThemeWindow(windowPalette, statusBarOverPicture) }
     }
     CompositionLocalProvider(LocalHongguoPalette provides palette) {
         MaterialTheme(

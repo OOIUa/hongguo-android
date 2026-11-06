@@ -16,7 +16,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
@@ -40,8 +43,9 @@ import java.util.zip.GZIPOutputStream;
  *
  * <p>本地取舍：
  * <ul>
- *   <li>只保留 device_id / iid / cdid，仅存进程内存；不保存设备令牌、Cookie 或完整响应，
- *       与账号模块的注册设备完全隔离（不读取、不复用账号 Cookie）。</li>
+ *   <li>只保留 device_id / iid / cdid 和注册响应下发的四个匿名 Cookie，仅存进程内存；不保存设备令牌或
+ *       完整响应，与账号模块的注册设备完全隔离（不读取、不复用账号 Cookie）。播放模型的 POST 缺 Cookie 会被拒
+ *       （hongguoTV 2026-11-06 复测）。</li>
  *   <li>每次取播放信息都注册新身份，播放、预加载与重试之间不共享。</li>
  *   <li>上游三个实现对失败的处理不同（两个 JS 实现缓存失败直到重启，Kotlin 实现每次重试）。
  *       Android 进程可能在离线时首次播放、随后长期驻留，因此这里只在 {@link #FAILURE_COOLDOWN_MS}
@@ -76,6 +80,9 @@ public final class PlaybackDevice {
 
     private static final int TIMEOUT_MS = 8_000;
 
+    private static final Set<String> ALLOWED_COOKIES =
+            new java.util.HashSet<>(Arrays.asList("install_id", "ttreq", "store-region", "store-region-src"));
+
     private static final Pattern VALID_ID = Pattern.compile("[0-9]{1,30}");
 
     private static final SecureRandom RND = new SecureRandom();
@@ -85,11 +92,14 @@ public final class PlaybackDevice {
         public final String deviceId;
         public final String iid;
         public final String cdid;
+        /** 注册响应下发的匿名 Cookie；可能为空。 */
+        public final String cookie;
 
-        Identity(String deviceId, String iid, String cdid) {
+        Identity(String deviceId, String iid, String cdid, String cookie) {
             this.deviceId = deviceId;
             this.iid = iid;
             this.cdid = cdid;
+            this.cookie = cookie;
         }
 
         @Override
@@ -109,10 +119,16 @@ public final class PlaybackDevice {
     static final class Reply {
         final int status;
         final String text;
+        final List<String> setCookies;
 
         Reply(int status, String text) {
+            this(status, text, Collections.emptyList());
+        }
+
+        Reply(int status, String text, List<String> setCookies) {
             this.status = status;
             this.text = text;
+            this.setCookies = setCookies;
         }
     }
 
@@ -179,7 +195,25 @@ public final class PlaybackDevice {
         } catch (Exception e) {
             throw new IOException("register response is not JSON");
         }
-        return parse(j, cdid);
+        return parse(j, cdid, cookieHeader(res.setCookies));
+    }
+
+    /** 只留匿名注册下发的四个 Cookie，其他一律丢弃。 */
+    static String cookieHeader(List<String> setCookies) {
+        Map<String, String> kept = new java.util.LinkedHashMap<>();
+        for (String line : setCookies) {
+            String pair = line == null ? "" : line.split(";", 2)[0].trim();
+            int eq = pair.indexOf('=');
+            if (eq <= 0 || eq == pair.length() - 1) continue;
+            String name = pair.substring(0, eq);
+            if (ALLOWED_COOKIES.contains(name)) kept.put(name, pair.substring(eq + 1));
+        }
+        StringBuilder out = new StringBuilder();
+        for (Map.Entry<String, String> e : kept.entrySet()) {
+            if (out.length() > 0) out.append("; ");
+            out.append(e.getKey()).append('=').append(e.getValue());
+        }
+        return out.toString();
     }
 
     // ==================== 请求构造 ====================
@@ -293,14 +327,14 @@ public final class PlaybackDevice {
 
     // ==================== 响应解析 ====================
 
-    static Identity parse(Map<String, Object> j, String cdid) throws IOException {
+    static Identity parse(Map<String, Object> j, String cdid, String cookie) throws IOException {
         if (j == null) throw new IOException("register response is empty");
         Object code = j.containsKey("code") ? j.get("code") : j.get("Code");
         if (Json.optLong(code, 0) != 0) throw new IOException("register rejected");
         String deviceId = responseId(j, "device_id");
         String iid = responseId(j, "install_id");
         if (deviceId.isEmpty() || iid.isEmpty()) throw new IOException("register response has no ids");
-        return new Identity(deviceId, iid, cdid);
+        return new Identity(deviceId, iid, cdid, cookie);
     }
 
     /**
@@ -331,7 +365,11 @@ public final class PlaybackDevice {
         for (Map.Entry<String, String> e : headers.entrySet()) req.header(e.getKey(), e.getValue());
         req.body(body);
         Http.Resp res = Http.send(req);
-        return new Reply(res.status, res.text());
+        List<String> setCookies = new java.util.ArrayList<>();
+        for (Map.Entry<String, List<String>> e : res.headers.entrySet()) {
+            if ("Set-Cookie".equalsIgnoreCase(e.getKey())) setCookies.addAll(e.getValue());
+        }
+        return new Reply(res.status, res.text(), setCookies);
     }
 
     private static byte[] gzip(byte[] data) throws IOException {
