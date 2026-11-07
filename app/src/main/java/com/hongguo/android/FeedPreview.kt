@@ -33,7 +33,7 @@ internal class FeedPreviewUi(
     val ended: Boolean,
     val holding: Boolean,
     val toggle: () -> Unit,
-    /** Long-press on the left half: 2× while held; ignored while paused or ended. */
+    /** Long-press anywhere on the picture: 2× while held; ignored while paused or ended. */
     val hold: (Boolean) -> Unit,
     val positionMs: () -> Long,
 )

@@ -16,14 +16,14 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.17**（versionCode 28）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.18**（versionCode 29）· Android **8.0 / API 26** 及以上。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.17 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.17/hongguo-android-0.7.17.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.17/hongguo-android-0.7.17.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.17/hongguo-android-0.7.17.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.17 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.17/hongguo-android-0.7.17-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.17/SHA256SUMS-0.7.17.txt) |
+| GitHub 直连 | [下载 v0.7.18 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.18/hongguo-android-0.7.18.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.18/hongguo-android-0.7.18.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.18/hongguo-android-0.7.18.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.18 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.18/hongguo-android-0.7.18-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.18/SHA256SUMS-0.7.18.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -53,8 +53,8 @@
 | 首页与续看 | 本机最新观看记录一键续播；推荐（猜你喜欢，登录后按本人账号推荐）、热度、最新短剧和漫剧榜单，支持继续翻页；沉浸暗场上下滑动自动试看第 1 集 |
 | 发现与搜索 | 浏览短剧、漫剧、AI 剧，按上游提供的条件筛选；从首页或发现进入独立搜索页 |
 | 竖屏播放 | 上划下一集、下划上一集，也可打开选集面板跳转；竖屏保留状态栏，横屏为全屏 |
-| 播放控制 | 暂停 / 继续、拖动进度、缓冲进度显示、播放失败重试 |
-| 长按临时加速 | 播放中长按视频左半屏临时以2倍速播放，同时隐藏界面文字和按钮；松手、取消、离开页面后恢复原速度和界面，不改变保存的倍速 |
+| 播放控制 | 轻点显示或隐藏控件，双击中间暂停 / 继续，双击左右两侧快退 / 快进 10 秒；拖动进度、缓冲进度显示、播放失败重试 |
+| 长按临时加速 | 播放中长按视频左侧或右侧临时以2倍速播放，同时隐藏界面文字和按钮；松手、取消、离开页面后恢复原速度和界面，不改变保存的倍速 |
 | 清屏播放 | 播放中双指外拉只显示视频画面；轻点屏幕、双指内捏或返回键恢复 |
 | 六档倍速 | 0.5×、0.75×、1×、1.25×、1.5×、2×，自动记住选择 |
 | 连播与预加载 | 可分别开关自动连播、下一集预加载，末集不循环 |
@@ -74,7 +74,7 @@
 
 1. 安装后从「首页」或「发现」选剧，也可点击搜索栏输入剧名。
 2. 进入详情，选择集数开始播放；首页「继续观看」或「片单 → 本机 → 历史」可继续上次的集数与位置。
-3. 播放中点击画面暂停 / 继续，拖动进度条跳转，上下滑动切集；右下角「倍速」调整速度；播放中长按视频左半屏可临时2倍速，松手恢复之前的速度。
+3. 播放中轻点画面显示或隐藏控件，双击中间暂停 / 继续，双击左右两侧快退 / 快进 10 秒；拖动进度条跳转，上下滑动切集；点击底部剧名回到详情；右下角「倍速」调整速度；播放中长按视频左侧或右侧可临时2倍速，松手恢复之前的速度。
 4. 详情中分别提供本机与账号收藏操作；播放器点击「收藏」，在面板中选择「本机收藏」或「红果账号收藏」。到「片单」切换来源，查看对应历史、收藏；预约仅在红果账号来源显示。
 5. 到「我的 → 播放设置」调整自动连播、下一集预加载和启动检查更新。
 6. 到「我的 → 账号与隐私」登录个人账号；只有一部手机时选择「在本机打开官网登录」，待页面加载后点「打开官网登录窗口」，自行完成官方验证后点上方「完成登录」。也可在另一台设备的红果 App 中扫码确认。

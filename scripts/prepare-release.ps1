@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '播放页手势参考 B 站：轻点显示或隐藏控件，双击中间暂停或继续，双击左右两侧快退或快进 10 秒，连续点击可累加。点击播放页的短剧名称回到详情页。'
+        notes = '长按视频左侧或右侧都可临时 2 倍速播放，松手恢复。上一版起：轻点显示或隐藏控件，双击中间暂停或继续，双击两侧快退或快进 10 秒；点击剧名回到详情页。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

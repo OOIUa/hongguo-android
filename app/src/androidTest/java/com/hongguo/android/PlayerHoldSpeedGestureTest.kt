@@ -85,15 +85,16 @@ class PlayerHoldSpeedGestureTest {
         }
     }
 
-    @Test fun rightLongPressDoesNotChangeSpeedOrBecomeATap() {
+    @Test fun rightHoldAlsoPlaysAtDoubleSpeedWithoutATap() {
         val changes = mutableListOf<Boolean>()
         var taps = 0
         compose.setContent { PlayerInteractionLayer(Modifier.testTag("gesture_layer"), onTap = { taps++ }, onHoldSpeedChange = changes::add) }
         compose.mainClock.autoAdvance = false
         beginHold(left = false)
+        compose.runOnIdle { assertEquals(listOf(true), changes) }
         compose.onNodeWithTag("gesture_layer").performTouchInput { up() }
         compose.runOnIdle {
-            assertFalse(changes.any { it })
+            assertEquals(listOf(true, false), changes)
             assertEquals(0, taps)
         }
     }

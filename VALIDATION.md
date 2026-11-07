@@ -1,3 +1,12 @@
+# 0.7.18 左右两侧长按 2 倍速
+
+验证日期：2026-11-07（Asia/Shanghai）。versionName 0.7.18、versionCode 29。
+
+- 长按：播放页和沉浸暗场推荐流预览中，长按画面左侧或右侧（整个画面）都临时 2 倍速，松手、取消或离开页面后恢复原速度和界面，不改变保存的倍速；暂停时长按不生效，未改动。
+- `PlayerHoldSpeedGestureTest` 中右侧长按改为断言会进入并退出 2 倍速、且不触发点击。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:testDebugUnitTest :app:assembleDebug :app:lintDebug :app:compileDebugAndroidTestKotlin` 通过，lint 无错误。
+- 未验证：没有真机或模拟器，只编译、未在设备上运行。
+
 # 0.7.17 B 站式播放手势、点击剧名回到详情
 
 验证日期：2026-11-07（Asia/Shanghai）。versionName 0.7.17、versionCode 28。对应 iOS 0.1.15。

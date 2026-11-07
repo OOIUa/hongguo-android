@@ -214,7 +214,7 @@ private fun ImmersiveFeedPage(card: DramaCard, page: Int, favorite: Boolean, mod
         if (preview?.rendered != true) PosterImage(card.cover, Modifier.fillMaxSize())
         if (playing != null) VideoSurface(VideoPlaybackUi(player = playing, isPlaying = !preview.paused),
             Modifier.fillMaxSize().alpha(if (preview.rendered) 1f else 0f))
-        // Tap pauses / resumes and holding the left half plays at 2×, as in the full player; the buttons drawn above
+        // Tap pauses / resumes and holding either side plays at 2×, as in the full player; the buttons drawn above
         // keep their own clicks and a vertical drag still belongs to the pager.
         if (playing != null) PlayerInteractionLayer(Modifier.fillMaxSize().testTag("immersive_preview_$page"),
             onTap = { preview.toggle() }, onHoldSpeedChange = preview.hold)

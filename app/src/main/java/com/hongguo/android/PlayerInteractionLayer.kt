@@ -162,7 +162,7 @@ internal fun PlayerInteractionLayer(
                             currentTap(position.x / size.width.coerceAtLeast(1))
                     },
                     onLongPress = { position ->
-                        if (position.x >= 0 && position.x < size.width / 2f && currentEnabled &&
+                        if (currentEnabled &&
                             lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !holding) {
                             holding = true
                             // A short buzz confirms that holding switched to 2×.
