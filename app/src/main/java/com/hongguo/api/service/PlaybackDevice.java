@@ -95,7 +95,7 @@ public final class PlaybackDevice {
         /** 注册响应下发的匿名 Cookie；可能为空。 */
         public final String cookie;
 
-        Identity(String deviceId, String iid, String cdid, String cookie) {
+        public Identity(String deviceId, String iid, String cdid, String cookie) {
             this.deviceId = deviceId;
             this.iid = iid;
             this.cdid = cdid;
@@ -174,6 +174,36 @@ public final class PlaybackDevice {
             throw recordFailure(e instanceof RegistrationException
                     ? (RegistrationException) e : new RegistrationException(e), now);
         }
+    }
+
+    private static Identity recommendationIdentity;
+
+    /**
+     * 推荐流复用的匿名身份（同步自 hongguoTV 0.1.26 {@code 62910e0}）：服务端的推荐分页会话随注册身份使用，
+     * 所以推荐不像播放那样逐次注册，而是本进程内复用同一个身份；注册失败时返回 null，由调用方退回原无签名请求。
+     * 与播放身份分开保存，播放的单次身份不会打断推荐分页。
+     */
+    public static Identity recommendation() throws InterruptedIOException {
+        synchronized (PlaybackDevice.class) {
+            if (recommendationIdentity != null) return recommendationIdentity;
+        }
+        try {
+            Identity identity = fresh();
+            synchronized (PlaybackDevice.class) {
+                if (recommendationIdentity == null) recommendationIdentity = identity;
+                return recommendationIdentity;
+            }
+        } catch (InterruptedIOException e) {
+            if (Thread.currentThread().isInterrupted()) throw e;
+            return null;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** 推荐身份被服务端拒绝时丢弃，下次重新注册；其他线程已替换时不动。 */
+    public static synchronized void forgetRecommendation(Identity identity) {
+        if (recommendationIdentity == identity) recommendationIdentity = null;
     }
 
     private static synchronized RegistrationException recordFailure(RegistrationException failure, long now) {
@@ -403,6 +433,7 @@ public final class PlaybackDevice {
         lastFailure = null;
         lastFailureAt = 0;
         clockOffsetForTest = 0;
+        recommendationIdentity = null;
     }
 
     static synchronized void advanceClockForTest(long ms) {

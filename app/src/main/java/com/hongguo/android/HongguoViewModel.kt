@@ -303,8 +303,12 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun guessPage(append: Boolean): DramaPage {
         val owner = accounts.ownerKey
         val pager = guessPager?.takeIf { append && it.owner == owner }
-            ?: GuessFeedPager(owner, accounts::recommendations).also { guessPager = it }
-        return pager.next()
+            ?: GuessFeedPager(owner, accounts::recommendations, previous = guessPager).also { guessPager = it }
+        val page = pager.next()
+        // 重建分页仍只回到已看过的作品时直接说明，不把旧批次当新推荐重播。
+        if (!append && page.items.isEmpty() && pager.rememberedCount > 0)
+            throw NoNewRecommendationsException(pager.rememberedCount)
+        return page
     }
 
     fun changeGenre(genre: String) {

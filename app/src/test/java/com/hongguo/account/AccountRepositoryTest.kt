@@ -10,6 +10,7 @@ import com.hongguo.account.protocol.CloudProfile
 import com.hongguo.account.protocol.CloudProgress
 import com.hongguo.account.protocol.CloudReservation
 import com.hongguo.account.protocol.GuessBatch
+import com.hongguo.account.protocol.GuessCursor
 import com.hongguo.account.protocol.GuessCard
 import com.hongguo.account.protocol.PhoneLogin
 import com.hongguo.account.protocol.Series
@@ -115,9 +116,9 @@ class AccountRepositoryTest {
             uploaded += progress; onUpload?.invoke(); uploadError?.let { throw it }
         }
         val guessCredentials = mutableListOf<AccountCredentials?>()
-        override fun recommendations(credentials: AccountCredentials?, session: String, offset: Int): GuessBatch {
+        override fun recommendations(credentials: AccountCredentials?, cursor: GuessCursor): GuessBatch {
             guessCredentials += credentials
-            return GuessBatch(listOf(GuessCard(series, 80)), "s$offset")
+            return GuessBatch(listOf(GuessCard(series, 80)), "s${cursor.offset}")
         }
         override fun cancelAll() = Unit
     }
@@ -306,12 +307,12 @@ class AccountRepositoryTest {
         val repo = repository(store, api); runCurrent()
         val owner = repo.ownerKey
         assertNotNull(owner)
-        assertEquals("s0", repo.recommendations(owner, "", 0).session)
+        assertEquals("s0", repo.recommendations(owner, GuessCursor()).session)
         assertEquals(credentials, api.guessCredentials.last())
-        repo.recommendations(null, "", 0)
+        repo.recommendations(null, GuessCursor())
         assertNull("匿名轮次不得携带账号凭据", api.guessCredentials.last())
         assertThrows(AccountProtocolException::class.java) {
-            kotlinx.coroutines.runBlocking { repo.recommendations("$uid:999", "", 0) }
+            kotlinx.coroutines.runBlocking { repo.recommendations("$uid:999", GuessCursor()) }
         }
         assertEquals(2, api.guessCredentials.size)
     }

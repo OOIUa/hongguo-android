@@ -23,6 +23,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -556,6 +557,74 @@ public class PlaybackSourceTest {
         model.put("video_list", list);
         try {
             AppSource.parseModel(vid, response(vid, model), "auto");
+            fail();
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("ByteVC2"));
+        }
+    }
+
+    /** 备用接口回复：单档指定编码、编号与时长（ByteVC2 兼容请求测试用）。 */
+    private static Map<String, Object> codecReply(String codec, String id, double duration) {
+        Map<String, Object> reply = fallbackReply(id, duration, 720);
+        Map<String, Object> data = Json.optObj(Json.optObj(reply.get("video_info")).get("data"));
+        Map<String, Object> row = Json.optObj(Json.optObj(data.get("video_list")).get("video_1"));
+        row.put("codec_type", codec);
+        row.put("main_url", "https://v1.qznovelvod.com/" + codec + ".mp4");
+        return reply;
+    }
+
+    private static Map<String, Object> byteVc2InlineModel() {
+        List<Object> list = Json.arr();
+        list.add(item("bytevc2", 1080, 1920, "https://v1.qznovelvod.com/vc2.mp4", VALID_SPADE));
+        Map<String, Object> model = Json.obj();
+        model.put("video_list", list);
+        model.put("video_id", "v0vc2");
+        model.put("video_duration", 60.0);
+        model.put("fallback_api", "https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=3");
+        return model;
+    }
+
+    @Test public void byteVc2OnlyEpisodeRetriesFallbackWithCompatibilityCodec() throws Exception {
+        String vid = "7600000000000000015";
+        List<String> urls = new ArrayList<>();
+        AppSource.setPlaybackFallbackForTest(url -> {
+            urls.add(url);
+            return codecReply(url.contains("force_codec") ? "hevc" : "bvc2", "v0vc2", 60.0);
+        });
+        Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto");
+        assertEquals("https://v1.qznovelvod.com/hevc.mp4", t.url);
+        assertEquals(2, urls.size());
+        assertEquals("https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=3", urls.get(0));
+        assertEquals("其余参数原样保留，编码参数被替换",
+                "https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=0&force_codec=h264", urls.get(1));
+
+        Map<String, Object> bare = Json.obj();
+        bare.put("fallback_api", "https://vod.snssdk.com/video/fallback");
+        AppSource.setPlaybackFallbackForTest(url ->
+                codecReply(url.contains("force_codec") ? "h264" : "bytevc2", "v0vc2", 60.0));
+        assertEquals("https://v1.qznovelvod.com/h264.mp4",
+                AppSource.parseModel(vid, response(vid, bare), "auto").url);
+    }
+
+    @Test public void byteVc2CompatibilityAnswerMustStillBeCompatibleAndSameVideo() throws Exception {
+        String vid = "7600000000000000016";
+        Map<String, Map<String, Object>> replies = new LinkedHashMap<>();
+        replies.put("仍是 ByteVC2", codecReply("bytevc2", "v0vc2", 60.0));
+        replies.put("其他视频", codecReply("hevc", "v0other", 60.0));
+        replies.put("时长不同", codecReply("hevc", "v0vc2", 30.0));
+        for (Map.Entry<String, Map<String, Object>> e : replies.entrySet()) {
+            AppSource.setPlaybackFallbackForTest(url ->
+                    url.contains("force_codec") ? e.getValue() : codecReply("bytevc2", "v0vc2", 60.0));
+            try {
+                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto");
+                fail(e.getKey());
+            } catch (IllegalStateException expected) {
+                assertFalse(e.getKey(), expected.getMessage().contains("qznovelvod"));
+            }
+        }
+        AppSource.setPlaybackFallbackForTest(url -> codecReply("bytevc2", "v0vc2", 60.0));
+        try {
+            AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto");
             fail();
         } catch (IllegalStateException expected) {
             assertTrue(expected.getMessage().contains("ByteVC2"));

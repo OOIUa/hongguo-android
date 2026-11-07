@@ -20,6 +20,7 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -62,6 +63,10 @@ import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.runtime.Composable
@@ -81,6 +86,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -100,6 +106,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hongguo.account.AccountSessionStatus
 import androidx.media3.common.Player
+import android.widget.Toast
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 @Composable
@@ -148,6 +156,12 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
     }
     LaunchedEffect(activity, view, fullScreen, active) {
         if (active) activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
+    }
+    // 全屏观看 locks the orientation; closing the player hands back whatever the app had before.
+    DisposableEffect(activity, active) {
+        if (!active || activity == null) return@DisposableEffect onDispose { }
+        val original = activity.requestedOrientation
+        onDispose { activity.requestedOrientation = original }
     }
     key(detail.id) { EpisodePager(state, model, detail, accountModel, active) { chromeHidden = it } }
 }
@@ -207,9 +221,36 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     val temporaryDoubleSpeed = doubleSpeedHeld && activeVideo != null && !sheetOpen
     val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null,
         playbackSpeed = if (temporaryDoubleSpeed) 2f else state.playbackSpeed)
-    val chromeHidden = cleanScreen || temporaryDoubleSpeed
+    val togglePlayback = {
+        playback.player?.let {
+            if (it.playbackState == Player.STATE_ENDED) { it.seekTo(0); it.play() }
+            else if (it.playWhenReady) it.pause() else it.play()
+        }
+        Unit
+    }
+    val activity = LocalActivity.current
+    val context = LocalContext.current
+    // Landscape is full-screen viewing, whether 全屏观看 turned the screen or the user did: a tap shows or hides
+    // the controls, and episodes change from the controls, the episode list or autoplay rather than by swiping.
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val pip = rememberPlayerPictureInPicture(enabled = active && activeVideo != null && !sheetOpen,
+        playing = playback.isPlaying, videoWidth = playback.videoWidth, videoHeight = playback.videoHeight,
+        onTogglePlay = togglePlayback)
+    // The small window shows only the picture.
+    val inPip = pip.active
+    val chromeHidden = cleanScreen || temporaryDoubleSpeed || inPip
     LaunchedEffect(chromeHidden) { onChromeHiddenChange(chromeHidden) }
     BackHandler(enabled = cleanScreen) { cleanScreen = false }
+    // Back leaves full screen before it leaves the player; declared later, so it wins while in landscape.
+    BackHandler(enabled = landscape) { activity?.requestPlayerFullScreen(false) }
+    LaunchedEffect(landscape) { cleanScreen = false }
+    // In full screen the controls step aside after a few seconds of playback.
+    LaunchedEffect(landscape, cleanScreen, playback.isPlaying, seeking, sheetOpen) {
+        if (landscape && !cleanScreen && playback.isPlaying && !seeking && !sheetOpen) {
+            delay(FullScreenControlsMillis)
+            cleanScreen = true
+        }
+    }
     // Anything the viewer has to act on brings the controls back: an error, a pause they did not ask for, or an
     // ending with nothing playing next. Pinching while already paused stays clean, since this only runs on a change.
     val endedForGood = playback.ended && !(state.autoPlayNext && selected + 1 < detail.episodes.size)
@@ -236,7 +277,6 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     // layer, so the fade does not recompose the page.
     val pictureCover = animateFloatAsState(if (state.firstFrameRendered) 0f else 1f,
         tween(if (state.firstFrameRendered) 240 else 0), label = "first_frame_fade")
-    val activity = LocalActivity.current
     val view = LocalView.current
     // A sheet owns another window and can reveal system bars or change their icons without resuming the Activity.
     val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation) || chromeHidden
@@ -252,34 +292,34 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     } == true
     val anyFavorite = favorite || cloudFavorite
     val card = state.selectedCard ?: DramaCard(detail.id, detail.title, detail.cover, detail.episodes.size, detail.summary)
-    val togglePlayback = {
-        playback.player?.let {
-            if (it.playbackState == Player.STATE_ENDED) { it.seekTo(0); it.play() }
-            else if (it.playWhenReady) it.pause() else it.play()
-        }
-        Unit
-    }
 
     Box(Modifier.fillMaxSize().background(Color.Black).semantics { testTagsAsResourceId = true }
-        .playerPinch(active && !sheetOpen) { cleanScreen = it }) {
+        .playerPinch(active && !sheetOpen && !landscape && !inPip) { cleanScreen = it }) {
         VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("episode_pager"),
             key = { detail.episodes[it].id }, beyondViewportPageCount = 1,
-            userScrollEnabled = active && synchronizing == null && !showEpisodes && !showSpeed && !showFavorites && !seeking) { page ->
+            userScrollEnabled = active && synchronizing == null && !showEpisodes && !showSpeed && !showFavorites && !seeking &&
+                !landscape && !inPip) { page ->
             Box(Modifier.fillMaxSize().testTag("episode_page_$page"), Alignment.Center) {
                 if (page == selected && activeVideo != null && playback.player != null) {
                     VideoSurface(playback, Modifier.fillMaxSize())
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = pictureCover.value }.background(Color.Black))
                     PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),
-                        enabled = !sheetOpen, onTap = { if (cleanScreen) cleanScreen = false else togglePlayback() },
+                        enabled = !sheetOpen && !inPip, onTap = {
+                            if (landscape) cleanScreen = !cleanScreen
+                            else if (cleanScreen) cleanScreen = false else togglePlayback()
+                        },
                         onHoldSpeedChange = { holding ->
                             // Holding a paused video must not resume it or change the saved speed.
                             doubleSpeedHeld = holding && playback.isPlaying && !sheetOpen
-                        }, tapLabel = if (cleanScreen) "退出清屏" else "播放或暂停",
-                        cleanScreen = cleanScreen, onCleanScreenChange = { cleanScreen = it })
+                        }, tapLabel = if (landscape) (if (cleanScreen) "显示控制栏" else "隐藏控制栏")
+                            else if (cleanScreen) "退出清屏" else "播放或暂停",
+                        cleanScreen = cleanScreen, onCleanScreenChange = if (landscape) null else { on: Boolean -> cleanScreen = on })
                 }
                 when {
                     // Neighbouring episodes carry their number, so a swipe visibly brings the next one in.
                     page != selected -> EpisodePlaceholder(detail.episodes[page].index, detail.title)
+                    inPip -> if (state.preparing || playback.player == null || (playback.isBuffering && playback.playWhenReady))
+                        CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
                     // While sliding to an episode that has no picture yet, show its number rather than an empty frame.
                     pager.isScrollInProgress -> if (activeVideo == null || playback.player == null)
                         EpisodePlaceholder(detail.episodes[page].index, detail.title)
@@ -315,7 +355,22 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
 
         AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.TopCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
             PlayerTopBar(episodeIndex = visibleEpisode.index, episodeCount = detail.episodes.size,
-                onBack = model::closePlayer, onShowEpisodes = { showEpisodes = true })
+                onBack = { if (landscape) activity?.requestPlayerFullScreen(false) else model.closePlayer() },
+                onShowEpisodes = { showEpisodes = true },
+                title = detail.title.takeIf { landscape },
+                onPictureInPicture = if (pip.supported && activeVideo != null) {
+                    { if (!pip.enter()) Toast.makeText(context, "系统未允许小窗播放，可在系统设置中为本应用开启画中画", Toast.LENGTH_LONG).show() }
+                } else null)
+        }
+
+        // Just under a picture wider than tall, as in the official app; landscape is already full screen.
+        val fullScreenOffered = !landscape && !chromeHidden && activeVideo != null && playback.player != null &&
+            state.firstFrameRendered && state.playbackError == null && !pager.isScrollInProgress &&
+            isLandscapeVideo(playback.videoWidth, playback.videoHeight)
+        if (fullScreenOffered) BoxWithConstraints(Modifier.fillMaxSize()) {
+            val top = fullScreenButtonTop(maxWidth.value, maxHeight.value, playback.videoWidth, playback.videoHeight, 14f)
+            FullScreenWatchButton(onClick = { activity?.requestPlayerFullScreen(true) },
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = top.dp))
         }
 
         // Keep the middle and subtitle area clear. Controls occupy only the lower edge of the frame.
@@ -352,6 +407,19 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 }, enabled = duration > 0 && activeVideo != null && state.playbackError == null,
                 modifier = Modifier.testTag("player_seek").semantics { contentDescription = "播放进度" })
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (landscape) {
+                    IconButton(onClick = togglePlayback, enabled = playback.player != null, modifier = Modifier.testTag("player_play_pause")
+                        .semantics { contentDescription = if (playback.playWhenReady && !playback.ended) "暂停" else "播放" }) {
+                        Icon(if (playback.playWhenReady && !playback.ended) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null,
+                            tint = Color.White, modifier = Modifier.size(28.dp))
+                    }
+                    IconButton(onClick = { model.playEpisode(selected + 1) }, enabled = selected + 1 < detail.episodes.size,
+                        modifier = Modifier.testTag("player_next").semantics { contentDescription = "下一集" }) {
+                        Icon(Icons.Rounded.SkipNext, null, tint = Color.White.copy(alpha = if (selected + 1 < detail.episodes.size) 1f else .35f),
+                            modifier = Modifier.size(26.dp))
+                    }
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text("${playerTime(displayedPosition)} / ${if (duration > 0) playerTime(duration) else "--:--"}",
                     modifier = Modifier.testTag("player_time"), color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
                 Spacer(Modifier.weight(1f))
@@ -360,6 +428,10 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     Text("倍速 ${playbackSpeedLabel(state.playbackSpeed)}",
                         color = Color.White, fontSize = 13.sp,
                         fontWeight = FontWeight.Medium)
+                }
+                if (landscape) IconButton(onClick = { activity?.requestPlayerFullScreen(false) },
+                    modifier = Modifier.testTag("player_exit_full_screen").semantics { contentDescription = "退出全屏" }) {
+                    Icon(Icons.Rounded.FullscreenExit, null, tint = Color.White, modifier = Modifier.size(26.dp))
                 }
             }
         }
@@ -469,19 +541,29 @@ internal fun PlayerTopBar(
     modifier: Modifier = Modifier,
     statusBarInsets: WindowInsets = WindowInsets.statusBarsIgnoringVisibility,
     cutoutInsets: WindowInsets = WindowInsets.displayCutout,
+    /** Shown in full screen, where the drama title is otherwise out of sight. */
+    title: String? = null,
+    /** 小窗播放; null where the device has no picture-in-picture. */
+    onPictureInPicture: (() -> Unit)? = null,
 ) {
     val safeInsets = statusBarInsets.union(cutoutInsets).only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
     Column(modifier.fillMaxWidth().testTag("player_top_bar")
         .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .48f), Color.Transparent)))
         .windowInsetsPadding(safeInsets).padding(start = 9.dp, end = 14.dp, top = 9.dp, bottom = 24.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, modifier = Modifier.testTag("player_back").semantics { contentDescription = "返回详情" }) {
+            IconButton(onClick = onBack, modifier = Modifier.testTag("player_back")
+                .semantics { contentDescription = if (title != null) "退出全屏" else "返回详情" }) {
                 Icon(Icons.Rounded.ChevronLeft, null, tint = Color.White, modifier = Modifier.size(34.dp))
             }
-            Text("第 $episodeIndex 集 / 共 $episodeCount 集", color = Color.White,
+            Text(listOfNotNull(title, "第 $episodeIndex 集 / 共 $episodeCount 集").joinToString("  "), color = Color.White,
+                overflow = TextOverflow.Ellipsis,
                 fontSize = if (LocalConfiguration.current.screenWidthDp < 360) 14.sp else 16.sp,
                 fontWeight = FontWeight.Medium, maxLines = 1,
                 modifier = Modifier.weight(1f).testTag("player_episode_label"))
+            if (onPictureInPicture != null) IconButton(onClick = onPictureInPicture,
+                modifier = Modifier.testTag("player_pip").semantics { contentDescription = "小窗播放" }) {
+                Icon(Icons.Rounded.PictureInPictureAlt, null, tint = Color.White, modifier = Modifier.size(23.dp))
+            }
             Box(Modifier.testTag("player_chapters")) {
                 TextButton(onClick = onShowEpisodes, modifier = Modifier.testTag("player_episode_picker")) {
                     Text("选集", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -511,6 +593,7 @@ private fun ComponentActivity.applyPlayerBarStyle() {
 }
 
 private const val EpisodeSlideMillis = 320
+private const val FullScreenControlsMillis = 4_000L
 
 @Composable
 private fun EpisodePlaceholder(index: Int, title: String) {

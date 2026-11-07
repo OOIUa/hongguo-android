@@ -1,3 +1,15 @@
+# 0.7.16 全屏观看、小窗播放、推荐流同步与 ByteVC2 兼容请求
+
+验证日期：2026-11-07（Asia/Shanghai）。versionName 0.7.16、versionCode 27。对应 iOS 0.1.14。
+
+- 全屏观看：宽大于高的片源在画面下方显示「全屏观看」，点击后锁定横屏；退出全屏后在播放页内保持竖屏，关闭播放页时恢复原方向。横屏时轻点显示或隐藏控件，播放 4 秒后控件自动隐藏，不能上下滑换集，双指外拉不起作用；底栏有播放/暂停、下一集、倍速和退出全屏，返回键先退出全屏。双指外拉在竖屏仍是清屏，未改动。
+- 小窗播放：`MainActivity` 声明 `supportsPictureInPicture`，并把方向和尺寸变化改为不重建 Activity。播放页顶栏有小窗按钮；正在播放时离开应用自动进入小窗（Android 12+ 用系统自动进入，更早版本用 user-leave hint）。小窗只显示画面，比例按片源限制在 1:2.39–2.39:1，带播放/暂停操作。
+- 推荐流同步 hongguoTV 0.1.26（3d319a6、62910e0）：复用注册的匿名身份并按 7.4.3.32 完整签名请求；首屏声明单列无限流时改走 `bookmall/cell/change` 并使用服务端 `next_offset`；明确返回 110 时回退原无签名请求；刷新保留最近 540 条去重，不再把旧批次当新推荐重播；单批不再截断到 30 部；账号历史空响应提示具体阶段。
+- ByteVC2：整集只有 ByteVC2 时，在备用接口上加 `codec_type=0`、`force_codec=h264` 再请求一次并确认是同一视频（hongguoTV 0.1.20，265472f，issue #56）；拿不到仍提示不支持。
+- 实网（匿名）：推荐流 10 页累计 88 部不同作品，请求全部带签名。ByteVC2 样本集（上游 #56）现已直接下发 HEVC，兼容分支实网未触发，只有单元测试。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:testDebugUnitTest :app:assembleDebug :app:lintDebug :app:compileDebugAndroidTestKotlin` 通过，lint 无错误。
+- 未验证：没有真机或模拟器，全屏、小窗、旋转不重建 Activity 后各页面的表现都只编译未运行；账号态推荐未用真实账号验证。相同交互的 iOS 0.1.14 已在模拟器上看过全屏，小窗因模拟器不支持画中画未实测。
+
 # 0.7.15 修复无法播放、详情页状态栏沉浸
 
 验证日期：2026-11-06（Asia/Shanghai）。versionName 0.7.15、versionCode 26。对应 iOS 0.1.13。

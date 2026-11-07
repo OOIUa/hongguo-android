@@ -68,6 +68,11 @@ internal fun cloudResponse(response: Response, limit: Int = 2 * 1024 * 1024): St
         out.write(buffer, 0, count)
         if (out.size() > limit) throw AccountProtocolException("账号接口响应过大")
     }
-    return String(out.toByteArray(), Charsets.UTF_8).takeIf { it.isNotBlank() }
-        ?: throw AccountProtocolException("账号接口返回空响应，请稍后重试")
+    val text = String(out.toByteArray(), Charsets.UTF_8)
+    if (text.isBlank()) {
+        val protocol = if (response.protocol == okhttp3.Protocol.HTTP_2) "h2" else "h1"
+        throw AccountProtocolException("账号接口返回空响应（HTTP ${response.code}/${out.size()}B/$protocol），请稍后重试",
+            emptyResponse = true)
+    }
+    return text
 }

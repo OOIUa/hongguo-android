@@ -20,7 +20,9 @@ data class RelatedWork(val series: Series, val season: String, val upcoming: Boo
 
 /** Contains only safe, locally generated messages; no raw provider response or signed URL. */
 class AccountProtocolException(message: String, val errorCode: Int? = null, val requiresLogin: Boolean = false,
-    val verificationStage: AccountVerificationStage? = null, val diagnostic: String? = null) : IOException(message)
+    val verificationStage: AccountVerificationStage? = null, val diagnostic: String? = null,
+    /** HTTP 成功但正文为空（服务端软拦截的常见形态）；消息里只带状态码、字节数与协议。 */
+    val emptyResponse: Boolean = false) : IOException(message)
 
 internal fun validIdentifier(value: String): Boolean = value.matches(Regex("[0-9]{1,30}")) && value.any { it != '0' }
 internal fun JSONArray.objects() = (0 until length()).mapNotNull { optJSONObject(it) }

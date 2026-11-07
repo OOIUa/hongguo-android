@@ -145,7 +145,20 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
         return transport.execute(request.build()) { response ->
             val gatewayLogin = safeGatewayLogin(response.header("X-Tt-Agw-Login"))
             onGatewayLogin?.invoke(gatewayLogin)
-            val json=parseObject(cloudResponse(response))
+            val text = try { cloudResponse(response) } catch (error: AccountProtocolException) {
+                if (!error.emptyResponse) throw error
+                // 空响应只报固定阶段与传输结果，不带请求地址、账号、Cookie 或设备身份（同步自 hongguoTV 3d319a6）。
+                val stage = when (path) {
+                    "/reading/user/info/v1/" -> "账号资料"
+                    "/reading/bookapi/read_progress/list/v1/" -> "云端历史列表"
+                    "/reading/bookapi/multi-detail/v1/" -> "云端剧集资料"
+                    else -> "账号"
+                }
+                val detail = error.message.orEmpty().substringAfter('（', "").substringBefore('）')
+                throw AccountProtocolException("${stage}接口返回空响应${if (detail.isEmpty()) "" else "（$detail）"}，可刷新重试；持续失败可尝试重新登录",
+                    emptyResponse = true)
+            }
+            val json=parseObject(text)
             val code=json.optInt("code",-1)
             if(code!=0) throw AccountProtocolException("账号接口不可用（错误码 $code），请重新登录或稍后重试", code, code == 1003,
                 diagnostic = if (onGatewayLogin != null) appProfileDiagnostic(json, credentials, gatewayLogin) else null)

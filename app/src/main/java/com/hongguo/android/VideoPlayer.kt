@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -37,7 +38,20 @@ internal data class VideoPlaybackUi(
     val playWhenReady: Boolean = true,
     /** Pauses for a gesture (a page swipe) without touching the user's play/pause intent, status or forced saves. */
     val holdForGesture: (Boolean) -> Unit = {},
+    /** Displayed picture size (pixel aspect applied); 0 until the first video format is known. */
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
 )
+
+/** Snapshot of one player, shared by its listener and the progress loop. */
+private fun videoSnapshot(active: ExoPlayer, playWhenReady: Boolean, holdForGesture: (Boolean) -> Unit): VideoPlaybackUi {
+    val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
+    val size = active.videoSize
+    return VideoPlaybackUi(active, active.isPlaying, active.playbackState == Player.STATE_BUFFERING,
+        active.playbackState == Player.STATE_ENDED, active.currentPosition.coerceAtLeast(0), duration,
+        active.bufferedPosition.coerceAtLeast(0), playWhenReady, holdForGesture,
+        (size.width * size.pixelWidthHeightRatio).toInt().coerceAtLeast(0), size.height.coerceAtLeast(0))
+}
 
 /** One player owner above the pager; page composition only attaches its surface. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
@@ -74,10 +88,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
         fun isCurrent(active: ExoPlayer): Boolean = enabled && player === active && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         fun updateSnapshot(active: ExoPlayer) {
             if (!isCurrent(active)) return
-            val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
-            ui = VideoPlaybackUi(active, active.isPlaying, active.playbackState == Player.STATE_BUFFERING,
-                active.playbackState == Player.STATE_ENDED, active.currentPosition.coerceAtLeast(0), duration,
-                active.bufferedPosition.coerceAtLeast(0), active.playWhenReady || gestureHold[0], holdForGesture)
+            ui = videoSnapshot(active, active.playWhenReady || gestureHold[0], holdForGesture)
         }
 
         fun releasePlayer() {
@@ -157,6 +168,10 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
                         model.onPlaybackError(video.episodeId, video.requestId, error.errorCode in 4000..4999)
                     }
 
+                    override fun onVideoSizeChanged(videoSize: VideoSize) {
+                        if (isCurrent(active)) updateSnapshot(active)
+                    }
+
                     override fun onRenderedFirstFrame() {
                         if (isCurrent(active)) model.onFirstFrame(video.episodeId, video.requestId)
                     }
@@ -205,9 +220,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
         var lastSavedAt = 0L
         while (enabled && player === active && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
             val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
-            ui = VideoPlaybackUi(active, active.isPlaying, active.playbackState == Player.STATE_BUFFERING,
-                active.playbackState == Player.STATE_ENDED, active.currentPosition.coerceAtLeast(0), duration,
-                active.bufferedPosition.coerceAtLeast(0), active.playWhenReady || gestureHold[0], holdForGesture)
+            ui = videoSnapshot(active, active.playWhenReady || gestureHold[0], holdForGesture)
             val now = android.os.SystemClock.elapsedRealtime()
             if (active.isPlaying) model.onPlaybackBuffered(currentVideo.episodeId, currentVideo.requestId,
                 active.bufferedPosition - active.currentPosition)

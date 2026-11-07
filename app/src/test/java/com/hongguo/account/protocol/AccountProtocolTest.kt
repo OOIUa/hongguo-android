@@ -350,4 +350,22 @@ class AccountProtocolTest {
         assertEquals("App 昵称", app.nickname)
         assertEquals("https://p3.example/app.jpeg", app.avatarUrl)
     }
+
+    @Test fun historyEmptyResponsesNameTheFailingStageWithoutLeakingIdentity() {
+        for (failing in listOf("read_progress", "multi-detail")) {
+            server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) =
+                    if (request.requestUrl!!.encodedPath.contains(failing)) MockResponse().setBody("")
+                    else body("""{"code":0,"video_data":[{"series_id":"7600000000000000001","vid":"7600000000000000002","vid_index":2}]}""")
+            }
+            val error = assertThrows(AccountProtocolException::class.java) { cloud().history(credentials) }
+            val message = error.message.orEmpty()
+            assertTrue(message, message.contains(if (failing == "read_progress") "云端历史列表" else "云端剧集资料"))
+            assertTrue(message, message.contains("HTTP 200/0B/h1"))
+            assertTrue(error.emptyResponse)
+            assertFalse(message.contains(credentials.cookie))
+            assertFalse(message.contains(credentials.deviceId))
+            assertFalse(message.contains("http"))
+        }
+    }
 }

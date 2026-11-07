@@ -244,10 +244,17 @@ public final class AppSource {
 
         // ---- 2. 片源模型：新版直接内联 video_list，旧版跟随 fallback_api 二次请求 ----
         if (Json.optArr(model.get("video_list")).isEmpty()) {
-            return selectTrack(readFallback(model), quality, false, 0);
+            return fallbackTrack(readFallback(model), parseFallback(model.get("fallback_api")), quality);
         }
         try {
             return selectTrack(model, quality, true, 0);
+        } catch (ByteVc2Only onlyByteVc2) {
+            // 内联全是 ByteVC2：备用接口及其兼容请求仍可能给出 HEVC。
+            String fallback = parseFallback(model.get("fallback_api"));
+            if (fallback == null || fallback.isEmpty()) throw onlyByteVc2;
+            Map<String, Object> info = readFallback(fallback);
+            confirmSameVideo(model, info);
+            return fallbackTrack(info, fallback, quality);
         } catch (IncompleteEncryption incomplete) {
             // 内联片源既无密钥也未声明加密状态时才尝试备用接口；备用片源须独立通过编号、
             // 完整时长、清晰度与加密信息校验（同步自 hongguo-drama 5.5）。
@@ -268,9 +275,55 @@ public final class AppSource {
         }
     }
 
+    /**
+     * 从备用模型选档。全档 ByteVC2 时，在同一地址加官方播放器的兼容参数再读一次：这类分集曾由此拿到 HEVC
+     * （同步自 hongguoTV 0.1.20，issue #56，提交 {@code 265472f}）。参数名不保证编码，返回结果仍按实际编码过滤。
+     */
+    private static Stream.VideoTrack fallbackTrack(Map<String, Object> info, String fallback, String quality)
+            throws Exception {
+        try {
+            return selectTrack(info, quality, false, 0);
+        } catch (ByteVc2Only onlyByteVc2) {
+            if (fallback == null || fallback.isEmpty()) throw onlyByteVc2;
+            Map<String, Object> other = readFallback(compatibleFallback(fallback));
+            confirmSameVideo(info, other);
+            return selectTrack(other, quality, false, 0);
+        }
+    }
+
+    /** 替换 codec_type / force_codec，其余参数按原样保留（不解码再编码，避免改动已签名的值）。 */
+    static String compatibleFallback(String fallback) {
+        String url = cleanUrl(fallback);
+        int q = url.indexOf('?');
+        StringBuilder sb = new StringBuilder(q < 0 ? url : url.substring(0, q)).append('?');
+        if (q >= 0) {
+            for (String part : url.substring(q + 1).split("&")) {
+                String name = part.split("=", 2)[0];
+                if (part.isEmpty() || name.equals("codec_type") || name.equals("force_codec")) continue;
+                sb.append(part).append('&');
+            }
+        }
+        return sb.append("codec_type=0&force_codec=h264").toString();
+    }
+
+    /** 替换模型在双方都声明时，不得指向另一个视频或另一完整时长。 */
+    private static void confirmSameVideo(Map<String, Object> reference, Map<String, Object> other) {
+        String id = Json.optStr(reference.get("video_id"), "").trim();
+        String otherId = Json.optStr(other.get("video_id"), "").trim();
+        double duration = seconds(reference.get("video_duration"));
+        double otherDuration = seconds(other.get("video_duration"));
+        if ((!id.isEmpty() && !otherId.isEmpty() && !id.equals(otherId))
+                || (duration > 0 && otherDuration > 0 && Math.abs(duration - otherDuration) > 0.5)) {
+            throw new IllegalStateException("备用片源编号或完整时长无法确认，已停止取址");
+        }
+    }
+
     /** 请求 fallback_api 并取出其中的片源模型。 */
     private static Map<String, Object> readFallback(Map<String, Object> model) throws Exception {
-        String fallback = parseFallback(model.get("fallback_api"));
+        return readFallback(parseFallback(model.get("fallback_api")));
+    }
+
+    private static Map<String, Object> readFallback(String fallback) throws Exception {
         if (fallback == null || fallback.isEmpty()) {
             throw new IllegalStateException("App 接口未返回本集片源地址");
         }
@@ -346,12 +399,11 @@ public final class AppSource {
             boolean compatible = false, byteVc2 = false;
             for (Row r : rows) {
                 compatible |= r.codecRank < 2;
-                byteVc2 |= r.codec.equals("bytevc2");
+                byteVc2 |= r.codec.equals("bytevc2") || r.codec.equals("bvc2");
             }
-            // 编码按集锁定，换参数、身份或接口都拿不到别的编码（hongguoTV 0.1.16、hongguo-drama 5.6）。
-            throw new IllegalStateException(!compatible && byteVc2
-                    ? "本集仅提供播放器不支持的 ByteVC2 编码，当前无法播放，请在官方 App 观看"
-                    : "本集暂未提供兼容的 H.264/HEVC 片源");
+            // 目前只见到备用接口的兼容请求能换编码（见 fallbackTrack）。
+            if (!compatible && byteVc2) throw new ByteVc2Only();
+            throw new IllegalStateException("本集暂未提供兼容的 H.264/HEVC 片源");
         }
 
         // ---- 4. 逐候选解 URL 与密钥，取第一个可用的 ----
@@ -395,6 +447,13 @@ public final class AppSource {
     }
 
     /** 选中的内联候选缺少加密信息；调用方可据此尝试受校验的备用片源。 */
+    /** 所有档位都是播放器无法解码的 ByteVC2。 */
+    private static final class ByteVc2Only extends IllegalStateException {
+        ByteVc2Only() {
+            super("本集仅提供播放器不支持的 ByteVC2 编码，当前无法播放，请在官方 App 观看");
+        }
+    }
+
     private static final class IncompleteEncryption extends IllegalStateException {
         final int minimumPixels;
 
@@ -464,10 +523,10 @@ public final class AppSource {
         return d;
     }
 
-    /** 已签名的播放请求：URL 与签名头绑定，发送时不能再改动。 */
-    static final class SignedPlayback {
-        final String url;
-        final Map<String, String> headers;
+    /** 已签名的 App 请求：URL 与签名头绑定，发送时不能再改动。 */
+    public static final class SignedPlayback {
+        public final String url;
+        public final Map<String, String> headers;
 
         SignedPlayback(String url, Map<String, String> headers) {
             this.url = url;
@@ -481,16 +540,48 @@ public final class AppSource {
      */
     static SignedPlayback signPlayback(String base, PlaybackDevice.Identity identity, Map<String, String> extra,
             byte[] body, long nowMs) {
-        Map<String, String> q = new LinkedHashMap<>();
-        q.put("iid", identity.iid);
-        q.put("device_id", identity.deviceId);
-        for (Map.Entry<String, Object> e : deviceBase().entrySet()) q.put(e.getKey(), String.valueOf(e.getValue()));
+        Map<String, String> q = identityQuery(identity);
         for (String name : new String[]{"version_code", "manifest_version_code", "update_version_code", "pv_player"}) {
             q.put(name, PLAYBACK_VERSION_CODE);
         }
         q.put("version_name", PLAYBACK_VERSION_NAME);
         q.put("cdid", identity.cdid);
         q.putAll(extra);
+        return signQuery(base, q, body, nowMs, PLAYBACK_UA, identity.cookie);
+    }
+
+    /** 推荐流使用的官方 App 版本（hongguoTV 0.1.26 依官方 7.4.3.32 APK 调用链统一）。 */
+    public static final String RECOMMENDATION_VERSION_CODE = "74332";
+    public static final String RECOMMENDATION_VERSION_NAME = "7.4.3.32";
+    static final String RECOMMENDATION_UA =
+            "com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)";
+
+    /**
+     * 推荐流的完整签名请求（同步自 hongguoTV 0.1.26 {@code RecommendationFeed}，commit {@code 62910e0}）：
+     * 注册身份与设备参数在前，调用方参数覆盖同名字段，pv_player 跟随推荐版本。cookie 为空时用注册下发的
+     * 匿名 Cookie；登录态由调用方传入账号自己的 Cookie。
+     */
+    public static SignedPlayback signRecommendation(String base, PlaybackDevice.Identity identity,
+            Map<String, String> params, String cookie, long nowMs) {
+        Map<String, String> q = identityQuery(identity);
+        q.put("cdid", identity.cdid);
+        q.putAll(params);
+        q.remove("_rticket");
+        q.put("pv_player", RECOMMENDATION_VERSION_CODE);
+        String sent = cookie == null || cookie.isEmpty() ? identity.cookie : cookie;
+        return signQuery(base, q, null, nowMs, RECOMMENDATION_UA, sent);
+    }
+
+    private static Map<String, String> identityQuery(PlaybackDevice.Identity identity) {
+        Map<String, String> q = new LinkedHashMap<>();
+        q.put("iid", identity.iid);
+        q.put("device_id", identity.deviceId);
+        for (Map.Entry<String, Object> e : deviceBase().entrySet()) q.put(e.getKey(), String.valueOf(e.getValue()));
+        return q;
+    }
+
+    private static SignedPlayback signQuery(String base, Map<String, String> q, byte[] body, long nowMs,
+            String userAgent, String cookie) {
         StringBuilder qs = new StringBuilder();
         for (Map.Entry<String, String> e : q.entrySet()) {
             if (qs.length() > 0) qs.append('&');
@@ -502,7 +593,7 @@ public final class AppSource {
             String url = base + "?" + qs + "&_rticket=" + ticket;
             if (PureSign.branchOf(url, body, khronos) != 0) continue;
             Map<String, String> headers = new LinkedHashMap<>();
-            headers.put("User-Agent", PLAYBACK_UA);
+            headers.put("User-Agent", userAgent);
             headers.put("Accept", "application/json; charset=utf-8,application/x-protobuf");
             headers.put("x-ss-req-ticket", String.valueOf(ticket));
             headers.put("sdk-version", "2");
@@ -512,7 +603,7 @@ public final class AppSource {
                 headers.put("Content-Type", "application/json; charset=utf-8");
                 headers.put("x-ss-stub", Crypto.md5HexUpper(body));
             }
-            if (!identity.cookie.isEmpty()) headers.put("Cookie", identity.cookie);
+            if (cookie != null && !cookie.isEmpty()) headers.put("Cookie", cookie);
             return new SignedPlayback(url, headers);
         }
         throw new IllegalStateException("无法生成播放签名");

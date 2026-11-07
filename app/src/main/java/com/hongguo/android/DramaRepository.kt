@@ -189,6 +189,9 @@ class DramaRepository {
 fun readableFailure(error: Throwable, action: String): String {
     val chain = generateSequence(error) { it.cause }.take(8).toList()
     val hint = chain.joinToString(" ") { it.message.orEmpty() }.lowercase()
+    chain.firstNotNullOfOrNull { it as? NoNewRecommendationsException }?.let {
+        return "推荐接口暂未返回新作品（最近已去重 ${it.remembered} 部），可稍后刷新，或切换其他分类继续发现。"
+    }
     return when {
         chain.any { it is UnknownHostException } -> "网络连接不可用，请检查网络后重试。"
         chain.any { it is SocketTimeoutException } -> "连接超时，请稍后重试。"

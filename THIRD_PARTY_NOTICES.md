@@ -117,3 +117,17 @@ Local changes: redirects are never followed, raw provider text is never shown, o
 
 `AppSource.signPlayback` and the route order in `AppSource.fetch` follow tsukiyo-zero/hongguoTV 0.1.22–0.1.25, commit `0c639bc` (2026-11-06), GPL-3.0-only — `kotlin-tv/core/.../ContentRepository.kt` `playbackRequest`, `Signer.signPlayback` and `PLAYBACK_STABILITY.md`. Since 2026-11-05 the model endpoints answer unsigned requests with an empty body; requests now carry the full signature, the registration cookies and `x-ss-stub`.
   https://github.com/tsukiyo-zero/hongguoTV/tree/0c639bc/kotlin-tv
+
+### Signed recommendation feed and cell continuation (2026-11)
+
+`GuessFeedClient`, `GuessFeedPager`, `AppSource.signRecommendation` and `PlaybackDevice.recommendation` follow tsukiyo-zero/hongguoTV TV 0.1.26, commits `3d319a6` and `62910e0` (2026-11-06), GPL-3.0-only — `kotlin-tv/core/.../RecommendationFeed.kt`, `PlaybackDeviceSession.kt`, `CloudAccount.kt` and `APP_RECOMMENDATION_REFERENCE.md`. The recommendation request carries a registered anonymous identity, the full App signature and the 7.4.3.32 context; when the entry declares `bottom_unlimited` with template 7, later batches use `bookmall/cell/change/v1/` with the server's `next_offset`; an explicit 110 on a signed request returns to the unsigned form. The 30-card cap is removed, a refresh keeps the recent dedupe window, and an empty account reply names its stage.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/70edaff/kotlin-tv
+
+Local changes: playback still registers a fresh identity per model request, so the recommendation identity is a separate process-wide one; a registration failure falls back to the unsigned request instead of failing the feed, and an empty reply to a signed request drops that identity and rereads the entry on the next host. `filter_ids` sends at most the 120 most recent ids. Upstream's playback recovery cooldown and 300 ms settle delay address the TV client's shared rotating identity and remote-control browsing and are not ported. Anonymous live check on 2026-11-07: 10 pages, 86 distinct works, all signed; signed-in recommendations have not been verified with a real account.
+
+### ByteVC2 compatibility request (2026-11)
+
+When every rendition of the fallback model is ByteVC2, `AppSource.fallbackTrack` reads the same `fallback_api` once more with `codec_type=0&force_codec=h264`, the compatibility parameters of the official player. Upstream obtained HEVC (hvc1, 1254×720) this way for episodes that had offered only ByteVC2. Synchronized from tsukiyo-zero/hongguoTV TV 0.1.20, commit `265472f2d310f1f979dfcbb325e9453c6582fc96` (2026-11-04, issue #56), GPL-3.0-only — `kotlin-tv/core/.../ContentRepository.kt`. This supersedes the earlier note that no parameter changes an episode's codec.
+  https://github.com/tsukiyo-zero/hongguoTV/tree/265472f2d310f1f979dfcbb325e9453c6582fc96/kotlin-tv
+
+Local changes: inline models whose rows are all ByteVC2 also go to the fallback; the other query parameters are kept byte-for-byte; the answer is still filtered by its actual codec, and a replacement that declares another video id or a full duration more than 0.5 s apart is refused. Not verified against a live ByteVC2-only episode.
