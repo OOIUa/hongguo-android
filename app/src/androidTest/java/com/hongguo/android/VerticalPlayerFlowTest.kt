@@ -3,6 +3,7 @@ package com.hongguo.android
 import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.onNodeWithTag
@@ -77,7 +78,7 @@ class VerticalPlayerFlowTest {
 
         // A paused episode must stay paused after a boundary drag or a drag that returns to the same page.
         compose.runOnIdle { assertTrue("The initial episode must begin with play enabled", first.playWhenReady) }
-        compose.onNodeWithTag("player_toggle").performClick()
+        compose.onNodeWithTag("player_toggle").performTouchInput { doubleClick(center) }
         compose.waitUntil(5_000) {
             var paused = false
             compose.runOnIdle { paused = attachedPlayers(compose.activity.window.decorView).singleOrNull()?.playWhenReady == false }

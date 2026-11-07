@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '横屏片源下方新增全屏观看，横屏时轻点显示或隐藏控件。新增小窗播放：播放页顶栏的小窗按钮，或播放时离开应用自动转为小窗。推荐流按新协议请求，刷新不再重播旧推荐。只有 ByteVC2 编码的集会用兼容参数再请求一次。'
+        notes = '播放页手势参考 B 站：轻点显示或隐藏控件，双击中间暂停或继续，双击左右两侧快退或快进 10 秒，连续点击可累加。点击播放页的短剧名称回到详情页。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

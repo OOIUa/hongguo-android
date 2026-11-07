@@ -217,7 +217,7 @@ private fun ImmersiveFeedPage(card: DramaCard, page: Int, favorite: Boolean, mod
         // Tap pauses / resumes and holding the left half plays at 2×, as in the full player; the buttons drawn above
         // keep their own clicks and a vertical drag still belongs to the pager.
         if (playing != null) PlayerInteractionLayer(Modifier.fillMaxSize().testTag("immersive_preview_$page"),
-            onTap = preview.toggle, onHoldSpeedChange = preview.hold)
+            onTap = { preview.toggle() }, onHoldSpeedChange = preview.hold)
         AnimatedVisibility(preview?.holding == true, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
             enter = fadeIn(), exit = fadeOut()) {
             Row(Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .5f))
