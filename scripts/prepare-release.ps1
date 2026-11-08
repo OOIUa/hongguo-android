@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '长按视频左侧或右侧都可临时 2 倍速播放，松手恢复。上一版起：轻点显示或隐藏控件，双击中间暂停或继续，双击两侧快退或快进 10 秒；点击剧名回到详情页。'
+        notes = '修复偶发的“准备播放失败”“视频播放失败”：片源服务器切换节点时不再误判为片源已更新，分段读取失败会自动重试；超时、网络不可用等原因显示更准确的提示。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

@@ -12,6 +12,8 @@ import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.net.ssl.SSLException;
 
 /** On-demand Range transport exposing a clear, same-offset virtual MP4 to Media3. No local server. */
 public final class ProgressiveMedia {
@@ -39,6 +42,9 @@ public final class ProgressiveMedia {
     private static final int BLOCK_BYTES = 256 * 1024;
     private static final long MAX_SOURCE_BYTES = 512L * 1024 * 1024;
     private static final long CACHE_LIMIT = MAX_SOURCE_BYTES;
+    /** Range reads retried after transient failures (CDN switch, short network drop). Tests shorten the backoff. */
+    static final int FETCH_ATTEMPTS = 5;
+    static volatile long retryBaseMillis = 400;
     private static final Pattern CONTENT_RANGE = Pattern.compile("bytes ([0-9]+)-([0-9]+)/([0-9]+)");
     private static final Object CACHE_GUARD = new Object();
     private static final LinkedHashMap<Path, CacheBlock> CACHE = new LinkedHashMap<>(16, .75f, true);
@@ -107,7 +113,6 @@ public final class ProgressiveMedia {
         private volatile boolean closed;
         private volatile boolean opening = true;
         private long length = -1, downloadedBytes;
-        private String validatorHeader, validator;
         private long moovStart;
         private byte[] clearMoov;
         private byte[] key;
@@ -313,7 +318,7 @@ public final class ProgressiveMedia {
                 }
                 long from = number * BLOCK_BYTES;
                 int count = (int) Math.min(BLOCK_BYTES, length - from);
-                byte[] bytes = fetch(reader, from, count, false);
+                byte[] bytes = fetchRetrying(reader, from, count);
                 reader.check();
                 Path destination = dir.resolve(number + ".range");
                 Path temporary = Files.createTempFile(dir, "range-", ".part");
@@ -337,6 +342,31 @@ public final class ProgressiveMedia {
             } finally { if (locked) fetchLock.unlock(); }
         }
 
+        /**
+         * The media host load-balances single ranges onto other CDNs (seen: vegslb.com, idouyinvod.com, smtcdns.com).
+         * Those answers are valid but can briefly fail or differ in ETag/Last-Modified, so a range is retried with backoff
+         * instead of failing the episode. Only cancellation stops the retries early.
+         */
+        private byte[] fetchRetrying(Reader reader, long from, int count) throws IOException {
+            long delay = retryBaseMillis;
+            for (int attempt = 1; ; attempt++) {
+                IOException failure;
+                try { return fetch(reader, from, count, false); }
+                catch (SocketTimeoutException timeout) { failure = timeout; }   // an InterruptedIOException, but not a cancel
+                catch (InterruptedIOException cancelled) { throw cancelled; }
+                catch (IOException other) { failure = other; }
+                reader.check();
+                if (attempt >= FETCH_ATTEMPTS) throw failure;
+                long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay);
+                while (System.nanoTime() < until) {
+                    reader.check();
+                    try { Thread.sleep(Math.max(1, Math.min(50, TimeUnit.NANOSECONDS.toMillis(until - System.nanoTime())))); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); throw cancelled(); }
+                }
+                delay = Math.min(delay * 2, 4000);
+            }
+        }
+
         private byte[] fetch(Reader reader, long from, int count, boolean first) throws IOException {
             if (count <= 0) throw unsupported();
             URI next = source;
@@ -344,15 +374,14 @@ public final class ProgressiveMedia {
                 reader.check();
                 HttpURLConnection connection;
                 try { connection = factory.open(next); }
-                catch (IOException failure) { reader.check(); throw new IOException("媒体连接暂时失败，请重试"); }
+                catch (IOException failure) { reader.check(); throw sanitized(failure, "媒体连接暂时失败，请重试"); }
                 try {
                     reader.attach(connection);
-                    connection.setConnectTimeout(8000); connection.setReadTimeout(5000);
+                    connection.setConnectTimeout(8000); connection.setReadTimeout(10000);
                     connection.setInstanceFollowRedirects(false);
                     connection.setRequestProperty("User-Agent", "Mozilla/5.0");
                     connection.setRequestProperty("Accept-Encoding", "identity");
                     connection.setRequestProperty("Range", "bytes=" + from + "-" + (from + count - 1));
-                    if (validator != null) connection.setRequestProperty("If-Range", validator);
                     int code = connection.getResponseCode();
                     reader.check();
                     if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
@@ -371,15 +400,9 @@ public final class ProgressiveMedia {
                     catch (NumberFormatException ex) { throw unsupported(); }
                     if (start != from || end != from + count - 1 || total < 16 || total > MAX_SOURCE_BYTES
                             || end >= total || (length >= 0 && total != length)) throw unsupported();
-                    if (first) {
-                        length = total;
-                        String etag = connection.getHeaderField("ETag"), modified = connection.getHeaderField("Last-Modified");
-                        if ((etag != null && etag.length() > 512) || (modified != null && modified.length() > 128)) throw unsupported();
-                        if (etag != null && !etag.startsWith("W/")) { validatorHeader = "ETag"; validator = etag; }
-                        else if (modified != null) { validatorHeader = "Last-Modified"; validator = modified; }
-                    } else if (validator != null && !validator.equals(connection.getHeaderField(validatorHeader))) {
-                        throw new IOException("媒体来源已更新，请重新打开本集");
-                    }
+                    // ETag/Last-Modified differ between CDN nodes for the same file (some send none), so only the exact
+                    // total length identifies the source. If-Range is not sent: a node without the tag would answer 200.
+                    if (first) length = total;
                     long declared = connection.getContentLengthLong();
                     if (declared >= 0 && declared != count) throw new IOException("媒体分段长度异常");
                     String encoding = connection.getHeaderField("Content-Encoding");
@@ -398,7 +421,7 @@ public final class ProgressiveMedia {
                     reader.check();
                     // No URL/query/cipher key is included in outward errors or causes.
                     if (failure instanceof UnsupportedException || failure instanceof InterruptedIOException) throw failure;
-                    throw new IOException("媒体分段暂时读取失败，请重试");
+                    throw sanitized(failure, "媒体分段暂时读取失败，请重试");
                 } finally { reader.detach(connection); connection.disconnect(); }
             }
             throw new IOException("媒体重定向异常");
@@ -506,6 +529,13 @@ public final class ProgressiveMedia {
     }
     private static void checkOpening(Stream.Progress progress) throws IOException {
         if (Thread.currentThread().isInterrupted() || (progress != null && progress.isCancelled())) throw cancelled();
+    }
+    /** Keeps the failure kind for the UI (timeout, DNS, TLS) without carrying a URL or upstream text. */
+    private static IOException sanitized(IOException failure, String message) {
+        if (failure instanceof SocketTimeoutException) return new SocketTimeoutException(message);
+        if (failure instanceof UnknownHostException) return new UnknownHostException(message);
+        if (failure instanceof SSLException) return new SSLException(message);
+        return new IOException(message);
     }
     private static InterruptedIOException cancelled() { return new InterruptedIOException("播放读取已取消"); }
     private static UnsupportedException unsupported() { return new UnsupportedException("本集暂不支持边播边下，将使用完整准备模式"); }

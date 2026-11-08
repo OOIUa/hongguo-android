@@ -1,3 +1,14 @@
+# 0.7.19 修复偶发播放失败
+
+验证日期：2026-11-08（Asia/Shanghai）。versionName 0.7.19、versionCode 30。对应 iOS 0.1.17。来源：issue #3（“准备播放失败”“视频播放失败”，需重试多次）。
+
+- 原因：片源主机把单个 Range 请求 302 到其他 CDN 节点（实网见到 vegslb.com、idouyinvod.com、smtcdns.com）。同一文件在不同节点的 ETag / Last-Modified 不一致，有的节点不带 ETag。`ProgressiveMedia` 记下首段的校验值后要求每段一致，并发送 If-Range，节点切换时报“媒体来源已更新”或因 200 响应判为不支持；另外单段读取超时只有 5 秒，任何一段失败都不重试，错误原因被统一包装成“请检查网络后重试”。
+- 修复：只用 Content-Range 中的文件总长度确认同一片源，不再比较 ETag/Last-Modified，也不发送 If-Range；读取超时改为 10 秒；分段失败（含超时、中途断开、异常响应）最多尝试 5 次，间隔 0.4/0.8/1.6/3.2 秒，取消立即生效；超时、DNS、TLS 失败保留异常类型，界面显示对应提示。
+- `ProgressiveMediaTest` 新增：节点切换后 ETag 缺失或不同仍可继续读取、请求不带 If-Range；两次失败后自动恢复、持续失败仍报错；总长度变化仍拒绝。
+- 实网 A/B（JVM 直接运行 Java 核心，匿名，《和离后我带女儿横扫魔域》同一批 40 集，新旧代码同时完整读取整集）：0.7.18 成功 39 集，第 257 集 5 秒读取超时失败；0.7.19 成功 40 集。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:compileDebugAndroidTestKotlin` 通过，单元测试 335 项无失败，lint 无错误。
+- 未验证：没有真机或模拟器，播放界面未在设备上运行；本轮实网未恰好遇到 ETag 不一致的节点切换（由单元测试覆盖，节点 ETag 差异来自 iOS 侧抓包）。
+
 # 0.7.18 左右两侧长按 2 倍速
 
 验证日期：2026-11-07（Asia/Shanghai）。versionName 0.7.18、versionCode 29。

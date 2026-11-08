@@ -33,7 +33,10 @@ import static org.junit.Assert.*;
 public class ProgressiveMediaTest {
     private Path root;
     private ProgressiveMedia.Session session;
-    @Before public void setup() throws Exception { root = Files.createTempDirectory("progressive-test-"); }
+    @Before public void setup() throws Exception {
+        root = Files.createTempDirectory("progressive-test-");
+        ProgressiveMedia.retryBaseMillis = 1;
+    }
     @After public void cleanup() throws Exception {
         if (session != null) session.close();
         Thread.interrupted();
@@ -136,10 +139,36 @@ public class ProgressiveMediaTest {
         try { open(origin, false, null); fail(); } catch (IOException expected) { }
         origin.truncated = false;
         session = open(origin, false, null);
-        origin.etag = "\"new-version\"";
+        origin.total = media.length + 1;
         try { session.read(1024 * 1024, new byte[16], 0, 16); fail(); } catch (IOException expected) { }
         assertFalse(session.isComplete());
         assertNoPlayableOrPartFiles();
+    }
+
+    @Test public void cdnNodeSwitchWithDifferentOrMissingETagKeepsPlaying() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin origin = new Origin(media);
+        session = open(origin, false, null);
+        origin.etag = null;
+        byte[] got = new byte[16];
+        assertEquals(16, session.read(1024 * 1024, got, 0, 16));
+        assertArrayEquals(Arrays.copyOfRange(media, 1024 * 1024, 1024 * 1024 + 16), got);
+        origin.etag = "\"other-node\"";
+        assertEquals(16, session.read(1536 * 1024, got, 0, 16));
+        assertNull("If-Range makes a node without the tag answer 200", origin.lastIfRange);
+    }
+
+    @Test public void transientRangeFailuresAreRetriedButPersistentOnesStillFail() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin origin = new Origin(media);
+        session = open(origin, false, null);
+        origin.failNext.set(2);
+        byte[] got = new byte[16];
+        assertEquals(16, session.read(1024 * 1024, got, 0, 16));
+        assertArrayEquals(Arrays.copyOfRange(media, 1024 * 1024, 1024 * 1024 + 16), got);
+        origin.failNext.set(100);
+        try { session.read(1792 * 1024, got, 0, 16); fail(); } catch (IOException expected) { }
+        assertTrue(origin.failNext.get() <= 100 - ProgressiveMedia.FETCH_ATTEMPTS);
     }
 
     @Test public void corruptBlockIsRefetchedAndAbandonedCacheIsNeverReused() throws Exception {
@@ -307,6 +336,9 @@ public class ProgressiveMediaTest {
         volatile int status = 206, gatedBlock = -1;
         volatile boolean wrongRange, truncated;
         volatile String etag = "\"fixture-v1\"";
+        volatile String lastIfRange;
+        volatile long total = -1;
+        final AtomicInteger failNext = new AtomicInteger();
         Origin(byte[] bytes) { this.bytes = bytes; }
         public HttpURLConnection open(URI uri) throws IOException {
             requests.incrementAndGet();
@@ -316,12 +348,14 @@ public class ProgressiveMediaTest {
                 public void connect() {}
                 public boolean usingProxy() { return false; }
                 public void disconnect() { disconnected = true; synchronized (this) { notifyAll(); } }
-                public int getResponseCode() {
+                public int getResponseCode() throws IOException {
+                    lastIfRange = getRequestProperty("If-Range");
+                    if (failNext.getAndUpdate(n -> Math.max(0, n - 1)) > 0) throw new IOException("fixture reset");
                     String[] limits = getRequestProperty("Range").substring(6).split("-");
                     start = Long.parseLong(limits[0]); end = Long.parseLong(limits[1]); return status;
                 }
                 public String getHeaderField(String name) {
-                    if ("Content-Range".equals(name)) return "bytes " + (wrongRange ? start + 1 : start) + "-" + end + "/" + bytes.length;
+                    if ("Content-Range".equals(name)) return "bytes " + (wrongRange ? start + 1 : start) + "-" + end + "/" + (total > 0 ? total : bytes.length);
                     if ("ETag".equals(name)) return etag;
                     return null;
                 }
