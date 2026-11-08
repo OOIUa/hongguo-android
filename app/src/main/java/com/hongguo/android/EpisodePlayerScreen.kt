@@ -192,6 +192,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     var cleanScreen by rememberSaveable(detail.id) { mutableStateOf(false) }
     // The badge for a double tap on either side; taps on the same side while it shows keep adding.
     var skipFeedback by remember(state.video?.requestId) { mutableStateOf<SkipFeedback?>(null) }
+    // Where a sideways drag across the picture began; non-null while that drag moves the progress.
+    var dragSeekFrom by remember(state.video?.requestId) { mutableStateOf<Long?>(null) }
 
     // Model-driven changes (continue, sheet selection and autoplay) never count as a user swipe. They slide like a
     // swipe. User scrolling is off until the slide ends, so a touch cannot stop it half-way on another episode.
@@ -245,6 +247,40 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     }
     LaunchedEffect(skipFeedback) {
         if (skipFeedback != null) { delay(900); skipFeedback = null }
+    }
+    // As in the official app: drag sideways across the picture to move the progress, the time shows in the middle,
+    // and the jump happens on release. It shares the seek bar's state, so the bar follows and the pager stays still.
+    val seekDrag: (SeekDragPhase, Float) -> Boolean = drag@{ phase, fraction ->
+        val duration = playback.durationMs
+        when (phase) {
+            SeekDragPhase.START -> {
+                val player = playback.player ?: return@drag false
+                if (activeVideo == null || seeking || !state.firstFrameRendered || duration <= 0 || state.playbackError != null)
+                    return@drag false
+                dragSeekFrom = player.currentPosition
+                seeking = true
+                seekFraction = (player.currentPosition.toFloat() / duration).coerceIn(0f, 1f)
+                true
+            }
+            SeekDragPhase.MOVE -> {
+                val from = dragSeekFrom ?: return@drag false
+                dragSeekTarget(from, duration, fraction)?.let { seekFraction = it.toFloat() / duration }
+                true
+            }
+            SeekDragPhase.END, SeekDragPhase.CANCEL -> {
+                val from = dragSeekFrom
+                val video = activeVideo
+                val target = if (phase == SeekDragPhase.END && from != null) dragSeekTarget(from, duration, fraction) else null
+                if (target != null && video != null && kotlin.math.abs(target - from!!) > 200) {
+                    playback.player?.seekTo(target)
+                    model.savePosition(video.episodeId, target, video.requestId, duration)
+                }
+                dragSeekFrom = null
+                seeking = false
+                seekFraction = null
+                true
+            }
+        }
     }
     val activity = LocalActivity.current
     val context = LocalContext.current
@@ -346,7 +382,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                             "快退 10 秒" to { skip(false) },
                             "快进 10 秒" to { skip(true) },
                             (if (cleanScreen) "显示控制栏" else "隐藏控制栏") to { cleanScreen = !cleanScreen },
-                        ))
+                        ), onSeekDrag = seekDrag)
                 }
                 when {
                     // Neighbouring episodes carry their number, so a swipe visibly brings the next one in.
@@ -384,6 +420,13 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     }
                 }
             }
+        }
+
+        val dragFrom = dragSeekFrom
+        val dragFraction = seekFraction
+        if (dragFrom != null && dragFraction != null && playback.durationMs > 0) {
+            val target = (playback.durationMs * dragFraction).toLong()
+            SeekDragBadge(target, playback.durationMs, target - dragFrom, Modifier.align(Alignment.Center))
         }
 
         skipFeedback?.let { feedback ->
@@ -628,6 +671,18 @@ private fun SkipBadge(feedback: SkipFeedback, modifier: Modifier = Modifier) {
             tint = Color.White, modifier = Modifier.size(28.dp))
         Text("${if (feedback.forward) "+" else "-"}${feedback.seconds} 秒", color = Color.White, fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun SeekDragBadge(targetMs: Long, durationMs: Long, deltaMs: Long, modifier: Modifier = Modifier) {
+    Column(modifier.clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = .55f))
+        .padding(horizontal = 20.dp, vertical = 12.dp).testTag("player_drag_seek"),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("${playerTime(targetMs)} / ${playerTime(durationMs)}", color = Color.White, fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold)
+        val seconds = kotlin.math.abs(deltaMs) / 1000
+        Text(if (deltaMs >= 0) "快进 $seconds 秒" else "快退 $seconds 秒", color = Color.White.copy(alpha = .75f), fontSize = 12.sp)
     }
 }
 

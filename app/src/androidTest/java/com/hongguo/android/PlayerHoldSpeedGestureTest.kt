@@ -99,6 +99,57 @@ class PlayerHoldSpeedGestureTest {
         }
     }
 
+    @Test fun sidewaysDragSeeksWithoutTappingHoldingOrPaging() {
+        val phases = mutableListOf<Pair<SeekDragPhase, Float>>()
+        var taps = 0
+        val holds = mutableListOf<Boolean>()
+        lateinit var pager: PagerState
+        compose.setContent {
+            MaterialTheme {
+                pager = rememberPagerState(pageCount = { 3 })
+                VerticalPager(pager, Modifier.fillMaxSize()) {
+                    PlayerInteractionLayer(Modifier.testTag("gesture_layer"), onTap = { taps++ }, onHoldSpeedChange = holds::add,
+                        onSeekDrag = { phase, fraction -> phases += phase to fraction; true })
+                }
+            }
+        }
+        compose.onNodeWithTag("gesture_layer").performTouchInput {
+            swipe(Offset(width * .2f, center.y), Offset(width * .7f, center.y), 400)
+        }
+        compose.runOnIdle {
+            assertEquals(SeekDragPhase.START, phases.first().first)
+            assertEquals(SeekDragPhase.END, phases.last().first)
+            assertTrue(phases.last().second in .35f..0.55f)
+            assertEquals(0, taps)
+            assertFalse(holds.any { it })
+            assertEquals(0, pager.currentPage)
+        }
+        phases.clear()
+        compose.onNodeWithTag("gesture_layer").performTouchInput {
+            swipe(Offset(center.x, height * .8f), Offset(center.x, height * .2f), 300)
+        }
+        compose.runOnIdle {
+            assertTrue("an upward swipe still changes the episode", phases.isEmpty())
+            assertEquals(1, pager.currentPage)
+        }
+    }
+
+    @Test fun refusedDragNeitherSeeksNorTaps() {
+        val phases = mutableListOf<SeekDragPhase>()
+        var taps = 0
+        compose.setContent {
+            PlayerInteractionLayer(Modifier.testTag("gesture_layer"), onTap = { taps++ }, onHoldSpeedChange = {},
+                onSeekDrag = { phase, _ -> phases += phase; false })
+        }
+        compose.onNodeWithTag("gesture_layer").performTouchInput {
+            swipe(Offset(width * .2f, center.y), Offset(width * .8f, center.y), 300)
+        }
+        compose.runOnIdle {
+            assertEquals(listOf(SeekDragPhase.START), phases)
+            assertEquals(0, taps)
+        }
+    }
+
     @Test fun ordinaryTouchAndAccessibilityClicksStillTogglePlayback() {
         val changes = mutableListOf<Boolean>()
         var taps = 0

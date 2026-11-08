@@ -1,6 +1,7 @@
 package com.hongguo.android
 
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,6 +51,22 @@ internal fun skipTarget(positionMs: Long, durationMs: Long, deltaMs: Long): Long
     return target.takeIf { kotlin.math.abs(it - positionMs) > 200 }
 }
 
+/** The phases of a sideways drag across the picture. */
+internal enum class SeekDragPhase { START, MOVE, END, CANCEL }
+
+/** A drag across the full width moves through the whole episode, or through this much of a longer one. */
+internal const val DragSeekSpanMillis = 180_000L
+
+/**
+ * Where a sideways drag of [fraction] of the width (negative to the left) lands, from where the drag began; held a
+ * second short of the end like the skips. Null without a known duration.
+ */
+internal fun dragSeekTarget(startMs: Long, durationMs: Long, fraction: Float): Long? {
+    if (durationMs <= 0) return null
+    val span = durationMs.coerceAtMost(DragSeekSpanMillis)
+    return (startMs + (span * fraction.toDouble()).toLong()).coerceIn(0, (durationMs - 1_000).coerceAtLeast(0))
+}
+
 /**
  * Sits above the pager and sees every pointer first: once a second finger lands, the gesture belongs to the pinch, so
  * neither the page swipe nor the tap and hold below react, including to the finger left down after the other lifts.
@@ -82,6 +99,9 @@ internal fun Modifier.playerPinch(enabled: Boolean, onDecided: (Boolean) -> Unit
  * enabled and decide whether to accept a hold in its callback without losing tap-to-resume.
  * Taps report where they landed as a fraction of the width. With [onDoubleTap] set, a single tap waits out the
  * double-tap timeout before it fires.
+ * With [onSeekDrag] set, a sideways drag reports its progress as a fraction of the width; START answers whether the
+ * drag is taken. Once it passes the touch slop the tap and hold are cancelled, while a mostly vertical drag is left
+ * to the pager. No drag starts during a 2× hold.
  */
 @Composable
 internal fun PlayerInteractionLayer(
@@ -95,6 +115,7 @@ internal fun PlayerInteractionLayer(
     onAccessibilityClick: (() -> Unit)? = null,
     /** Named screen-reader actions for what only gestures do, such as skipping or the clean screen. */
     accessibilityActions: List<Pair<String, () -> Unit>> = emptyList(),
+    onSeekDrag: ((SeekDragPhase, Float) -> Boolean)? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val haptics = LocalHapticFeedback.current
@@ -103,6 +124,7 @@ internal fun PlayerInteractionLayer(
     val currentAccessibilityClick by rememberUpdatedState(onAccessibilityClick)
     val currentHoldChange by rememberUpdatedState(onHoldSpeedChange)
     val currentEnabled by rememberUpdatedState(enabled)
+    val currentSeekDrag by rememberUpdatedState(onSeekDrag)
     var foreground by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
     var holding by remember { mutableStateOf(false) }
 
@@ -173,6 +195,36 @@ internal fun PlayerInteractionLayer(
                 )
             } finally {
                 releaseHold()
+            }
+        }
+        .pointerInput(enabled, foreground, lifecycle, onSeekDrag != null) {
+            if (!enabled || !foreground || onSeekDrag == null) return@pointerInput
+            var taken = false
+            var dragged = 0f
+            fun finish(phase: SeekDragPhase) {
+                if (taken) currentSeekDrag?.invoke(phase, dragged / size.width.coerceAtLeast(1))
+                taken = false
+                dragged = 0f
+            }
+            try {
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        dragged = 0f
+                        taken = !holding && currentEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                            currentSeekDrag?.invoke(SeekDragPhase.START, 0f) == true
+                    },
+                    onDragEnd = { finish(SeekDragPhase.END) },
+                    onDragCancel = { finish(SeekDragPhase.CANCEL) },
+                    onHorizontalDrag = { change, amount ->
+                        if (taken) {
+                            change.consume()
+                            dragged += amount
+                            currentSeekDrag?.invoke(SeekDragPhase.MOVE, dragged / size.width.coerceAtLeast(1))
+                        }
+                    },
+                )
+            } finally {
+                finish(SeekDragPhase.CANCEL)
             }
         })
 }

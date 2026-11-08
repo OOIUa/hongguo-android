@@ -32,6 +32,17 @@ class PlayerSystemBarsTest {
         assertEquals(TapZone.FORWARD, tapZone(.88f))
     }
 
+    @Test fun sidewaysDragMovesThroughTheEpisodeAndStaysInside() {
+        // A short episode: the full width spans all of it.
+        assertEquals(90_000L, dragSeekTarget(30_000, 120_000, .5f))
+        assertEquals(0L, dragSeekTarget(30_000, 120_000, -.5f))
+        assertEquals(119_000L, dragSeekTarget(30_000, 120_000, 1f))
+        assertEquals(30_000L, dragSeekTarget(30_000, 120_000, 0f))
+        // A long one: the full width is three minutes.
+        assertEquals(DragSeekSpanMillis / 2 + 600_000, dragSeekTarget(600_000, 3_600_000, .5f))
+        assertEquals(null, dragSeekTarget(10_000, 0, .5f))
+    }
+
     @Test fun skipStaysInsideTheEpisode() {
         assertEquals(40_000L, skipTarget(30_000, 120_000, 10_000))
         assertEquals(20_000L, skipTarget(30_000, 120_000, -10_000))
