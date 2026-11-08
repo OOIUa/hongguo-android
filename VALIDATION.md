@@ -1,3 +1,12 @@
+# 0.7.20 左右滑动调整进度
+
+验证日期：2026-11-08（Asia/Shanghai）。versionName 0.7.20、versionCode 31。对应 iOS 0.1.18。来源：issue #3 建议“像官方那样手势划动拖动进度”。
+
+- 播放页：在画面上横向拖动（越过触摸阈值后）显示目标时间与快进 / 快退秒数，进度条同步，松手 `seekTo` 并保存进度；整屏宽度对应整集，超过 3 分钟的视频对应 3 分钟，停在片尾前 1 秒。纵向拖动仍交给 VerticalPager 切集；长按 2 倍速期间不开始拖动；双指捏合会取消拖动。推荐流预览不启用。
+- 单元测试 `PlayerSystemBarsTest.sidewaysDragMovesThroughTheEpisodeAndStaysInside`；仪器测试 `PlayerHoldSpeedGestureTest` 新增横向拖动不触发点击 / 长按 / 翻页、上滑仍翻页、被拒绝的拖动不产生点击。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:compileDebugAndroidTestKotlin` 通过，单元测试 336 项无失败，lint 无错误。
+- 未验证：没有真机或模拟器，仪器测试只编译未运行，滑动手势未在设备上实际操作（同样的交互在 iOS 0.1.18 模拟器上实测过）。
+
 # 0.7.19 修复偶发播放失败
 
 验证日期：2026-11-08（Asia/Shanghai）。versionName 0.7.19、versionCode 30。对应 iOS 0.1.17。来源：issue #3（“准备播放失败”“视频播放失败”，需重试多次）。
