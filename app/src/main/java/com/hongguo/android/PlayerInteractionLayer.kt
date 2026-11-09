@@ -44,22 +44,6 @@ internal fun pinchCleanScreen(scale: Float): Boolean? = when {
     else -> null
 }
 
-/** Where a tap lands across the picture: the outer 30% on each side skips, the middle plays or pauses. */
-internal enum class TapZone { BACK, MIDDLE, FORWARD }
-
-internal fun tapZone(fraction: Float): TapZone = when {
-    fraction < .3f -> TapZone.BACK
-    fraction > .7f -> TapZone.FORWARD
-    else -> TapZone.MIDDLE
-}
-
-/** The position a skip of [deltaMs] lands on, held a second short of the end; null when it would not move. */
-internal fun skipTarget(positionMs: Long, durationMs: Long, deltaMs: Long): Long? {
-    if (durationMs <= 0) return null
-    val target = (positionMs + deltaMs).coerceIn(0, (durationMs - 1_000).coerceAtLeast(0))
-    return target.takeIf { kotlin.math.abs(it - positionMs) > 200 }
-}
-
 /** The phases of a sideways drag across the picture. */
 internal enum class SeekDragPhase { START, MOVE, END, CANCEL }
 
@@ -68,7 +52,7 @@ internal const val DragSeekSpanMillis = 180_000L
 
 /**
  * Where a sideways drag of [fraction] of the width (negative to the left) lands, from where the drag began; held a
- * second short of the end like the skips. Null without a known duration.
+ * second short of the end. Null without a known duration.
  */
 internal fun dragSeekTarget(startMs: Long, durationMs: Long, fraction: Float): Long? {
     if (durationMs <= 0) return null

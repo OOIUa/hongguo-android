@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复第二季等部分剧集显示“该集片源暂时不可用”无法播放；拖动进度改为先长按 2 倍速再左右拖动，下拉通知栏不再误触；竖屏清屏和长按 2 倍速不再隐藏系统状态栏；小窗自动播下一集不再卡住或显示剧名。'
+        notes = '移除左右两侧双击快进 / 快退：双击画面任意位置暂停或继续；调整进度只需长按画面进入 2 倍速后左右拖动，松手跳转。上一版起修复部分剧集无法播放、下拉通知栏误触进度和小窗连播问题。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

@@ -58,8 +58,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.FastForward
-import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.StarBorder
@@ -189,8 +187,6 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     var seekFraction by remember(state.video?.requestId) { mutableStateOf<Float?>(null) }
     // 清屏: only the picture remains until a tap, an inward pinch or back brings the controls back.
     var cleanScreen by rememberSaveable(detail.id) { mutableStateOf(false) }
-    // The badge for a double tap on either side; taps on the same side while it shows keep adding.
-    var skipFeedback by remember(state.video?.requestId) { mutableStateOf<SkipFeedback?>(null) }
     // Where a sideways drag across the picture began; non-null while that drag moves the progress.
     var dragSeekFrom by remember(state.video?.requestId) { mutableStateOf<Long?>(null) }
 
@@ -237,20 +233,6 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             else if (it.playWhenReady) it.pause() else it.play()
         }
         Unit
-    }
-    val skip: (Boolean) -> Unit = skip@{ forward ->
-        val player = playback.player ?: return@skip
-        val video = activeVideo ?: return@skip
-        if (seeking || !state.firstFrameRendered) return@skip
-        val duration = playback.durationMs
-        val target = skipTarget(player.currentPosition, duration, if (forward) 10_000 else -10_000) ?: return@skip
-        player.seekTo(target)
-        model.savePosition(video.episodeId, target, video.requestId, duration)
-        val previous = skipFeedback?.takeIf { it.forward == forward }
-        skipFeedback = SkipFeedback(forward, (previous?.seconds ?: 0) + 10, (skipFeedback?.serial ?: 0) + 1)
-    }
-    LaunchedEffect(skipFeedback) {
-        if (skipFeedback != null) { delay(900); skipFeedback = null }
     }
     // As in the official app: drag sideways across the picture to move the progress, the time shows in the middle,
     // and the jump happens on release. It shares the seek bar's state, so the bar follows and the pager stays still.
@@ -360,30 +342,17 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 if (page == selected && activeVideo != null && playback.player != null) {
                     VideoSurface(playback, Modifier.fillMaxSize())
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = pictureCover.value }.background(Color.Black))
-                    // As in Bilibili: a tap shows or hides the controls, a double tap in the middle plays or pauses,
-                    // and a double tap on either side skips 10 seconds.
+                    // A tap shows or hides the controls and a double tap anywhere plays or pauses. The progress moves
+                    // only by holding until 2× and then dragging sideways (no side double-tap skips, issue #3).
                     PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),
-                        enabled = !sheetOpen && !inPip, onTap = { x ->
-                            val feedback = skipFeedback
-                            val zone = tapZone(x)
-                            if (feedback != null && zone == (if (feedback.forward) TapZone.FORWARD else TapZone.BACK)) skip(feedback.forward)
-                            else cleanScreen = !cleanScreen
-                        },
-                        onDoubleTap = { x ->
-                            when (tapZone(x)) {
-                                TapZone.BACK -> skip(false)
-                                TapZone.FORWARD -> skip(true)
-                                TapZone.MIDDLE -> togglePlayback()
-                            }
-                        },
+                        enabled = !sheetOpen && !inPip, onTap = { cleanScreen = !cleanScreen },
+                        onDoubleTap = { togglePlayback() },
                         onHoldSpeedChange = { holding ->
                             // Holding a paused video must not resume it or change the saved speed.
                             doubleSpeedHeld = holding && playback.isPlaying && !sheetOpen
                         }, tapLabel = if (playback.playWhenReady && !playback.ended) "暂停" else "播放",
                         onAccessibilityClick = togglePlayback,
                         accessibilityActions = listOf(
-                            "快退 10 秒" to { skip(false) },
-                            "快进 10 秒" to { skip(true) },
                             (if (cleanScreen) "显示控制栏" else "隐藏控制栏") to { cleanScreen = !cleanScreen },
                         ), onSeekDrag = seekDrag)
                 }
@@ -431,11 +400,6 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         if (dragFrom != null && dragFraction != null && playback.durationMs > 0) {
             val target = (playback.durationMs * dragFraction).toLong()
             SeekDragBadge(target, playback.durationMs, target - dragFrom, Modifier.align(Alignment.Center))
-        }
-
-        skipFeedback?.let { feedback ->
-            SkipBadge(feedback, Modifier.align(if (feedback.forward) Alignment.CenterEnd else Alignment.CenterStart)
-                .padding(horizontal = if (landscape) 70.dp else 26.dp))
         }
 
         AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.TopCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
@@ -662,19 +626,6 @@ internal fun PlayerTopBar(
                 }
             }
         }
-    }
-}
-
-private data class SkipFeedback(val forward: Boolean, val seconds: Int, val serial: Int)
-
-@Composable
-private fun SkipBadge(feedback: SkipFeedback, modifier: Modifier = Modifier) {
-    Column(modifier.size(86.dp).clip(CircleShape).background(Color.Black.copy(alpha = .4f)).testTag("player_skip_badge"),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(if (feedback.forward) Icons.Rounded.FastForward else Icons.Rounded.FastRewind, null,
-            tint = Color.White, modifier = Modifier.size(28.dp))
-        Text("${if (feedback.forward) "+" else "-"}${feedback.seconds} 秒", color = Color.White, fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold)
     }
 }
 

@@ -1,3 +1,12 @@
+# 0.7.22 移除两侧双击快进快退
+
+验证日期：2026-11-09（Asia/Shanghai）。versionName 0.7.22、versionCode 33。对应 iOS 0.1.20。来源：用户要求只保留长按后拖动调整进度（issue #3 也建议取消双击快进快退、改为双击暂停）。
+
+- 播放页：双击画面任意位置暂停或继续；移除两侧双击 ±10 秒、跳转角标与读屏“快退 / 快进 10 秒”操作，以及 `tapZone` / `skipTarget`。进度只能长按 2 倍速后横向拖动（0.7.21 行为不变），或拖动进度条。
+- 单元测试删去 `outerThirdsSkipAndTheMiddlePlays`、`skipStaysInsideTheEpisode`；仪器测试 `VerticalPlayerFlowTest` 中间双击暂停仍适用。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:compileDebugAndroidTestKotlin` 通过，lint 无错误。
+- 未验证：没有真机或模拟器，仪器测试只编译未运行；同样的手势在 iOS 0.1.20 模拟器上实测（见 iOS 验证记录）。
+
 # 0.7.21 修复部分分集无法播放、拖动进度误触与小窗连播
 
 验证日期：2026-11-09（Asia/Shanghai）。versionName 0.7.21、versionCode 32。对应 iOS 修复见 hongguo-ios 同日版本。来源：issue #3（第二季第 5 集起无法播放、下拉通知栏误触进度、竖屏清屏进入全屏、拖动进度易误触）与 issue #4（小窗播放下一集卡住、位移、被剧名遮挡）。
