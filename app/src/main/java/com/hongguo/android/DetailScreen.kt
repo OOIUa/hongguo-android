@@ -29,7 +29,7 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 2.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = model::backToSearch, modifier = Modifier.testTag("detail_back")) {
+            IconButton(onClick = model::closeDetail, modifier = Modifier.testTag("detail_back")) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
             }
             Text("剧集详情", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)

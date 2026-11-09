@@ -89,6 +89,8 @@ data class HongguoUiState(
     val firstFrameRendered: Boolean = false,
     val resumePositionMs: Long = 0,
     val playerOpen: Boolean = false,
+    /** The detail page was opened from the player's title: back returns to the player, which kept its episode. */
+    val detailReturnsToPlayer: Boolean = false,
     val autoPlayNext: Boolean = true,
     val preloadNext: Boolean = true,
     val playbackSpeed: Float = 1f,
@@ -482,7 +484,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         mutableState.update { it.copy(tab = AppTab.SEARCH, query = query, searchedQuery = query,
             results = emptyList(), searching = true, loadingMore = false, hasMore = false, nextOffset = 0,
             searchError = null, selectedCard = null, detail = null, video = null, preparing = false,
-            playbackError = null, firstFrameRendered = false, playerOpen = false) }
+            playbackError = null, firstFrameRendered = false, playerOpen = false, detailReturnsToPlayer = false) }
         searchJob = viewModelScope.launch {
             try {
                 val page = repository.search(query, 0)
@@ -555,7 +557,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         mutableState.update {
             it.copy(selectedCard = card, detail = null, loadingDetail = true, detailError = null, related = emptyList(),
                 video = null, preparing = false, preparationStage = "", playbackError = null,
-                episodePosition = -1, playbackStatus = "", firstFrameRendered = false, resumePositionMs = 0, playerOpen = false)
+                episodePosition = -1, playbackStatus = "", firstFrameRendered = false, resumePositionMs = 0, playerOpen = false,
+                detailReturnsToPlayer = false)
         }
         relatedJob?.cancel()
         relatedJob = viewModelScope.launch {
@@ -611,7 +614,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         mutableState.update {
             it.copy(episodePosition = position, preparing = true, video = null,
                 preparationStage = "正在获取片源", preparationDone = 0, preparationTotal = 0,
-                playbackError = null, playbackStatus = "", firstFrameRendered = false, resumePositionMs = savedPosition, playerOpen = true)
+                playbackError = null, playbackStatus = "", firstFrameRendered = false, resumePositionMs = savedPosition, playerOpen = true,
+                detailReturnsToPlayer = false)
         }
         releaseVideo(current.video)
         mediaJob = viewModelScope.launch {
@@ -651,8 +655,26 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     fun openPlayer() {
         val current = state.value
-        if (current.video != null) mutableState.update { it.copy(playerOpen = true) }
+        // An episode still being prepared carries on; the player picks it up when it is ready.
+        if (current.video != null || current.preparing) mutableState.update { it.copy(playerOpen = true, detailReturnsToPlayer = false) }
         else playEpisode(current.episodePosition.coerceAtLeast(0))
+    }
+
+    /**
+     * The player's title opens the drama's detail page without ending the episode: its prepared media stays, and
+     * back on that page (or 继续播放) reopens the player where it was. Anything else that leaves the page releases it.
+     */
+    fun showDetailFromPlayer() {
+        val current = state.value
+        if (current.selectedCard == null || current.detail == null) return closePlayer()
+        current.video?.let { accounts.flushProgress(accountPlaybacks[it.requestId]?.owner) }
+        takePrefetch(null)
+        mutableState.update { it.copy(playerOpen = false, detailReturnsToPlayer = true) }
+    }
+
+    /** 返回 on a detail page: back to the player it was opened from, otherwise back to the list behind it. */
+    fun closeDetail() {
+        if (state.value.detailReturnsToPlayer && state.value.detail != null) openPlayer() else backToSearch()
     }
 
     fun closePlayer() {
@@ -663,7 +685,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         takePrefetch(null)
         resumePreparationOnForeground = false
         mutableState.update { it.copy(playerOpen = false, video = null, preparing = false,
-            preparationStage = "", playbackError = null, playbackStatus = "", firstFrameRendered = false) }
+            preparationStage = "", playbackError = null, playbackStatus = "", firstFrameRendered = false, detailReturnsToPlayer = false) }
         releaseVideo(previous)
     }
 
@@ -828,7 +850,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         pendingAutoPlay = false
         cancelDetailAndMedia()
         mutableState.update { it.copy(selectedCard = null, detail = null, loadingDetail = false, detailError = null,
-            preparing = false, video = null, playbackError = null, episodePosition = -1, playbackStatus = "", firstFrameRendered = false, playerOpen = false) }
+            preparing = false, video = null, playbackError = null, episodePosition = -1, playbackStatus = "", firstFrameRendered = false, playerOpen = false,
+            detailReturnsToPlayer = false) }
     }
 
     private fun cancelDetailAndMedia() {

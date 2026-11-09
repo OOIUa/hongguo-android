@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = state.playerOpen || state.selectedCard != null || state.tab != AppTab.HOME) {
                     when {
                         state.playerOpen -> model.closePlayer()
-                        state.selectedCard != null -> model.backToSearch()
+                        state.selectedCard != null -> model.closeDetail()
                         state.tab == AppTab.SEARCH -> model.closeSearch()
                         state.tab == AppTab.RANK -> model.closeRank()
                         state.tab == AppTab.ACCOUNT -> model.closeAccount()

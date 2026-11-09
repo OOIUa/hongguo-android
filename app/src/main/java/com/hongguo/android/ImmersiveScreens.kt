@@ -571,7 +571,7 @@ internal fun ImmersiveDetail(state: HongguoUiState, model: HongguoViewModel, acc
                     listOf(Color.Black.copy(alpha = .45f), Color.Transparent))))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                     .35f to Color.Transparent, 1f to Canvas)))
-                IconButton(onClick = model::backToSearch, modifier = Modifier.statusBarsPadding().padding(6.dp).clip(CircleShape)
+                IconButton(onClick = model::closeDetail, modifier = Modifier.statusBarsPadding().padding(6.dp).clip(CircleShape)
                     .background(Color.Black.copy(alpha = .35f)).testTag("detail_back")) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Color.White)
                 }

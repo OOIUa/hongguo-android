@@ -414,7 +414,7 @@ internal fun CardsDetail(state: HongguoUiState, model: HongguoViewModel, account
                             color = Muted, fontSize = 12.sp)
                     }
                 }
-                IconButton(onClick = model::backToSearch, modifier = Modifier.statusBarsPadding().padding(4.dp).testTag("detail_back")) {
+                IconButton(onClick = model::closeDetail, modifier = Modifier.statusBarsPadding().padding(4.dp).testTag("detail_back")) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Color.White)
                 }
                 Box(Modifier.padding(start = 16.dp, top = 123.dp + statusTop).width(100.dp).height(133.dp).clip(RoundedCornerShape(10.dp))

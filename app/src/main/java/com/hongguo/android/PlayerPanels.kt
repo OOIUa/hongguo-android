@@ -53,12 +53,14 @@ import kotlin.math.roundToInt
 internal val PlayerPanelColor = Color(0xFF211E1B)
 
 /**
- * Full screen: 选集 and 收藏 slide in from the right edge over half the picture. A bottom sheet there only had half
- * the screen's height to show. The rest of the picture dims; a tap on it or back closes the panel.
+ * Full screen: 选集 and 收藏 slide in from the right edge over half the picture, and the drama's details from the
+ * left ([fromStart]), next to the title that opens them. A bottom sheet there only had half the screen's height to
+ * show. The rest of the picture dims; a tap on it or back closes the panel.
  * Drawn inside the player, not in its own window, so the hidden system bars stay hidden.
  */
 @Composable
-internal fun PlayerSidePanel(visible: Boolean, onDismiss: () -> Unit, tag: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun PlayerSidePanel(visible: Boolean, onDismiss: () -> Unit, tag: String, fromStart: Boolean = false,
+                             content: @Composable ColumnScope.() -> Unit) {
     BackHandler(enabled = visible, onBack = onDismiss)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val panelWidth = maxOf(maxWidth * .5f, 340.dp).coerceAtMost(maxWidth)
@@ -66,16 +68,18 @@ internal fun PlayerSidePanel(visible: Boolean, onDismiss: () -> Unit, tag: Strin
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)).testTag("${tag}_scrim")
                 .pointerInput(onDismiss) { detectTapGestures { onDismiss() } })
         }
-        AnimatedVisibility(visible, Modifier.align(Alignment.CenterEnd),
-            enter = slideInHorizontally(tween(240)) { it }, exit = slideOutHorizontally(tween(200)) { it }) {
+        val offscreen: (Int) -> Int = if (fromStart) { width -> -width } else { width -> width }
+        AnimatedVisibility(visible, Modifier.align(if (fromStart) Alignment.CenterStart else Alignment.CenterEnd),
+            enter = slideInHorizontally(tween(240), offscreen), exit = slideOutHorizontally(tween(200), offscreen)) {
             Column(Modifier.width(panelWidth).fillMaxHeight().testTag(tag)
-                .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
+                .clip(if (fromStart) RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp)
+                    else RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
                 .background(PlayerPanelColor.copy(alpha = .97f))
                 // Taps on the panel's own blank space must not reach the dimmed picture behind it.
                 .pointerInput(Unit) { detectTapGestures { } }
                 .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.navigationBars)
-                    .only(WindowInsetsSides.End + WindowInsetsSides.Vertical))
-                .padding(start = 22.dp, end = 20.dp, top = 22.dp, bottom = 16.dp)) {
+                    .only((if (fromStart) WindowInsetsSides.Start else WindowInsetsSides.End) + WindowInsetsSides.Vertical))
+                .padding(start = if (fromStart) 20.dp else 22.dp, end = if (fromStart) 22.dp else 20.dp, top = 22.dp, bottom = 16.dp)) {
                 CompositionLocalProvider(LocalContentColor provides Color.White) { content() }
             }
         }

@@ -25,9 +25,15 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -176,7 +182,7 @@ internal fun playerHidesSystemBars(orientation: Int): Boolean = orientation == C
 
 private data class PagerMovement(val scrolling: Boolean, val settled: Int, val synchronizing: Int?)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail, accountModel: AccountViewModel?,
                          active: Boolean) {
@@ -188,6 +194,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     var showEpisodes by rememberSaveable(detail.id) { mutableStateOf(false) }
     var showSpeed by rememberSaveable(detail.id) { mutableStateOf(false) }
     var showFavorites by rememberSaveable(detail.id) { mutableStateOf(false) }
+    // Full screen: the drama's details beside the title instead of leaving the player for its page.
+    var showInfo by rememberSaveable(detail.id) { mutableStateOf(false) }
     var doubleSpeedHeld by remember(state.video?.requestId) { mutableStateOf(false) }
     var seeking by remember(state.video?.requestId) { mutableStateOf(false) }
     var seekFraction by remember(state.video?.requestId) { mutableStateOf<Float?>(null) }
@@ -229,7 +237,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         pager.settledPage == selected && synchronizing == null && it.episodeId == detail.episodes[selected].id
     }
     // A temporary drag disables the owner without discarding this request's pause/resume intent.
-    val sheetOpen = showEpisodes || showSpeed || showFavorites
+    val sheetOpen = showEpisodes || showSpeed || showFavorites || showInfo
     val temporaryDoubleSpeed = doubleSpeedHeld && activeVideo != null && !sheetOpen
     val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null,
         playbackSpeed = if (temporaryDoubleSpeed) 2f else state.playbackSpeed)
@@ -346,7 +354,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         .playerPinch(active && !sheetOpen && !landscape && !inPip) { cleanScreen = it }) {
         VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("episode_pager"),
             key = { detail.episodes[it].id }, beyondViewportPageCount = 1,
-            userScrollEnabled = active && synchronizing == null && !showEpisodes && !showSpeed && !showFavorites && !seeking &&
+            userScrollEnabled = active && synchronizing == null && !sheetOpen && !seeking &&
                 !landscape && !inPip) { page ->
             Box(Modifier.fillMaxSize().testTag("episode_page_$page"), Alignment.Center) {
                 if (page == selected && activeVideo != null && playback.player != null) {
@@ -414,11 +422,14 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
 
         AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.TopCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
             PlayerTopBar(episodeIndex = visibleEpisode.index, episodeCount = detail.episodes.size,
+                // Full screen hides the status bar; keeping its height there pushed the title down. A bar swiped in
+                // for a moment draws over the top edge instead.
+                statusBarInsets = if (landscape) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBarsIgnoringVisibility,
                 onBack = { if (landscape) activity?.requestPlayerFullScreen(false) else model.closePlayer() },
                 onShowEpisodes = { showEpisodes = true },
                 title = detail.title.takeIf { landscape },
-                // As in portrait, only the title's own words lead to the drama's detail page.
-                onTitle = if (landscape) ({ model.closePlayer() }) else null,
+                // Only the title's own words respond: they slide the drama's details in from the left.
+                onTitle = if (landscape) ({ showInfo = true }) else null,
                 // Full screen has no title row above the seek bar, so 收藏 moves up here, as on iOS.
                 favorite = anyFavorite,
                 onFavorites = if (landscape) ({ showFavorites = true }) else null,
@@ -441,15 +452,19 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.BottomCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .74f))))
-            .navigationBarsPadding().padding(start = 23.dp, end = 21.dp, top = 14.dp, bottom = 10.dp)) {
+            // Full screen lines up with the top bar's edges and keeps clear of a camera cutout at either side.
+            .then(if (landscape) Modifier.windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.navigationBars)
+                    .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                    .padding(start = 9.dp, end = 14.dp, top = 24.dp, bottom = 4.dp)
+                else Modifier.navigationBarsPadding().padding(start = 23.dp, end = 21.dp, top = 14.dp, bottom = 10.dp))) {
             // Full screen shows the title in the top bar, with 收藏 beside it, and keeps nothing above the seek bar:
             // a whole-width title row there was easily hit by mistake and closed the player (issue #5).
             if (!landscape) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                // The title leads back to the drama's detail page, which the player covers. Only the words and
-                // the chevron respond; the gap up to 收藏 stays inert.
+                // The title opens the drama's detail page, which the player covers; back there returns to this
+                // episode. Only the words and the chevron respond; the gap up to 收藏 stays inert.
                 Row(Modifier.weight(1f, fill = false).padding(end = 8.dp).heightIn(min = 44.dp).testTag("player_drama_title")
-                    .clickable(onClickLabel = "打开短剧详情") { model.closePlayer() },
+                    .clickable(onClickLabel = "打开短剧详情") { model.showDetailFromPlayer() },
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(detail.title, modifier = Modifier.weight(1f, fill = false), color = Color.White,
                         fontSize = if (LocalConfiguration.current.screenWidthDp < 380) 16.sp else 18.sp,
@@ -467,7 +482,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             val duration = playback.durationMs
             val fraction = seekFraction ?: if (duration > 0) (playback.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
             val displayedPosition = seekFraction?.let { (duration * it).toLong() } ?: playback.positionMs
-            PlayerSeekBar(value = fraction,
+            val seekBar: @Composable (Modifier) -> Unit = { barModifier -> PlayerSeekBar(value = fraction,
                 bufferedFraction = if (duration > 0) playback.bufferedPositionMs.toFloat() / duration else 0f,
                 onValueChange = { seeking = true; seekFraction = it },
                 onValueChangeFinished = {
@@ -479,8 +494,18 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     }
                     seeking = false; seekFraction = null
                 }, enabled = duration > 0 && activeVideo != null && state.playbackError == null,
-                modifier = Modifier.testTag("player_seek").semantics { contentDescription = "播放进度" })
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                modifier = barModifier.testTag("player_seek").semantics { contentDescription = "播放进度" }) }
+            val durationLabel = if (duration > 0) playerTime(duration) else "--:--"
+            // Full screen, as on iOS: elapsed time and length either side of the bar, the buttons right under it.
+            if (landscape) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(playerTime(displayedPosition), modifier = Modifier.widthIn(min = 40.dp).testTag("player_time"),
+                    color = Color.White.copy(alpha = .9f), fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 1)
+                seekBar(Modifier.weight(1f).padding(horizontal = 10.dp))
+                Text(durationLabel, modifier = Modifier.widthIn(min = 40.dp), color = Color.White.copy(alpha = .62f),
+                    fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 1)
+            } else seekBar(Modifier)
+            Row(Modifier.fillMaxWidth().then(if (landscape) Modifier.offset(y = (-4).dp) else Modifier),
+                verticalAlignment = Alignment.CenterVertically) {
                 if (landscape) {
                     IconButton(onClick = togglePlayback, enabled = playback.player != null, modifier = Modifier.testTag("player_play_pause")
                         .semantics { contentDescription = if (playback.playWhenReady && !playback.ended) "暂停" else "播放" }) {
@@ -492,9 +517,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                         Icon(Icons.Rounded.SkipNext, null, tint = Color.White.copy(alpha = if (selected + 1 < detail.episodes.size) 1f else .35f),
                             modifier = Modifier.size(26.dp))
                     }
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text("${playerTime(displayedPosition)} / ${if (duration > 0) playerTime(duration) else "--:--"}",
+                } else Text("${playerTime(displayedPosition)} / $durationLabel",
                     modifier = Modifier.testTag("player_time"), color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { showSpeed = !showSpeed }, modifier = Modifier.testTag("player_speed")
@@ -529,6 +552,9 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 model.selectTab(AppTab.ACCOUNT)
             })
         }
+        PlayerSidePanel(visible = landscape && showInfo, onDismiss = { showInfo = false }, tag = "player_info_panel", fromStart = true) {
+            DramaInfo(detail, selected, Modifier.weight(1f), onEpisodes = { showInfo = false; showEpisodes = true })
+        }
     }
 
     // Portrait keeps bottom sheets; full screen uses the side panels above.
@@ -554,6 +580,30 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 Spacer(Modifier.height(20.dp))
             }
         }
+    }
+}
+
+/** Full screen 剧集详情: cover, title, episode count and the story, with a way on to 选集. */
+@Composable
+private fun DramaInfo(detail: DramaDetail, selected: Int, modifier: Modifier = Modifier, onEpisodes: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Cover(detail.cover, detail.title, Modifier.width(84.dp).height(116.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(detail.title, modifier = Modifier.testTag("player_info_title"), fontSize = 19.sp, lineHeight = 26.sp,
+                fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text("共 ${detail.episodes.size} 集 · 正在看第 ${detail.episodes[selected].index} 集",
+                color = Color.White.copy(alpha = .62f), fontSize = 13.sp)
+        }
+    }
+    Spacer(Modifier.height(18.dp))
+    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("故事简介", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text(detail.summary.ifBlank { "暂无简介" }, modifier = Modifier.testTag("player_info_summary"),
+            color = Color.White.copy(alpha = .72f), fontSize = 14.sp, lineHeight = 23.sp)
+    }
+    TextButton(onClick = onEpisodes, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("player_info_episodes")) {
+        Text("选集 · 全 ${detail.episodes.size} 集", color = Color.White, fontSize = 14.sp)
+        Icon(Icons.Rounded.ChevronRight, null, tint = Color.White.copy(alpha = .8f), modifier = Modifier.size(20.dp))
     }
 }
 
@@ -643,7 +693,7 @@ internal fun PlayerTopBar(
     val safeInsets = statusBarInsets.union(cutoutInsets).only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
     Column(modifier.fillMaxWidth().testTag("player_top_bar")
         .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .48f), Color.Transparent)))
-        .windowInsetsPadding(safeInsets).padding(start = 9.dp, end = 14.dp, top = 9.dp, bottom = 24.dp)) {
+        .windowInsetsPadding(safeInsets).padding(start = 9.dp, end = 14.dp, top = if (title != null) 6.dp else 9.dp, bottom = 24.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, modifier = Modifier.testTag("player_back")
                 .semantics { contentDescription = if (title != null) "退出全屏" else "返回详情" }) {

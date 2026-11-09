@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '横屏全屏布局优化：去掉进度条上方容易误触的剧名行，收藏移到顶栏，点击顶栏剧名进入详情，选集和收藏从右侧半屏滑出；倍速改为在按钮上方竖向展开；竖屏剧名只有文字可点。'
+        notes = '修复从播放页点剧名进入详情后返回直接回到首页的问题，现在会回到播放页接着播放；横屏点剧名改为从左侧展开详情；横屏标题上移，底部改为时间、进度条与播放按钮两行布局。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

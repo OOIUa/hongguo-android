@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,12 +44,15 @@ class PlayerInsetsTest {
         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE,
     )
 
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
     private fun assertStableSystemInsets(requestedOrientation: Int, expectedOrientation: Int) {
         compose.activityRule.scenario.onActivity { it.requestedOrientation = requestedOrientation }
         compose.waitUntil(10_000) {
             compose.activity.resources.configuration.orientation == expectedOrientation
         }
         compose.activityRule.scenario.onActivity { it.enableEdgeToEdge() }
+        // Full screen keeps no room for the hidden status bar (it pushed the title down); a bar swiped in draws over it.
+        val fullScreen = expectedOrientation == Configuration.ORIENTATION_LANDSCAPE
         var backClicks = 0
         var episodeClicks = 0
         var favoriteClicks = 0
@@ -57,6 +61,7 @@ class PlayerInsetsTest {
             MaterialTheme {
                 Box(Modifier.fillMaxSize().background(Color.Black).testTag("player_insets_fixture")) {
                     PlayerTopBar(3, 86, { backClicks++ }, { episodeClicks++ }, title = "伪人降临！我是全场唯一预言家第五季",
+                        statusBarInsets = if (fullScreen) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBarsIgnoringVisibility,
                         onFavorites = { favoriteClicks++ }, onTitle = { titleClicks++ })
                 }
             }
@@ -70,16 +75,16 @@ class PlayerInsetsTest {
             }
             awaitStatusBars(visible = true)
             val shown = controlBounds()
-            assertWithinPlatformSafeArea()
+            assertWithinPlatformSafeArea(includeStatusBar = !fullScreen)
 
             compose.runOnIdle { controller.hide(statusBars) }
             awaitStatusBars(visible = false)
-            assertWithinPlatformSafeArea()
+            assertWithinPlatformSafeArea(includeStatusBar = !fullScreen)
             assertSameBounds(shown, controlBounds(), "Hiding status bars")
 
             compose.runOnIdle { controller.show(statusBars) }
             awaitStatusBars(visible = true)
-            assertWithinPlatformSafeArea()
+            assertWithinPlatformSafeArea(includeStatusBar = !fullScreen)
             assertSameBounds(shown, controlBounds(), "Showing status bars again")
             compose.onNodeWithTag("player_back").performClick()
             compose.onNodeWithTag("player_episode_picker").performClick()
@@ -149,10 +154,11 @@ class PlayerInsetsTest {
         compose.waitForIdle()
     }
 
-    private fun assertWithinPlatformSafeArea() {
+    private fun assertWithinPlatformSafeArea(includeStatusBar: Boolean) {
         val safe = compose.runOnIdle {
-            requireNotNull(ViewCompat.getRootWindowInsets(compose.activity.window.decorView))
-                .getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout())
+            requireNotNull(ViewCompat.getRootWindowInsets(compose.activity.window.decorView)).getInsetsIgnoringVisibility(
+                if (includeStatusBar) WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()
+                else WindowInsetsCompat.Type.displayCutout())
         }
         val root = bounds("player_insets_fixture")
         controlBounds().forEach { (tag, rect) ->
