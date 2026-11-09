@@ -96,6 +96,12 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -331,8 +337,12 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     } == true
     val anyFavorite = favorite || cloudFavorite
     val card = state.selectedCard ?: DramaCard(detail.id, detail.title, detail.cover, detail.episodes.size, detail.summary)
+    // Where the player and its 倍速 button sit on screen, so the speed list opens right above the button.
+    var playerOrigin by remember { mutableStateOf(Offset.Zero) }
+    var speedAnchor by remember { mutableStateOf<Rect?>(null) }
 
     Box(Modifier.fillMaxSize().background(Color.Black).semantics { testTagsAsResourceId = true }
+        .onGloballyPositioned { playerOrigin = it.positionInRoot() }
         .playerPinch(active && !sheetOpen && !landscape && !inPip) { cleanScreen = it }) {
         VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("episode_pager"),
             key = { detail.episodes[it].id }, beyondViewportPageCount = 1,
@@ -407,6 +417,11 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 onBack = { if (landscape) activity?.requestPlayerFullScreen(false) else model.closePlayer() },
                 onShowEpisodes = { showEpisodes = true },
                 title = detail.title.takeIf { landscape },
+                // As in portrait, only the title's own words lead to the drama's detail page.
+                onTitle = if (landscape) ({ model.closePlayer() }) else null,
+                // Full screen has no title row above the seek bar, so 收藏 moves up here, as on iOS.
+                favorite = anyFavorite,
+                onFavorites = if (landscape) ({ showFavorites = true }) else null,
                 onPictureInPicture = if (pip.supported && activeVideo != null) {
                     { if (!pip.enter()) Toast.makeText(context, "系统未允许小窗播放，可在系统设置中为本应用开启画中画", Toast.LENGTH_LONG).show() }
                 } else null)
@@ -427,9 +442,13 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         Column(Modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .74f))))
             .navigationBarsPadding().padding(start = 23.dp, end = 21.dp, top = 14.dp, bottom = 10.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                // The title leads back to the drama's detail page, which the player covers.
-                Row(Modifier.weight(1f).padding(end = 8.dp).heightIn(min = 44.dp).testTag("player_drama_title")
+            // Full screen shows the title in the top bar, with 收藏 beside it, and keeps nothing above the seek bar:
+            // a whole-width title row there was easily hit by mistake and closed the player (issue #5).
+            if (!landscape) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                // The title leads back to the drama's detail page, which the player covers. Only the words and
+                // the chevron respond; the gap up to 收藏 stays inert.
+                Row(Modifier.weight(1f, fill = false).padding(end = 8.dp).heightIn(min = 44.dp).testTag("player_drama_title")
                     .clickable(onClickLabel = "打开短剧详情") { model.closePlayer() },
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(detail.title, modifier = Modifier.weight(1f, fill = false), color = Color.White,
@@ -478,7 +497,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 Text("${playerTime(displayedPosition)} / ${if (duration > 0) playerTime(duration) else "--:--"}",
                     modifier = Modifier.testTag("player_time"), color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showSpeed = true }, modifier = Modifier.testTag("player_speed")
+                TextButton(onClick = { showSpeed = !showSpeed }, modifier = Modifier.testTag("player_speed")
+                    .onGloballyPositioned { speedAnchor = it.boundsInRoot() }
                     .semantics { contentDescription = "播放速度，当前${playbackSpeedLabel(state.playbackSpeed)}" }) {
                     Text("倍速 ${playbackSpeedLabel(state.playbackSpeed)}",
                         color = Color.White, fontSize = 13.sp,
@@ -491,95 +511,108 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             }
         }
         }
+
+        // The speed list hangs off the 倍速 button, so it shows only while the controls do.
+        val anchor = speedAnchor
+        if (showSpeed && !chromeHidden && anchor != null) PlaybackSpeedPicker(state.playbackSpeed, anchor, playerOrigin,
+            onSelect = { model.setPlaybackSpeed(it); showSpeed = false }, onDismiss = { showSpeed = false })
+
+        PlayerSidePanel(visible = landscape && showEpisodes, onDismiss = { showEpisodes = false }, tag = "player_episode_panel") {
+            EpisodeChooser(detail, selected, Modifier.weight(1f)) { index ->
+                showEpisodes = false
+                model.playEpisode(index)
+            }
+        }
+        PlayerSidePanel(visible = landscape && showFavorites, onDismiss = { showFavorites = false }, tag = "player_favorite_panel") {
+            FavoriteOptions(detail, card, favorite, model, accountModel, onSignIn = {
+                showFavorites = false
+                model.selectTab(AppTab.ACCOUNT)
+            })
+        }
     }
 
-    if (showFavorites) {
-        ModalBottomSheet(onDismissRequest = { showFavorites = false }, containerColor = Color(0xFF211E1B), contentColor = Color.White) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 23.dp).navigationBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Text("收藏这部剧", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text(detail.title, color = Color.White.copy(alpha = .62f), fontSize = 13.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                    Icon(Icons.Outlined.BookmarkBorder, null, tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(24.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text("本机收藏", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                        Text("保存在当前设备", color = Color.White.copy(alpha = .6f), fontSize = 12.sp)
-                    }
-                    TextButton(onClick = { model.toggleFavorite(card) }, modifier = Modifier.testTag("favorite_toggle")
-                        .semantics { contentDescription = if (favorite) "取消本机收藏" else "加入本机收藏" }) {
-                        Text(if (favorite) "已收藏" else "加入收藏", color = if (favorite) Color(0xFFFFA184) else Color.White, fontSize = 13.sp)
-                    }
-                }
-                if (accountModel != null) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                        Icon(Icons.Outlined.CloudQueue, null, tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(24.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text("红果账号收藏", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                            Text("与手机端账号同步", color = Color.White.copy(alpha = .6f), fontSize = 12.sp)
-                        }
-                        AccountFavoriteAction(card, accountModel, dark = true, compact = true, onSignIn = {
-                            showFavorites = false
-                            model.selectTab(AppTab.ACCOUNT)
-                        })
-                    }
-                }
+    // Portrait keeps bottom sheets; full screen uses the side panels above.
+    if (showFavorites && !landscape) {
+        ModalBottomSheet(onDismissRequest = { showFavorites = false }, containerColor = PlayerPanelColor, contentColor = Color.White) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 23.dp).navigationBarsPadding()) {
+                FavoriteOptions(detail, card, favorite, model, accountModel, onSignIn = {
+                    showFavorites = false
+                    model.selectTab(AppTab.ACCOUNT)
+                })
                 Spacer(Modifier.height(22.dp))
             }
         }
     }
 
-    if (showSpeed) {
-        ModalBottomSheet(onDismissRequest = { showSpeed = false }, containerColor = Color(0xFF211E1B), contentColor = Color.White) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("播放速度", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("自动记住选择，对所有剧集生效", color = Color.White.copy(alpha = .65f), fontSize = 12.sp)
-                LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxWidth().height(116.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    itemsIndexed(PlaybackSpeeds) { _, speed ->
-                        val isSelected = state.playbackSpeed == speed
-                        Surface(color = if (isSelected) Orange else Color.White.copy(alpha = .08f), shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.height(48.dp).testTag("player_speed_$speed")
-                                .semantics { this.selected = isSelected }
-                                .clip(RoundedCornerShape(12.dp)).clickable {
-                                    model.setPlaybackSpeed(speed)
-                                    showSpeed = false
-                                }) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(if (speed == 1f) "1× 正常" else playbackSpeedLabel(speed), fontSize = 15.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
-                            }
-                        }
-                    }
+    if (showEpisodes && !landscape) {
+        ModalBottomSheet(onDismissRequest = { showEpisodes = false }, containerColor = PlayerPanelColor, contentColor = Color.White) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding()) {
+                EpisodeChooser(detail, selected, maxGridHeight = (LocalConfiguration.current.screenHeightDp * .52f).dp) { index ->
+                    showEpisodes = false
+                    model.playEpisode(index)
                 }
                 Spacer(Modifier.height(20.dp))
             }
         }
     }
+}
 
-    if (showEpisodes) {
-        ModalBottomSheet(onDismissRequest = { showEpisodes = false }, containerColor = Color(0xFF211E1B), contentColor = Color.White) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                Text(detail.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("共 ${detail.episodes.size} 集 · 当前第 ${detail.episodes[selected].index} 集", color = Color.White.copy(alpha = .65f), fontSize = 12.sp)
-                val grid = rememberLazyGridState(initialFirstVisibleItemIndex = (selected / 5) * 5)
-                LazyVerticalGrid(columns = GridCells.Fixed(5), state = grid,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .52f).dp).testTag("player_episode_list"),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    itemsIndexed(detail.episodes, key = { _, episode -> episode.id }) { index, episode ->
-                        Surface(color = if (index == selected) Orange else Color.White.copy(alpha = .08f), shape = RoundedCornerShape(11.dp),
-                            modifier = Modifier.height(44.dp).testTag("player_episode_$index").clip(RoundedCornerShape(11.dp)).clickable {
-                                showEpisodes = false
-                                model.playEpisode(index)
-                            }) {
-                            Box(contentAlignment = Alignment.Center) { Text("${episode.index}", color = Color.White, fontSize = 14.sp) }
-                        }
-                    }
+/** 收藏这部剧: the local list and, when signed in, the account's. Shared by the portrait sheet and full-screen panel. */
+@Composable
+private fun FavoriteOptions(detail: DramaDetail, card: DramaCard, favorite: Boolean, model: HongguoViewModel,
+                            accountModel: AccountViewModel?, onSignIn: () -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Text("收藏这部剧", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(detail.title, color = Color.White.copy(alpha = .62f), fontSize = 13.sp,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+            Icon(Icons.Outlined.BookmarkBorder, null, tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(24.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("本机收藏", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text("保存在当前设备", color = Color.White.copy(alpha = .6f), fontSize = 12.sp)
+            }
+            TextButton(onClick = { model.toggleFavorite(card) }, modifier = Modifier.testTag("favorite_toggle")
+                .semantics { contentDescription = if (favorite) "取消本机收藏" else "加入本机收藏" }) {
+                Text(if (favorite) "已收藏" else "加入收藏", color = if (favorite) Color(0xFFFFA184) else Color.White, fontSize = 13.sp)
+            }
+        }
+        if (accountModel != null) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                Icon(Icons.Outlined.CloudQueue, null, tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(24.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("红果账号收藏", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text("与手机端账号同步", color = Color.White.copy(alpha = .6f), fontSize = 12.sp)
                 }
-                Spacer(Modifier.height(20.dp))
+                AccountFavoriteAction(card, accountModel, dark = true, compact = true, onSignIn = onSignIn)
+            }
+        }
+    }
+}
+
+/**
+ * The episode grid, current episode highlighted and scrolled into view. The grid stops at [maxGridHeight], or without
+ * one fills whatever height [modifier] gives the chooser.
+ */
+@Composable
+private fun EpisodeChooser(detail: DramaDetail, selected: Int, modifier: Modifier = Modifier, maxGridHeight: Dp? = null,
+                           onChoose: (Int) -> Unit) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(13.dp)) {
+        Text(detail.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text("共 ${detail.episodes.size} 集 · 当前第 ${detail.episodes[selected].index} 集", color = Color.White.copy(alpha = .65f), fontSize = 12.sp)
+        val grid = rememberLazyGridState(initialFirstVisibleItemIndex = (selected / 5) * 5)
+        LazyVerticalGrid(columns = GridCells.Fixed(5), state = grid,
+            modifier = (if (maxGridHeight != null) Modifier.heightIn(max = maxGridHeight) else Modifier.weight(1f, fill = false))
+                .fillMaxWidth().testTag("player_episode_list"),
+            horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            itemsIndexed(detail.episodes, key = { _, episode -> episode.id }) { index, episode ->
+                Surface(color = if (index == selected) Orange else Color.White.copy(alpha = .08f), shape = RoundedCornerShape(11.dp),
+                    modifier = Modifier.height(44.dp).testTag("player_episode_$index").clip(RoundedCornerShape(11.dp)).clickable {
+                        onChoose(index)
+                    }) {
+                    Box(contentAlignment = Alignment.Center) { Text("${episode.index}", color = Color.White, fontSize = 14.sp) }
+                }
             }
         }
     }
@@ -600,6 +633,12 @@ internal fun PlayerTopBar(
     title: String? = null,
     /** 小窗播放; null where the device has no picture-in-picture. */
     onPictureInPicture: (() -> Unit)? = null,
+    /** Whether the drama is in either favorites list; drives the star shown with [onFavorites]. */
+    favorite: Boolean = false,
+    /** 收藏选项; only full screen passes it, portrait keeps 收藏 beside the title above the seek bar. */
+    onFavorites: (() -> Unit)? = null,
+    /** Opens the drama's detail page from [title]; only the title's words and chevron respond. */
+    onTitle: (() -> Unit)? = null,
 ) {
     val safeInsets = statusBarInsets.union(cutoutInsets).only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
     Column(modifier.fillMaxWidth().testTag("player_top_bar")
@@ -610,14 +649,31 @@ internal fun PlayerTopBar(
                 .semantics { contentDescription = if (title != null) "退出全屏" else "返回详情" }) {
                 Icon(Icons.Rounded.ChevronLeft, null, tint = Color.White, modifier = Modifier.size(34.dp))
             }
-            Text(listOfNotNull(title, "第 $episodeIndex 集 / 共 $episodeCount 集").joinToString("  "), color = Color.White,
-                overflow = TextOverflow.Ellipsis,
-                fontSize = if (LocalConfiguration.current.screenWidthDp < 360) 14.sp else 16.sp,
-                fontWeight = FontWeight.Medium, maxLines = 1,
-                modifier = Modifier.weight(1f).testTag("player_episode_label"))
+            val labelSize = if (LocalConfiguration.current.screenWidthDp < 360) 14.sp else 16.sp
+            Row(Modifier.weight(1f).testTag("player_episode_label"), verticalAlignment = Alignment.CenterVertically) {
+                if (title != null) {
+                    // The episode count keeps its width; a long title gives way with an ellipsis.
+                    Row(Modifier.weight(1f, fill = false).heightIn(min = 44.dp).testTag("player_top_title")
+                        .then(if (onTitle != null) Modifier.clickable(onClickLabel = "打开短剧详情", onClick = onTitle) else Modifier),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(title, modifier = Modifier.weight(1f, fill = false), color = Color.White, fontSize = labelSize,
+                            fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (onTitle != null) Icon(Icons.Rounded.ChevronRight, null, tint = Color.White.copy(alpha = .8f),
+                            modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text("第 $episodeIndex 集 / 共 $episodeCount 集", color = Color.White, fontSize = labelSize,
+                    fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+            }
             if (onPictureInPicture != null) IconButton(onClick = onPictureInPicture,
                 modifier = Modifier.testTag("player_pip").semantics { contentDescription = "小窗播放" }) {
                 Icon(Icons.Rounded.PictureInPictureAlt, null, tint = Color.White, modifier = Modifier.size(23.dp))
+            }
+            if (onFavorites != null) IconButton(onClick = onFavorites,
+                modifier = Modifier.testTag("player_favorite_options").semantics { contentDescription = "收藏选项" }) {
+                Icon(if (favorite) Icons.Rounded.Star else Icons.Outlined.StarBorder, null,
+                    tint = if (favorite) Orange else Color.White, modifier = Modifier.size(24.dp))
             }
             Box(Modifier.testTag("player_chapters")) {
                 TextButton(onClick = onShowEpisodes, modifier = Modifier.testTag("player_episode_picker")) {

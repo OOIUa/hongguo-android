@@ -51,10 +51,13 @@ class PlayerInsetsTest {
         compose.activityRule.scenario.onActivity { it.enableEdgeToEdge() }
         var backClicks = 0
         var episodeClicks = 0
+        var favoriteClicks = 0
+        var titleClicks = 0
         compose.setContent {
             MaterialTheme {
                 Box(Modifier.fillMaxSize().background(Color.Black).testTag("player_insets_fixture")) {
-                    PlayerTopBar(3, 86, { backClicks++ }, { episodeClicks++ })
+                    PlayerTopBar(3, 86, { backClicks++ }, { episodeClicks++ }, title = "伪人降临！我是全场唯一预言家第五季",
+                        onFavorites = { favoriteClicks++ }, onTitle = { titleClicks++ })
                 }
             }
         }
@@ -80,9 +83,13 @@ class PlayerInsetsTest {
             assertSameBounds(shown, controlBounds(), "Showing status bars again")
             compose.onNodeWithTag("player_back").performClick()
             compose.onNodeWithTag("player_episode_picker").performClick()
+            compose.onNodeWithTag("player_favorite_options").performClick()
+            compose.onNodeWithTag("player_top_title").performClick()
             compose.runOnIdle {
                 assertEquals("The safe-area back action must remain usable", 1, backClicks)
                 assertEquals("The only episode picker must remain usable", 1, episodeClicks)
+                assertEquals("Full-screen 收藏 in the top bar must remain usable", 1, favoriteClicks)
+                assertEquals("The full-screen title must lead to the drama's details", 1, titleClicks)
             }
         } finally {
             compose.runOnIdle { controller.show(WindowInsetsCompat.Type.systemBars()) }
@@ -97,7 +104,8 @@ class PlayerInsetsTest {
         compose.setContent {
             MaterialTheme {
                 Box(Modifier.fillMaxSize().background(Color.Black).testTag("player_insets_fixture")) {
-                    PlayerTopBar(3, 86, {}, {}, statusBarInsets = WindowInsets(17, 41, 9, 0), cutoutInsets = cutout)
+                    PlayerTopBar(3, 86, {}, {}, statusBarInsets = WindowInsets(17, 41, 9, 0), cutoutInsets = cutout,
+                        onFavorites = {})
                 }
             }
         }
@@ -156,7 +164,7 @@ class PlayerInsetsTest {
 
     private fun bounds(tag: String): Rect = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
 
-    private fun controlBounds(): Map<String, Rect> = listOf("player_back", "player_episode_label", "player_episode_picker")
+    private fun controlBounds(): Map<String, Rect> = listOf("player_back", "player_episode_label", "player_favorite_options", "player_episode_picker")
         .associateWith(::bounds)
 
     private fun assertSameBounds(expected: Map<String, Rect>, actual: Map<String, Rect>, operation: String) {

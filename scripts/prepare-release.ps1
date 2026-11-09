@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '移除左右两侧双击快进 / 快退：双击画面任意位置暂停或继续；调整进度只需长按画面进入 2 倍速后左右拖动，松手跳转。上一版起修复部分剧集无法播放、下拉通知栏误触进度和小窗连播问题。'
+        notes = '横屏全屏布局优化：去掉进度条上方容易误触的剧名行，收藏移到顶栏，点击顶栏剧名进入详情，选集和收藏从右侧半屏滑出；倍速改为在按钮上方竖向展开；竖屏剧名只有文字可点。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)
