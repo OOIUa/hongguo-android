@@ -99,7 +99,8 @@ class PlayerHoldSpeedGestureTest {
         }
     }
 
-    @Test fun sidewaysDragSeeksWithoutTappingHoldingOrPaging() {
+    /** Long press until 2×, then move sideways: the 2× ends and the drag moves the progress (issue #3). */
+    @Test fun dragAfterLongPressSeeksWithoutTappingOrPaging() {
         val phases = mutableListOf<Pair<SeekDragPhase, Float>>()
         var taps = 0
         val holds = mutableListOf<Boolean>()
@@ -113,18 +114,50 @@ class PlayerHoldSpeedGestureTest {
                 }
             }
         }
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithTag("gesture_layer").performTouchInput { down(Offset(width * .2f, center.y)) }
+        compose.mainClock.advanceTimeBy(holdMillis)
+        compose.runOnIdle { assertEquals(listOf(true), holds) }
         compose.onNodeWithTag("gesture_layer").performTouchInput {
-            swipe(Offset(width * .2f, center.y), Offset(width * .7f, center.y), 400)
+            for (step in 1..10) moveTo(Offset(width * (.2f + .05f * step), center.y))
+            up()
         }
+        compose.mainClock.advanceTimeBy(100)
         compose.runOnIdle {
             assertEquals(SeekDragPhase.START, phases.first().first)
             assertEquals(SeekDragPhase.END, phases.last().first)
             assertTrue(phases.last().second in .35f..0.55f)
+            assertEquals("the seek ends 2× as it starts", listOf(true, false), holds.distinct())
+            assertFalse(holds.last())
+            assertEquals(0, taps)
+            assertEquals(0, pager.currentPage)
+        }
+    }
+
+    /** Without the long press, a sideways swipe neither seeks nor taps, and an upward swipe still changes the page. */
+    @Test fun swipeWithoutLongPressNeverSeeks() {
+        val phases = mutableListOf<SeekDragPhase>()
+        var taps = 0
+        val holds = mutableListOf<Boolean>()
+        lateinit var pager: PagerState
+        compose.setContent {
+            MaterialTheme {
+                pager = rememberPagerState(pageCount = { 3 })
+                VerticalPager(pager, Modifier.fillMaxSize()) {
+                    PlayerInteractionLayer(Modifier.testTag("gesture_layer"), onTap = { taps++ }, onHoldSpeedChange = holds::add,
+                        onSeekDrag = { phase, _ -> phases += phase; true })
+                }
+            }
+        }
+        compose.onNodeWithTag("gesture_layer").performTouchInput {
+            swipe(Offset(width * .2f, center.y), Offset(width * .7f, center.y), 400)
+        }
+        compose.runOnIdle {
+            assertTrue(phases.isEmpty())
             assertEquals(0, taps)
             assertFalse(holds.any { it })
             assertEquals(0, pager.currentPage)
         }
-        phases.clear()
         compose.onNodeWithTag("gesture_layer").performTouchInput {
             swipe(Offset(center.x, height * .8f), Offset(center.x, height * .2f), 300)
         }
@@ -141,9 +174,13 @@ class PlayerHoldSpeedGestureTest {
             PlayerInteractionLayer(Modifier.testTag("gesture_layer"), onTap = { taps++ }, onHoldSpeedChange = {},
                 onSeekDrag = { phase, _ -> phases += phase; false })
         }
+        compose.mainClock.autoAdvance = false
+        beginHold()
         compose.onNodeWithTag("gesture_layer").performTouchInput {
-            swipe(Offset(width * .2f, center.y), Offset(width * .8f, center.y), 300)
+            for (step in 1..10) moveTo(Offset(width * (.25f + .05f * step), center.y))
+            up()
         }
+        compose.mainClock.advanceTimeBy(100)
         compose.runOnIdle {
             assertEquals(listOf(SeekDragPhase.START), phases)
             assertEquals(0, taps)

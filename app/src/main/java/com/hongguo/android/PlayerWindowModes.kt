@@ -124,10 +124,16 @@ internal fun rememberPlayerPictureInPicture(
     val toggle by rememberUpdatedState(onTogglePlay)
     val currentEnabled by rememberUpdatedState(enabled)
     val currentPlaying by rememberUpdatedState(playing)
+    // Between episodes the size is 0 until the next one's first format; keeping the last known size stops the
+    // small window from jumping to 9:16 and back (issue #4).
+    val lastSize = remember(activity) { IntArray(2) }
+    if (videoWidth > 0 && videoHeight > 0) { lastSize[0] = videoWidth; lastSize[1] = videoHeight }
+    val shownWidth = lastSize[0]
+    val shownHeight = lastSize[1]
     if (activity == null || !supported) return pip
 
     fun params(autoEnter: Boolean): PictureInPictureParams {
-        val (width, height) = pictureInPictureRatio(videoWidth, videoHeight)
+        val (width, height) = pictureInPictureRatio(shownWidth, shownHeight)
         val intent = Intent(PipToggleAction).setPackage(context.packageName)
         val pending = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val label = if (playing) "暂停" else "播放"
@@ -164,7 +170,7 @@ internal fun rememberPlayerPictureInPicture(
         }
     }
     // Keeps the ratio, the play/pause action and auto-enter current, including while the window is small.
-    LaunchedEffect(enabled, playing, videoWidth, videoHeight) {
+    LaunchedEffect(enabled, playing, shownWidth, shownHeight) {
         runCatching { activity.setPictureInPictureParams(params(enabled && playing)) }
     }
     return pip

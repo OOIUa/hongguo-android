@@ -1,10 +1,19 @@
 package com.hongguo.android
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -68,6 +77,16 @@ internal fun dragSeekTarget(startMs: Long, durationMs: Long, fraction: Float): L
 }
 
 /**
+ * A seek drag may begin only away from the top and bottom edges: a finger landing there is usually pulling the
+ * notification shade or making the system home/back gesture (issue #3: pulling the shade moved the progress).
+ */
+internal fun seekDragMayStart(downY: Float, height: Float, topEdge: Float, bottomEdge: Float): Boolean =
+    height > 0f && downY >= topEdge && downY <= height - bottomEdge
+
+/** A clearly sideways movement (not a diagonal page swipe). */
+internal fun isSidewaysDrag(dx: Float, dy: Float): Boolean = kotlin.math.abs(dx) >= 2f * kotlin.math.abs(dy)
+
+/**
  * Sits above the pager and sees every pointer first: once a second finger lands, the gesture belongs to the pinch, so
  * neither the page swipe nor the tap and hold below react, including to the finger left down after the other lifts.
  */
@@ -99,10 +118,11 @@ internal fun Modifier.playerPinch(enabled: Boolean, onDecided: (Boolean) -> Unit
  * enabled and decide whether to accept a hold in its callback without losing tap-to-resume.
  * Taps report where they landed as a fraction of the width. With [onDoubleTap] set, a single tap waits out the
  * double-tap timeout before it fires.
- * With [onSeekDrag] set, a sideways drag reports its progress as a fraction of the width; START answers whether the
- * drag is taken. Once it passes the touch slop the tap and hold are cancelled, while a mostly vertical drag is left
- * to the pager. No drag starts during a 2× hold.
+ * With [onSeekDrag] set, holding until 2× and then moving sideways moves the progress (reported as a fraction of the
+ * width); START answers whether the drag is taken, and the 2× ends once it is. A drag without the long press first is
+ * never a seek, so swipes, the notification shade and other quick movements cannot move the progress.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PlayerInteractionLayer(
     modifier: Modifier = Modifier,
@@ -125,6 +145,15 @@ internal fun PlayerInteractionLayer(
     val currentHoldChange by rememberUpdatedState(onHoldSpeedChange)
     val currentEnabled by rememberUpdatedState(enabled)
     val currentSeekDrag by rememberUpdatedState(onSeekDrag)
+    // Status bar / gesture areas, measured even while the bars are hidden in full screen.
+    val density = LocalDensity.current
+    val topInset = maxOf(WindowInsets.statusBarsIgnoringVisibility.getTop(density), WindowInsets.systemGestures.getTop(density))
+    val bottomInset = maxOf(WindowInsets.navigationBarsIgnoringVisibility.getBottom(density),
+        WindowInsets.systemGestures.getBottom(density))
+    val currentEdges by rememberUpdatedState(with(density) {
+        SeekEdges(maxOf(topInset + 16.dp.toPx(), 48.dp.toPx()), maxOf(bottomInset + 8.dp.toPx(), 32.dp.toPx()))
+    })
+    val currentWindowFocused by rememberUpdatedState(LocalWindowInfo.current.isWindowFocused)
     var foreground by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
     var holding by remember { mutableStateOf(false) }
 
@@ -207,24 +236,54 @@ internal fun PlayerInteractionLayer(
                 dragged = 0f
             }
             try {
-                detectHorizontalDragGestures(
-                    onDragStart = {
-                        dragged = 0f
-                        taken = !holding && currentEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
-                            currentSeekDrag?.invoke(SeekDragPhase.START, 0f) == true
-                    },
-                    onDragEnd = { finish(SeekDragPhase.END) },
-                    onDragCancel = { finish(SeekDragPhase.CANCEL) },
-                    onHorizontalDrag = { change, amount ->
-                        if (taken) {
-                            change.consume()
-                            dragged += amount
-                            currentSeekDrag?.invoke(SeekDragPhase.MOVE, dragged / size.width.coerceAtLeast(1))
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (!seekDragMayStart(down.position.y, size.height.toFloat(), currentEdges.top, currentEdges.bottom))
+                        return@awaitEachGesture
+                    // Where the finger was when the long press switched to 2×; sideways movement from there seeks.
+                    var anchorX: Float? = null
+                    var swipedSideways = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) {
+                            // The shade or another window taking focus mid-drag means the finger was not seeking.
+                            finish(if (currentWindowFocused) SeekDragPhase.END else SeekDragPhase.CANCEL)
+                            break
                         }
-                    },
-                )
+                        if (taken) {
+                            dragged += change.positionChangeIgnoreConsumed().x
+                            change.consume()
+                            currentSeekDrag?.invoke(SeekDragPhase.MOVE, dragged / size.width.coerceAtLeast(1))
+                            continue
+                        }
+                        // Before the long press a drag is never a seek. A clearly sideways swipe does nothing at all:
+                        // consuming it cancels the tap and the long press, while other movement stays the pager's.
+                        if (!holding) {
+                            val moved = change.position - down.position
+                            if (!swipedSideways && kotlin.math.abs(moved.x) > viewConfiguration.touchSlop &&
+                                isSidewaysDrag(moved.x, moved.y)) swipedSideways = true
+                            if (swipedSideways) change.consume()
+                            continue
+                        }
+                        val anchor = anchorX ?: change.position.x.also { anchorX = it }
+                        if (kotlin.math.abs(change.position.x - anchor) <= viewConfiguration.touchSlop) continue
+                        taken = currentWindowFocused && currentEnabled &&
+                            lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                            currentSeekDrag?.invoke(SeekDragPhase.START, 0f) == true
+                        if (!taken) break
+                        change.consume()
+                        dragged = 0f
+                        // Moving the progress takes over from 2×: play at the normal speed and show the progress bar.
+                        currentHoldChange(false)
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                }
             } finally {
                 finish(SeekDragPhase.CANCEL)
             }
         })
 }
+
+/** The top and bottom bands, in pixels, where the system's own edge gestures start. */
+private data class SeekEdges(val top: Float, val bottom: Float)

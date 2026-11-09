@@ -43,6 +43,17 @@ class PlayerSystemBarsTest {
         assertEquals(null, dragSeekTarget(10_000, 0, .5f))
     }
 
+    /** Issue #3: pulling the notification shade must not move the progress. */
+    @Test fun seekDragIgnoresSystemEdges() {
+        assertFalse(seekDragMayStart(20f, 1000f, 120f, 60f))
+        assertFalse(seekDragMayStart(960f, 1000f, 120f, 60f))
+        assertTrue(seekDragMayStart(500f, 1000f, 120f, 60f))
+        assertFalse(seekDragMayStart(500f, 0f, 120f, 60f))
+        assertTrue(isSidewaysDrag(40f, 10f))
+        assertFalse(isSidewaysDrag(30f, 20f))
+        assertFalse(isSidewaysDrag(10f, 60f))
+    }
+
     @Test fun skipStaysInsideTheEpisode() {
         assertEquals(40_000L, skipTarget(30_000, 120_000, 10_000))
         assertEquals(20_000L, skipTarget(30_000, 120_000, -10_000))

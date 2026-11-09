@@ -197,8 +197,9 @@ public final class Stream {
                     throw new IOException("本集媒体封装暂不支持，请尝试其他清晰度");
                 }
             } else {
-                // Unencrypted tracks still must be a complete MP4 before they become cache hits.
-                validateMp4(encrypted);
+                // Unencrypted tracks still must be a complete MP4 before they become cache hits, and must really be
+                // unencrypted: a source without encryption info is taken as plain only when its index says so.
+                validateMp4(encrypted, true);
                 moveAtomically(encrypted, playable);
             }
             checkCancelled(progress);
@@ -383,6 +384,19 @@ public final class Stream {
     }
 
     private static void validateMp4(Path path) throws IOException {
+        validateMp4(path, false);
+    }
+
+    /** Whether a moov index carries protected sample entries or protection boxes (encv/enca/sinf). */
+    static boolean hasProtection(byte[] moov) {
+        for (int i = 4; i + 4 <= moov.length; i++) {
+            if (moov[i] == 'e' && moov[i + 1] == 'n' && moov[i + 2] == 'c' && (moov[i + 3] == 'v' || moov[i + 3] == 'a')) return true;
+            if (moov[i] == 's' && moov[i + 1] == 'i' && moov[i + 2] == 'n' && moov[i + 3] == 'f') return true;
+        }
+        return false;
+    }
+
+    private static void validateMp4(Path path, boolean requirePlain) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(path.toFile(), "r")) {
             long length = file.length();
             if (length < 24) throw new IOException("媒体文件无效");
@@ -409,6 +423,7 @@ public final class Stream {
             byte[] bytes = new byte[(int) moov.size];
             file.seek(moov.start);
             file.readFully(bytes);
+            if (requirePlain && hasProtection(bytes)) throw new IOException("本集媒体已加密但缺少密钥，暂时无法播放");
             Mp4.Analysis analysis = Mp4.analyzeEncryptedTracks(new Mp4.ByteView(bytes, moov.start));
             if (analysis.tracks.isEmpty()) throw new IOException("媒体文件没有可播放轨道");
             for (Mp4.Track track : analysis.tracks) {

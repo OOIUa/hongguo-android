@@ -121,9 +121,8 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
     val activity = LocalActivity.current
     // Portrait is the normal vertical-drama view: system bars stay visible (transparent, white icons), so the
     // system does not treat the app as full screen. Only landscape hides them for full-screen viewing.
-    // Holding for 2× and the clean screen show only the picture, so they take the bars away too.
-    var chromeHidden by remember { mutableStateOf(false) }
-    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation) || chromeHidden
+    // Holding for 2× and the clean screen only hide the player's own controls; the system bars stay.
+    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation)
     val currentFullScreen by rememberUpdatedState(fullScreen)
     // [active] is false while the closing player fades out: the bars and foreground state are handed back at once,
     // and taken again if the player is reopened before the fade ends.
@@ -165,7 +164,7 @@ internal fun EpisodePlayerScreen(state: HongguoUiState, model: HongguoViewModel,
         val original = activity.requestedOrientation
         onDispose { activity.requestedOrientation = original }
     }
-    key(detail.id) { EpisodePager(state, model, detail, accountModel, active) { chromeHidden = it } }
+    key(detail.id) { EpisodePager(state, model, detail, accountModel, active) }
 }
 
 /** Full screen (hidden status and navigation bars) only in landscape; portrait keeps the system bars. */
@@ -176,7 +175,7 @@ private data class PagerMovement(val scrolling: Boolean, val settled: Int, val s
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail, accountModel: AccountViewModel?,
-                         active: Boolean, onChromeHiddenChange: (Boolean) -> Unit) {
+                         active: Boolean) {
     if (detail.episodes.isEmpty()) return
     val selected = state.episodePosition.coerceIn(detail.episodes.indices)
     val pager = rememberPagerState(initialPage = selected, pageCount = { detail.episodes.size })
@@ -197,12 +196,17 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
 
     // Model-driven changes (continue, sheet selection and autoplay) never count as a user swipe. They slide like a
     // swipe. User scrolling is off until the slide ends, so a touch cannot stop it half-way on another episode.
+    // In the small window (小窗) the change is instant: a slide there showed the frozen last frame and the next
+    // episode's number and title across the tiny picture (issue #4).
+    val pipActivity = LocalActivity.current as? ComponentActivity
     LaunchedEffect(selected, detail.id) {
         if (pager.currentPage != selected || pager.settledPage != selected) {
             synchronizing = selected
             // animateScrollToPage itself jumps close first when the target is several pages away.
-            try { pager.animateScrollToPage(selected, animationSpec = tween(EpisodeSlideMillis, easing = FastOutSlowInEasing)) }
-            finally { synchronizing = null }
+            try {
+                if (pipActivity?.isInPictureInPictureMode == true) pager.scrollToPage(selected)
+                else pager.animateScrollToPage(selected, animationSpec = tween(EpisodeSlideMillis, easing = FastOutSlowInEasing))
+            } finally { synchronizing = null }
         }
     }
     LaunchedEffect(pager, detail.id) {
@@ -293,7 +297,6 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     // The small window shows only the picture.
     val inPip = pip.active
     val chromeHidden = cleanScreen || temporaryDoubleSpeed || inPip
-    LaunchedEffect(chromeHidden) { onChromeHiddenChange(chromeHidden) }
     BackHandler(enabled = cleanScreen) { cleanScreen = false }
     // Back leaves full screen before it leaves the player; declared later, so it wins while in landscape.
     BackHandler(enabled = landscape) { activity?.requestPlayerFullScreen(false) }
@@ -333,7 +336,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         tween(if (state.firstFrameRendered) 240 else 0), label = "first_frame_fade")
     val view = LocalView.current
     // A sheet owns another window and can reveal system bars or change their icons without resuming the Activity.
-    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation) || chromeHidden
+    val fullScreen = playerHidesSystemBars(LocalConfiguration.current.orientation)
     LaunchedEffect(sheetOpen, activity, view, fullScreen, active) {
         if (active && !sheetOpen) activity?.window?.let { applyPlayerSystemBars(WindowCompat.getInsetsController(it, view), fullScreen) }
     }
@@ -385,10 +388,11 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                         ), onSeekDrag = seekDrag)
                 }
                 when {
+                    // The small window shows only the picture, or a small spinner while the next one loads.
+                    inPip -> if (page == selected && (state.preparing || playback.player == null || (playback.isBuffering && playback.playWhenReady)))
+                        CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
                     // Neighbouring episodes carry their number, so a swipe visibly brings the next one in.
                     page != selected -> EpisodePlaceholder(detail.episodes[page].index, detail.title)
-                    inPip -> if (state.preparing || playback.player == null || (playback.isBuffering && playback.playWhenReady))
-                        CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
                     // While sliding to an episode that has no picture yet, show its number rather than an empty frame.
                     pager.isScrollInProgress -> if (activeVideo == null || playback.player == null)
                         EpisodePlaceholder(detail.episodes[page].index, detail.title)

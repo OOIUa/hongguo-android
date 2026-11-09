@@ -118,8 +118,11 @@ public final class AppSource {
         // 2026-11-05 起无签名请求一律返回 200 + 0 字节；带完整签名的请求仍随「身份 × 路径」偶发为空，
         // 新身份通常能恢复（hongguoTV 0.1.22–0.1.25）。所以先走官方 GET，再 POST，然后换新身份走 GET
         // 和备用域名，全程有总时限。
+        // 不同身份、不同路径返回的片源模型并不一致（2026-11-09 实测：同一集 GET 偶发只给缺密钥的内联片源，
+        // POST 却给完整 1080p），所以某条路径的模型解析失败也继续试下一条，全部失败才报模型错误。
         long started = System.currentTimeMillis();
         Exception failure = null;
+        Exception modelFailure = null;
         IOException renewal = null;
         for (PlaybackRoute route : PLAYBACK_ROUTES) {
             if (System.currentTimeMillis() - started >= PLAYBACK_BUDGET_MS) break;
@@ -143,8 +146,19 @@ public final class AppSource {
                 failure = e;
                 continue;
             }
-            if (j != null) return parseModel(vid, j, quality);
+            if (j == null) continue;
+            try {
+                return parseModel(vid, j, quality);
+            } catch (InterruptedIOException e) {
+                throw e;
+            } catch (Exception e) {
+                if (Thread.currentThread().isInterrupted()) throw e;
+                if (modelFailure == null) modelFailure = e;
+                else modelFailure.addSuppressed(e);
+            }
         }
+        // 模型错误比 HTTP/空响应更能说明本集的情况（如仅有 ByteVC2），优先报告。
+        if (modelFailure != null) throw modelFailure;
         if (failure != null) throw failure;
         EmptyPlaybackResponseException empty = new EmptyPlaybackResponseException();
         if (renewal != null) empty.addSuppressed(renewal);
@@ -258,21 +272,43 @@ public final class AppSource {
         } catch (IncompleteEncryption incomplete) {
             // 内联片源既无密钥也未声明加密状态时才尝试备用接口；备用片源须独立通过编号、
             // 完整时长、清晰度与加密信息校验（同步自 hongguo-drama 5.5）。
-            String id = Json.optStr(model.get("video_id"), "").trim();
-            double duration = seconds(model.get("video_duration"));
-            String fallback = parseFallback(model.get("fallback_api"));
-            if (id.isEmpty() || duration <= 0 || incomplete.minimumPixels <= 0
-                    || fallback == null || fallback.isEmpty()) {
-                throw incomplete;
+            try {
+                return verifiedFallback(model, quality, incomplete);
+            } catch (InterruptedIOException e) {
+                throw e;
+            } catch (Exception fallbackFailure) {
+                if (Thread.currentThread().isInterrupted()) throw fallbackFailure;
+                // 2026-11-09 实测（issue #3，第二季第 14、18 集等）：服务端对未加密的分集整个省略 encrypt_info，
+                // 媒体本身是明文 hvc1。备用片源也确认不了时，按明文选这些「未声明」的档位；明文由
+                // Mp4Progressive.inspect / Stream.validateMp4 检查索引确认，带 encv/sinf 的仍会被拒。
+                // 明确声明加密却缺 spade_a 的档位依旧不用。
+                try {
+                    return selectTrack(model, quality, true, 0, true);
+                } catch (Exception plainFailure) {
+                    fallbackFailure.addSuppressed(plainFailure);
+                    throw fallbackFailure;
+                }
             }
-            Map<String, Object> info = readFallback(model);
-            double other = seconds(info.get("video_duration"));
-            if (!id.equals(Json.optStr(info.get("video_id"), "")) || other <= 0
-                    || Math.abs(other - duration) > 0.5) {
-                throw new IllegalStateException("备用片源编号或完整时长无法确认，已停止取址");
-            }
-            return selectTrack(info, quality, true, incomplete.minimumPixels);
         }
+    }
+
+    /** 内联片源缺加密信息时，使用编号、完整时长与清晰度都对得上的备用片源。 */
+    private static Stream.VideoTrack verifiedFallback(Map<String, Object> model, String quality,
+            IncompleteEncryption incomplete) throws Exception {
+        String id = Json.optStr(model.get("video_id"), "").trim();
+        double duration = seconds(model.get("video_duration"));
+        String fallback = parseFallback(model.get("fallback_api"));
+        if (id.isEmpty() || duration <= 0 || incomplete.minimumPixels <= 0
+                || fallback == null || fallback.isEmpty()) {
+            throw incomplete;
+        }
+        Map<String, Object> info = readFallback(model);
+        double other = seconds(info.get("video_duration"));
+        if (!id.equals(Json.optStr(info.get("video_id"), "")) || other <= 0
+                || Math.abs(other - duration) > 0.5) {
+            throw new IllegalStateException("备用片源编号或完整时长无法确认，已停止取址");
+        }
+        return selectTrack(info, quality, true, incomplete.minimumPixels);
     }
 
     /**
@@ -356,6 +392,12 @@ public final class AppSource {
      */
     private static Stream.VideoTrack selectTrack(Map<String, Object> info, String quality,
             boolean requireEncryption, int minimumPixels) throws Exception {
+        return selectTrack(info, quality, requireEncryption, minimumPixels, false);
+    }
+
+    /** [acceptUndeclared]：完全没有 encrypt_info 加密标记的档位按明文接受（明文另由媒体索引校验）。 */
+    private static Stream.VideoTrack selectTrack(Map<String, Object> info, String quality,
+            boolean requireEncryption, int minimumPixels, boolean acceptUndeclared) throws Exception {
         // video_list 可能是对象 map（fallback 模型），也可能是数组（内联模型）
         List<Object> videoItems = new ArrayList<>();
         Object rawList = info.get("video_list");
@@ -416,7 +458,9 @@ public final class AppSource {
             String spade = firstNonEmpty(r.item.get("spade_a"),
                     Json.optStr(child(r.item, "encrypt_info").get("spade_a"), ""));
             boolean keyOk = spade.isEmpty();
-            if (spade.isEmpty() && requireEncryption && !declaredPlain(r.item)) {
+            boolean undeclared = child(r.item, "encrypt_info").get("encrypt") == null;
+            if (spade.isEmpty() && requireEncryption && !declaredPlain(r.item)
+                    && !(acceptUndeclared && undeclared)) {
                 // 内联模型声明加密（或未声明）却缺少 spade_a：不能当作明文播放
                 keyOk = false;
                 incomplete |= child(r.item, "encrypt_info").get("encrypt") == null;

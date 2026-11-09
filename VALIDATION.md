@@ -1,3 +1,16 @@
+# 0.7.21 修复部分分集无法播放、拖动进度误触与小窗连播
+
+验证日期：2026-11-09（Asia/Shanghai）。versionName 0.7.21、versionCode 32。对应 iOS 修复见 hongguo-ios 同日版本。来源：issue #3（第二季第 5 集起无法播放、下拉通知栏误触进度、竖屏清屏进入全屏、拖动进度易误触）与 issue #4（小窗播放下一集卡住、位移、被剧名遮挡）。
+
+- 片源：实网探测《和离后我带女儿横扫魔域第二季》发现未加密的分集整体省略 `encrypt_info`（媒体为明文 hvc1，只带 `gear_des_key`），旧版一律视为加密信息缺失而在所有路径失败；同一集在不同请求路径 / 身份下的模型也不一致。`AppSource.fetch` 在某条路径模型解析失败时继续下一条，全部失败才报告模型错误；内联档位完全未声明加密且备用片源无法核对时按明文选用，明确声明加密却缺 `spade_a` 的仍拒绝。明文由 `Mp4Progressive.inspect` 与 `Stream.validateMp4(path, requirePlain)` 检查索引中不含 encv / enca / sinf 后才播放。
+- 实网：修复后以 `ProgressiveMedia.open` 读取第二季第 1–30 集前 1 MiB，30 集全部成功；修复前第 14、18、22、25、28 集失败。
+- 手势：拖动进度改为长按触发 2 倍速后再横向移动，开始拖动时 2 倍速结束并显示进度条，松手跳转；未长按的明显横向滑动不点击、不长按、不调进度；从状态栏 / 底部手势区起手不调进度；拖动中窗口失去焦点（通知栏拉下）则取消。
+- 竖屏清屏与长按 2 倍速只隐藏播放器控件，系统状态栏与导航栏保持显示；仅横屏全屏观看隐藏系统栏。
+- 小窗：自动连播时直接切到下一页（无滑动动画），小窗内不显示“第 N 集 + 剧名”占位；新一集尺寸未知前沿用上一集宽高比。
+- 单元测试新增 `PlaybackSourceTest`（路径回退、未声明加密按明文、索引保护检查）与 `PlayerSystemBarsTest.seekDragIgnoresSystemEdges`；仪器测试改为 `dragAfterLongPressSeeksWithoutTappingOrPaging`、`swipeWithoutLongPressNeverSeeks`、`refusedDragNeitherSeeksNorTaps`。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:compileDebugAndroidTestKotlin` 通过，单元测试 341 项无失败，lint 无错误。
+- 未验证：没有真机或模拟器，仪器测试只编译未运行；长按后拖动、通知栏下拉、竖屏系统栏与小窗连播均未在设备上实际操作。
+
 # 0.7.20 左右滑动调整进度
 
 验证日期：2026-11-08（Asia/Shanghai）。versionName 0.7.20、versionCode 31。对应 iOS 0.1.18。来源：issue #3 建议“像官方那样手势划动拖动进度”。

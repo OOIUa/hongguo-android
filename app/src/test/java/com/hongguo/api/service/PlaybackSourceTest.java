@@ -304,6 +304,47 @@ public class PlaybackSourceTest {
         assertEquals(Arrays.asList(DEVICE_ID, "7432109876543219999"), tabIdentities);
     }
 
+    /** 2026-11-09 issue #3：GET 只给缺密钥的内联片源时，POST 仍可能给出完整片源，不能就此报「片源不可用」。 */
+    @Test public void unusableModelOnOneRouteMovesToTheNextRoute() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        Map<String, Object> broken = Json.obj();
+        List<Object> brokenList = Json.arr();
+        brokenList.add(keylessEncryptedItem());
+        broken.put("video_list", brokenList);
+        Map<String, Object> good = Json.obj();
+        List<Object> goodList = Json.arr();
+        goodList.add(item("bytevc1", 1080, 1920, "https://v1.qznovelvod.com/1080.mp4", VALID_SPADE));
+        good.put("video_list", goodList);
+        AtomicInteger tabs = new AtomicInteger();
+        AppSource.setPlaybackTabForTest((vid, identity) -> { tabs.incrementAndGet(); return response(vid, broken); });
+        AppSource.setPlaybackPostForTest((body, identity, host) -> response("7600000000000000001", good));
+        assertEquals("https://v1.qznovelvod.com/1080.mp4", AppSource.fetch("7600000000000000001", "auto").url);
+        assertEquals(1, tabs.get());
+    }
+
+    @Test public void unusableModelOnEveryRouteReportsTheModelError() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        Map<String, Object> broken = Json.obj();
+        List<Object> brokenList = Json.arr();
+        brokenList.add(keylessEncryptedItem());
+        broken.put("video_list", brokenList);
+        AtomicInteger requests = new AtomicInteger();
+        AppSource.setPlaybackTabForTest((vid, identity) -> { requests.incrementAndGet(); return response(vid, broken); });
+        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+            requests.incrementAndGet();
+            throw new AppSource.EmptyPlaybackResponseException();
+        });
+        try {
+            AppSource.fetch("7600000000000000001", "auto");
+            fail();
+        } catch (AppSource.EmptyPlaybackResponseException e) {
+            fail("模型错误应优先于空响应");
+        } catch (IllegalStateException e) {
+            assertEquals("本集片源地址或密钥无法解析", e.getMessage());
+        }
+        assertEquals(AppSource.PLAYBACK_ROUTES.length, requests.get());
+    }
+
     @Test public void emptyPlaybackResponseIsReportedAsIdentityRejection() {
         try {
             AppSource.parsePlaybackResponse("  ");
@@ -524,10 +565,10 @@ public class PlaybackSourceTest {
         replies.forEach((name, reply) -> {
             AppSource.setPlaybackFallbackForTest(url -> reply);
             try {
-                AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto");
-                fail(name + "的备用片源不得使用");
-            } catch (IllegalStateException expected) {
-                assertFalse(expected.getMessage().contains("keyed"));
+                // 对不上的备用片源不得使用；内联档位未声明加密，改按明文（由媒体索引再校验）。
+                Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto");
+                assertEquals(name, "https://v1.qznovelvod.com/nokey.mp4", t.url);
+                assertFalse(name, t.encrypt);
             } catch (Exception other) {
                 throw new AssertionError(other);
             }
@@ -631,9 +672,27 @@ public class PlaybackSourceTest {
         }
     }
 
+    /** 2026-11-09 issue #3：未加密的分集整个省略 encrypt_info，且没有可用的备用片源时按明文播放。 */
+    @Test public void inlineItemWithoutEncryptionInfoIsPlayedAsPlainWhenNoFallbackConfirms() throws Exception {
+        List<Object> list = Json.arr();
+        list.add(item("bytevc1", 720, 1280, "https://v1.qznovelvod.com/plain.mp4", null));
+        Map<String, Object> model = Json.obj();
+        model.put("video_list", list);
+        Stream.VideoTrack t = AppSource.parseModel("7600000000000000003", response("7600000000000000003", model), "auto");
+        assertEquals("https://v1.qznovelvod.com/plain.mp4", t.url);
+        assertFalse(t.encrypt);
+        assertEquals("", t.spadeA);
+    }
+
+    @Test public void plainDownloadRejectsProtectedIndex() {
+        assertTrue(Stream.hasProtection("\0\0\0\0moovtrakstsdencvsinf".getBytes(StandardCharsets.ISO_8859_1)));
+        assertTrue(Stream.hasProtection("\0\0\0\0moovtrakstsdenca".getBytes(StandardCharsets.ISO_8859_1)));
+        assertFalse(Stream.hasProtection("\0\0\0\0moovtrakstsdhvc1mp4a".getBytes(StandardCharsets.ISO_8859_1)));
+    }
+
     @Test public void inlineEncryptedItemWithoutSpadeIsNotPlayedAsPlaintext() throws Exception {
         List<Object> list = Json.arr();
-        list.add(item("h264", 720, 1280, "https://v1.qznovelvod.com/nokey.mp4", null));
+        list.add(keylessEncryptedItem());
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
         try {
@@ -715,6 +774,15 @@ public class PlaybackSourceTest {
             enc.put("encrypt", true);
             m.put("encrypt_info", enc);
         }
+        return m;
+    }
+
+    /** 明确声明加密却没有 spade_a 的档位：任何时候都不能当明文播放。 */
+    private static Map<String, Object> keylessEncryptedItem() {
+        Map<String, Object> m = item("h264", 720, 1280, "https://v1.qznovelvod.com/nokey.mp4", null);
+        Map<String, Object> enc = Json.obj();
+        enc.put("encrypt", true);
+        m.put("encrypt_info", enc);
         return m;
     }
 
