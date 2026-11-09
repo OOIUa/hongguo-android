@@ -10,7 +10,7 @@
 
 [![Release](https://img.shields.io/github/v/release/OOIUa/hongguo-android?label=Release&color=F15A2B)](https://github.com/OOIUa/hongguo-android/releases/latest) [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](#下载与安装) [![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)](#功能一览) [![License](https://img.shields.io/badge/License-GPL--3.0--only-blue)](LICENSE)
 
-[**下载 APK**](https://github.com/OOIUa/hongguo-android/releases/latest) · [界面预览](#界面预览) · [使用说明](#快速上手) · [源码构建](#源码构建) · [反馈问题](https://github.com/OOIUa/hongguo-android/issues)
+[**下载 APK**](https://github.com/OOIUa/hongguo-android/releases/latest) · [iPhone 版](https://github.com/OOIUa/hongguo-ios) · [界面预览](#界面预览) · [使用说明](#快速上手) · [源码构建](#源码构建) · [反馈问题](https://github.com/OOIUa/hongguo-android/issues)
 
 </div>
 
@@ -29,22 +29,44 @@
 
 > **已有旧版？请直接覆盖安装，保留收藏、历史与续播位置。** 同签名版本可覆盖升级；卸载或清除应用数据会删除本机记录。0.1 / 0.2 版本需先手动覆盖安装一次新版，0.3.0 起支持应用内更新，0.4.0 起支持加速线路。
 
+### iPhone 版
+
+iOS 客户端独立托管在 [OOIUa/hongguo-ios](https://github.com/OOIUa/hongguo-ios)，基于 SwiftUI 与 AVFoundation 原生实现，支持 iOS 17.0 及以上。发布的是**无签名 IPA**，需用自己的签名工具签名后安装。
+
+| 获取方式 | 链接 |
+| --- | --- |
+| 下载 IPA | [iOS 最新版本](https://github.com/OOIUa/hongguo-ios/releases/latest) |
+| 全能签软件源（官方） | `https://raw.githubusercontent.com/OOIUa/hongguo-ios/main/distribution/source.json` |
+| 全能签软件源（加速） | `https://gh-proxy.com/https://raw.githubusercontent.com/OOIUa/hongguo-ios/main/distribution/source-cn.json` |
+
+更多线路与安装说明见 [iOS 版 README](https://github.com/OOIUa/hongguo-ios#下载与安装)，iOS 问题请到 [hongguo-ios Issues](https://github.com/OOIUa/hongguo-ios/issues) 反馈。
+
 ## 界面预览
 
 <table>
   <tr>
-    <th align="center">首页推荐</th>
-    <th align="center">发现与筛选</th>
-    <th align="center">我的与账号</th>
+    <th align="center">暖白精修 · 首页</th>
+    <th align="center">沉浸暗场 · 首页刷剧</th>
+    <th align="center">内容卡片 · 首页</th>
   </tr>
   <tr>
-    <td><img src="docs/images/home.png" width="240" alt="红果独立版首页：本机继续观看、搜索入口与双列海报"></td>
-    <td><img src="docs/images/categories.png" width="240" alt="发现页面：短剧、漫剧、AI 剧、动态筛选与双列海报"></td>
-    <td><img src="docs/images/my.png" width="240" alt="我的页面：本机收藏与历史、账号与隐私、播放设置和检查更新"></td>
+    <td><img src="docs/images/home.png" width="240" alt="暖白精修主题首页：今日推荐、继续观看与双列海报"></td>
+    <td><img src="docs/images/home-immersive.png" width="240" alt="沉浸暗场主题首页：全屏上下滑动试看，右侧追剧、选集与详情"></td>
+    <td><img src="docs/images/home-cards.png" width="240" alt="内容卡片主题首页：继续看、为你推荐榜单与猜你想看瀑布流"></td>
+  </tr>
+  <tr>
+    <th align="center">发现与筛选</th>
+    <th align="center">主题样式</th>
+    <th align="center">我的</th>
+  </tr>
+  <tr>
+    <td><img src="docs/images/categories.png" width="240" alt="发现页面：短剧、漫剧、AI 剧、筛选条件与双列海报"></td>
+    <td><img src="docs/images/themes.png" width="240" alt="主题样式页面：三套主题与跟随系统、浅色、深色外观模式"></td>
+    <td><img src="docs/images/my.png" width="240" alt="我的页面：账号登录、本机收藏与看过、设置和检查更新"></td>
   </tr>
 </table>
 
-截图来自 v0.7.1 的 Android 模拟器实拍，内容列表随上游更新。
+截图来自 v0.7.23 的 Android 模拟器实拍，内容列表随上游更新。
 
 ## 功能一览
 
