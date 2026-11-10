@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复从播放页点剧名进入详情后返回直接回到首页的问题，现在会回到播放页接着播放；横屏点剧名改为从左侧展开详情；横屏标题上移，底部改为时间、进度条与播放按钮两行布局。'
+        notes = '修复部分新剧（如《谁让这个文盲修仙的第六季》）大量分集准备播放失败、重试也无法播放的问题；详情页相关作品中的待上线作品和账号预约列表显示预计上线日期。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

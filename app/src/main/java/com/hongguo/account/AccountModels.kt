@@ -31,6 +31,8 @@ data class AccountState(
     val stats: CloudStats? = null,
     val reservations: List<LibraryEntry> = emptyList(),
     val reservationOnlineIds: Set<String> = emptySet(),
+    /** Platform release text of upcoming reservations, such as 预计11月21日上线, keyed by the entry's card id. */
+    val reservationReleaseTexts: Map<String, String> = emptyMap(),
     val historyError: String? = null,
     val likesError: String? = null,
     val favoritesError: String? = null,
@@ -58,6 +60,7 @@ internal data class AccountCache(
     val likes: List<LibraryEntry> = emptyList(),
     val reservations: List<LibraryEntry> = emptyList(),
     val reservationOnlineIds: Set<String> = emptySet(),
+    val reservationReleaseTexts: Map<String, String> = emptyMap(),
     val pending: Map<String, PendingProgress> = emptyMap(),
     val favoriteAttempts: Map<String, FavoriteAttempt> = emptyMap(),
     val syncEnabled: Boolean = false,

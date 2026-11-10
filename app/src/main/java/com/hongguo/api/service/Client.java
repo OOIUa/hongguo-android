@@ -770,6 +770,60 @@ public final class Client {
     }
 
     /** Only complete nonempty details enter the cache; empty App data triggers HTML fallback. */
+    /**
+     * 待上线作品的预计上线信息。相关作品接口只给「预告」与预约人数；按完整标题搜索时，综合结果里的预约卡片
+     * （{@code subscribe_items}）带官方文案 {@code sub_info}（如「预计11月21日上线」）与秒级
+     * {@code schedule_publish_time}（2026-11-10 实测，issue #3）。只认编号相同的卡片；拿不到返回 null。
+     */
+    public static Map<String, Object> upcomingRelease(String seriesId, String title) throws Exception {
+        String sid = seriesId == null ? "" : seriesId.trim();
+        String query = title == null ? "" : title.trim();
+        if (!sid.matches("[0-9]{1,30}") || query.isEmpty() || query.length() > 200) return null;
+        String cacheKey = Safeguards.cacheKey("upcoming", sid);
+        Map<String, Object> cached = Json.optObj(Safeguards.cacheGet(cacheKey));
+        if (cached != null) return cached;
+        Map<String, Object> q = Json.obj();
+        q.put("query", query);
+        q.put("tab_name", "feed");
+        q.put("search_source", "1");
+        q.put("offset", "0");
+        q.put("count", "10");
+        q.put("use_correct", "true");
+        Map<String, Object> result = parseUpcomingRelease(api("GET", "/reading/bookapi/search/tab/v", null, q, 1, true), sid);
+        if (result != null) Safeguards.cacheSet(cacheKey, result, 1800);
+        return result;
+    }
+
+    /** 从搜索响应取编号为 [seriesId] 的预约卡片：{@code text} 为官方文案，{@code publish_at} 为毫秒时间（0 表示未给）。 */
+    static Map<String, Object> parseUpcomingRelease(Map<String, Object> response, String seriesId) {
+        if (response == null) return null;
+        for (Object tab : Json.optArr(response.get("search_tabs"))) {
+            Map<String, Object> tabObj = Json.optObj(tab);
+            if (tabObj == null) continue;
+            for (Object cell : Json.optArr(tabObj.get("data"))) {
+                Map<String, Object> cellObj = Json.optObj(cell);
+                if (cellObj == null) continue;
+                for (Object item : Json.optArr(cellObj.get("subscribe_items"))) {
+                    Map<String, Object> row = Json.optObj(item);
+                    if (row == null) continue;
+                    String id = Json.optStr(row.get("item_id_str"), "");
+                    if (id.isEmpty()) id = Json.optStr(row.get("item_id"), "");
+                    if (!seriesId.equals(id.trim())) continue;
+                    String text = Json.optStr(row.get("sub_info"), "").replaceAll("\\s+", " ").trim();
+                    if (text.length() > 40) text = text.substring(0, 40);
+                    long stamp = Math.max(0, Json.optLong(row.get("schedule_publish_time"), 0));
+                    if (stamp > 0 && stamp <= 9_999_999_999L) stamp *= 1000;
+                    if (text.isEmpty() && stamp == 0) return null;
+                    Map<String, Object> out = Json.obj();
+                    out.put("text", text);
+                    out.put("publish_at", stamp);
+                    return out;
+                }
+            }
+        }
+        return null;
+    }
+
     public static Map<String, Object> getEpisodes(String seriesId) throws Exception {
         String sid = seriesId == null ? "" : seriesId.trim();
         if (!sid.matches("[0-9]{1,30}")) throw new IllegalArgumentException("剧集编号无效");

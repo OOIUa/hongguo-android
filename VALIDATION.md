@@ -1,3 +1,12 @@
+# 0.7.25 ByteVC2 分集改取 H.265、预约上线时间
+
+验证日期：2026-11-10（Asia/Shanghai）。versionName 0.7.25、versionCode 36。来源：issue #3（《谁让这个文盲修仙的第六季》第 58 集「准备播放失败，请检查网络后重试」，重试无效；希望像官方一样显示预约剧集的上线时间）。
+
+- 播放：第 58 集所有请求路径的内联片源与备用接口（原参数 `codec_type=4`）都只有 ByteVC2，旧的兼容请求 `codec_type=0&force_codec=h264` 仍返回 ByteVC2；`codec_type=1` 各档返回 h265（`codec_type=3` 返回 bytevc1）。`AppSource` 在全档 ByteVC2 时依次试 `codec_type=1` 与旧参数，单次失败继续试下一个，仍校验同一视频与完整时长。`readableFailure` 对 ByteVC2 单独提示，不再提示检查网络。
+- 实网（JDK 17 直接运行 Java 核心）：第六季前 95 集中 45 集只有 ByteVC2，改后全部取到 1080p h265；第 56–60 集完整读完（第 58 集 15,021,626 字节）。第一至五季、其他 15 部短剧抽查约 200 集未见此情况。批量扫描过快会触发匿名设备注册限流，与用户使用无关。
+- 预约上线时间：相关作品接口对待上线作品只给「预告」与预约人数；按完整标题搜索时，综合结果的预约卡片 `subscribe_items` 带 `sub_info`（如「预计11月21日上线」）与秒级 `schedule_publish_time`，按 `item_id_str` 与作品编号匹配。详情页相关作品的待上线卡片、预约确认弹窗与最后一集播完提示显示该日期；账号预约列表依次使用 `expected_rec_text`、`schedule_publish_time`（北京时间「预计M月d日上线」），都没有时显示「上线时间暂未公布」（优先级参考 tsukiyo-zero/hongguoTV）。预约文案随账号缓存保存，旧数据兼容。实网：第七季返回「预计11月21日上线」。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug` 通过（343 项单元测试）。新增 ByteVC2 兼容参数顺序与失败续试、搜索预约卡片解析、上线文案格式、预约文案缓存往返测试。未在真机上验证界面；账号预约列表未用本人账号实测。
+
 # 0.7.24 详情返回播放页、横屏左侧详情与底部布局
 
 验证日期：2026-11-09（Asia/Shanghai）。versionName 0.7.24、versionCode 35。来源：用户反馈从播放页进入详情后返回直接回到首页；横屏点剧名改为从左侧展开详情；横屏标题偏下、底部控件布局不合理（参考 iOS 横屏布局）。

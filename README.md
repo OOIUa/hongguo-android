@@ -16,14 +16,14 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.24**（versionCode 35）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.25**（versionCode 36）· Android **8.0 / API 26** 及以上。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.24 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.24/hongguo-android-0.7.24.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.24/hongguo-android-0.7.24.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.24/hongguo-android-0.7.24.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.24 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.24/hongguo-android-0.7.24-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.24/SHA256SUMS-0.7.24.txt) |
+| GitHub 直连 | [下载 v0.7.25 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.25/hongguo-android-0.7.25.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.25/hongguo-android-0.7.25.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.25/hongguo-android-0.7.25.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.25 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.25/hongguo-android-0.7.25-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.25/SHA256SUMS-0.7.25.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -83,7 +83,7 @@ iOS 客户端独立托管在 [OOIUa/hongguo-ios](https://github.com/OOIUa/honggu
 | 连播与预加载 | 可分别开关自动连播、下一集预加载，末集不循环 |
 | 片单与续播 | 本机与红果账号切换来源；本机保存收藏、观看历史、集数与集内位置，支持单条移除与清空 |
 | 个人红果账号 | 官网网页登录、扫码与手机号验证码入口；官网和手机云账号验证分开，失败可复制脱敏诊断 |
-| 账户片单 | 仅在手机业务身份通过验证后读取收藏、最近 50 部历史及预约，与本机记录分开 |
+| 账户片单 | 仅在手机业务身份通过验证后读取收藏、最近 50 部历史及预约，与本机记录分开；待上线的预约显示预计上线日期 |
 | 可选进度上报 | 仅已确认的手机云账号可用，默认关闭；实际跨设备结果需本人验收 |
 | 边播边缓存 | 对支持的片源按需下载与处理，不兼容时回退完整缓存播放 |
 | 应用内更新 | 手动 / 启动检查，支持直连、两条加速线路及自动切换 |
@@ -98,7 +98,7 @@ iOS 客户端独立托管在 [OOIUa/hongguo-ios](https://github.com/OOIUa/honggu
 1. 安装后从「首页」或「发现」选剧，也可点击搜索栏输入剧名。
 2. 进入详情，选择集数开始播放；首页「继续观看」或「片单 → 本机 → 历史」可继续上次的集数与位置。
 3. 播放中轻点画面显示或隐藏控件，双击任意位置暂停 / 继续；长按画面进入 2 倍速后左右拖动，或拖动进度条跳转，上下滑动切集；点击底部剧名打开详情，返回后接着播放（横屏点顶部剧名从左侧展开详情）；右下角「倍速」在上方展开速度列表；播放中长按视频左侧或右侧可临时2倍速，松手恢复之前的速度。
-4. 详情中分别提供本机与账号收藏操作；播放器点击「收藏」（横屏为顶栏星标），在面板中选择「本机收藏」或「红果账号收藏」。到「片单」切换来源，查看对应历史、收藏；预约仅在红果账号来源显示。
+4. 详情中分别提供本机与账号收藏操作；播放器点击「收藏」（横屏为顶栏星标），在面板中选择「本机收藏」或「红果账号收藏」。到「片单」切换来源，查看对应历史、收藏；预约仅在红果账号来源显示。详情页「相关作品」里的待上线作品显示预计上线日期，可直接预约。
 5. 到「我的 → 播放设置」调整自动连播、下一集预加载和启动检查更新。
 6. 到「我的 → 账号与隐私」登录个人账号；只有一部手机时选择「在本机打开官网登录」，待页面加载后点「打开官网登录窗口」，自行完成官方验证后点上方「完成登录」。也可在另一台设备的红果 App 中扫码确认。
 

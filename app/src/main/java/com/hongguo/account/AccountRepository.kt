@@ -185,7 +185,8 @@ class AccountRepository internal constructor(
     private fun showCacheLocked() {
         val c = cacheLocked()
         mutableState.value = mutableState.value.copy(profile = disk.profile, history = c.history, favorites = c.favorites, likes = c.likes,
-            reservations = c.reservations, reservationOnlineIds = c.reservationOnlineIds, syncEnabled = c.syncEnabled,
+            reservations = c.reservations, reservationOnlineIds = c.reservationOnlineIds,
+            reservationReleaseTexts = c.reservationReleaseTexts, syncEnabled = c.syncEnabled,
             favoriteUncertainIds = c.favoriteAttempts.keys, pendingProgressCount = c.pending.size, lastSyncAt = c.lastSyncAt)
     }
     private fun saveLocked(next: AccountDisk): Boolean = try {
@@ -470,7 +471,7 @@ class AccountRepository internal constructor(
                         val upcoming = runInterruptible(io) { gateway.reservations(credentials, false) }
                         val online = runInterruptible(io) { gateway.reservations(credentials, true) }
                         cacheChange(g) { it.copy(reservations = (upcoming + online).distinctBy { row -> row.series.id }.map(::reservationEntry),
-                            reservationOnlineIds = online.map { row -> row.series.id }.toSet()) }
+                            reservationOnlineIds = online.map { row -> row.series.id }.toSet(), reservationReleaseTexts = releaseTexts(upcoming)) }
                         if (current(g)) state { it.copy(reservationsError = null) }
                     }
                 }
@@ -608,7 +609,7 @@ class AccountRepository internal constructor(
         val upcoming = runInterruptible(io) { gateway.reservations(credentials, false) }
         val online = runInterruptible(io) { gateway.reservations(credentials, true) }
         cacheChange(g) { it.copy(reservations = (upcoming + online).distinctBy { row -> row.series.id }.map(::reservationEntry),
-            reservationOnlineIds = online.map { row -> row.series.id }.toSet()) }
+            reservationOnlineIds = online.map { row -> row.series.id }.toSet(), reservationReleaseTexts = releaseTexts(upcoming)) }
         // An upcoming row without video data is listed under "reservation:" + its item id.
         return (upcoming + online).map { it.series.id.removePrefix("reservation:") }.toSet()
     }
@@ -853,6 +854,11 @@ class AccountRepository internal constructor(
             progress.episodeIndex.coerceAtLeast(0) + 1, progress.position.coerceAtLeast(0), progress.updatedAt.coerceAtLeast(0))
         fun favoriteEntry(favorite: CloudFavorite) = LibraryEntry(card(favorite.series), updatedAt = favorite.collectedAt.coerceAtLeast(0))
         fun likeEntry(like: CloudLike) = LibraryEntry(card(like.series), updatedAt = like.likedAt.coerceAtLeast(0))
+        /** Release texts of upcoming reservations; short, single-line platform text only. */
+        fun releaseTexts(upcoming: List<CloudReservation>) = upcoming.mapNotNull { row ->
+            row.publishText.replace(Regex("\\s+"), " ").trim().take(RELEASE_TEXT_LIMIT).takeIf { it.isNotEmpty() }?.let { row.series.id to it }
+        }.toMap()
+        const val RELEASE_TEXT_LIMIT = 40
         fun reservationEntry(reservation: CloudReservation) = LibraryEntry(card(reservation.series), updatedAt = reservation.publishAt.coerceAtLeast(0))
         fun cloudProgress(pending: PendingProgress) = pending.entry.let { entry -> CloudProgress(
             Series(entry.card.id, entry.card.title, entry.card.cover, entry.card.summary, "全 ${entry.card.episodeCount} 集"),

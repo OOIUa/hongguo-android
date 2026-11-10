@@ -137,6 +137,7 @@ internal object AccountDiskCodec {
             "library" to library(cache),
             "reservations" to Json.parse(LibraryCodec.encode(LibrarySnapshot(history = cache.reservations))),
             "online" to cache.reservationOnlineIds.toList(),
+            "releaseTexts" to cache.reservationReleaseTexts,
             "likes" to Json.parse(LibraryCodec.encode(LibrarySnapshot(history = cache.likes))),
             "pending" to cache.pending.mapValues { (_, progress) -> mapOf("entry" to entry(progress.entry), "duration" to progress.durationMs, "revision" to progress.revision) },
             "attempts" to cache.favoriteAttempts.mapValues { (_, attempt) -> mapOf("add" to attempt.add, "at" to attempt.startedAt) },
@@ -167,6 +168,12 @@ internal object AccountDiskCodec {
             AccountCache(
                 history = library.history, favorites = library.favorites, likes = likes, reservations = reservations,
                 reservationOnlineIds = list(cache["online"]).filterIsInstance<String>().filter(::validContentId).toSet(),
+                // Absent in data saved by versions before 0.7.25.
+                reservationReleaseTexts = map(cache["releaseTexts"]).entries.mapNotNull { (id, text) ->
+                    (text as? String)?.trim()?.take(AccountRepository.RELEASE_TEXT_LIMIT)?.takeIf {
+                        it.isNotEmpty() && validContentId(id.removePrefix("reservation:"))
+                    }?.let { id to it }
+                }.take(200).toMap(),
                 pending = map(cache["pending"]).entries.mapNotNull { (id, item) ->
                     val pending = map(item)
                     readEntry(pending["entry"])?.takeIf { it.card.id == id && it.episodeId.isNotBlank() }?.let {

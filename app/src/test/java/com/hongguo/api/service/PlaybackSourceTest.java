@@ -628,22 +628,42 @@ public class PlaybackSourceTest {
     @Test public void byteVc2OnlyEpisodeRetriesFallbackWithCompatibilityCodec() throws Exception {
         String vid = "7600000000000000015";
         List<String> urls = new ArrayList<>();
+        // 2026-11-10 实测：codec_type=1 给出 h265（issue #3，第六季第 58 集）。
         AppSource.setPlaybackFallbackForTest(url -> {
             urls.add(url);
-            return codecReply(url.contains("force_codec") ? "hevc" : "bvc2", "v0vc2", 60.0);
+            return codecReply(url.endsWith("&codec_type=1") ? "h265" : "bvc2", "v0vc2", 60.0);
         });
         Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto");
-        assertEquals("https://v1.qznovelvod.com/hevc.mp4", t.url);
+        assertEquals("https://v1.qznovelvod.com/h265.mp4", t.url);
         assertEquals(2, urls.size());
         assertEquals("https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=3", urls.get(0));
         assertEquals("其余参数原样保留，编码参数被替换",
-                "https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=0&force_codec=h264", urls.get(1));
+                "https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=1", urls.get(1));
+
+        // codec_type=1 仍是 ByteVC2 时，再试旧的 force_codec=h264。
+        urls.clear();
+        AppSource.setPlaybackFallbackForTest(url -> {
+            urls.add(url);
+            return codecReply(url.contains("force_codec") ? "hevc" : "bytevc2", "v0vc2", 60.0);
+        });
+        assertEquals("https://v1.qznovelvod.com/hevc.mp4",
+                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto").url);
+        assertEquals(3, urls.size());
+        assertEquals("https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=0&force_codec=h264", urls.get(2));
+
+        // 第一个兼容请求失败（网络或格式）也继续试下一个。
+        AppSource.setPlaybackFallbackForTest(url -> {
+            if (url.endsWith("&codec_type=1")) throw new java.io.IOException("reset");
+            return codecReply(url.contains("force_codec") ? "h264" : "bytevc2", "v0vc2", 60.0);
+        });
+        assertEquals("https://v1.qznovelvod.com/h264.mp4",
+                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto").url);
 
         Map<String, Object> bare = Json.obj();
         bare.put("fallback_api", "https://vod.snssdk.com/video/fallback");
         AppSource.setPlaybackFallbackForTest(url ->
-                codecReply(url.contains("force_codec") ? "h264" : "bytevc2", "v0vc2", 60.0));
-        assertEquals("https://v1.qznovelvod.com/h264.mp4",
+                codecReply(url.endsWith("?codec_type=1") ? "h265" : "bytevc2", "v0vc2", 60.0));
+        assertEquals("https://v1.qznovelvod.com/h265.mp4",
                 AppSource.parseModel(vid, response(vid, bare), "auto").url);
     }
 
@@ -655,7 +675,7 @@ public class PlaybackSourceTest {
         replies.put("时长不同", codecReply("hevc", "v0vc2", 30.0));
         for (Map.Entry<String, Map<String, Object>> e : replies.entrySet()) {
             AppSource.setPlaybackFallbackForTest(url ->
-                    url.contains("force_codec") ? e.getValue() : codecReply("bytevc2", "v0vc2", 60.0));
+                    url.endsWith("&codec_type=3") ? codecReply("bytevc2", "v0vc2", 60.0) : e.getValue());
             try {
                 AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto");
                 fail(e.getKey());

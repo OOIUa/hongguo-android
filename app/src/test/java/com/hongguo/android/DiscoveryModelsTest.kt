@@ -77,4 +77,18 @@ class DiscoveryModelsTest {
     @Test fun emptyUpstreamResponseHasContentServiceMessageOnHomepage() {
         assertEquals("内容服务暂未返回数据，请稍后重试。", readableFailure(IOException("上游未返回数据"), "首页加载"))
     }
+
+    @Test fun releaseLabelPrefersPlatformTextThenBeijingDate() {
+        val now = 1_794_300_000_000L // 2026-11-10
+        assertEquals("预计11月21日上线", releaseLabel(" 预计11月21日上线 ", 0, now))
+        assertEquals("预计11月21日上线", releaseLabel("", 1_795_190_400_000L, now))
+        assertEquals("预计2027年1月2日上线", releaseLabel("", 1_798_819_200_000L, now))
+        assertEquals("", releaseLabel("  ", 0, now))
+    }
+
+    @Test fun byteVc2OnlyEpisodeIsNotReportedAsANetworkProblem() {
+        val message = readableFailure(IllegalStateException("本集仅提供播放器不支持的 ByteVC2 编码，当前无法播放，请在官方 App 观看"), "准备播放")
+        assertTrue(message.contains("ByteVC2"))
+        assertFalse(message.contains("网络"))
+    }
 }

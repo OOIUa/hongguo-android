@@ -53,6 +53,8 @@ internal fun RelatedWorksSection(state: HongguoUiState, model: HongguoViewModel,
                     Text(work.season.ifBlank { "相关" }, color = Orange, fontSize = 12.sp, maxLines = 1)
                     Text(work.series.title, color = Ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (work.upcoming) {
+                        Text(work.releaseText.ifEmpty { "待上线" }, color = Muted, fontSize = 12.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("related_release_${work.series.id}"))
                         TextButton(onClick = { if (signedIn) confirmation = work else model.selectTab(AppTab.ACCOUNT) },
                             enabled = !busy && !reserved, modifier = Modifier.heightIn(min = 40.dp).testTag("related_reserve_${work.series.id}"),
                             contentPadding = PaddingValues(horizontal = 0.dp)) {
@@ -66,7 +68,8 @@ internal fun RelatedWorksSection(state: HongguoUiState, model: HongguoViewModel,
     confirmation?.let { work ->
         AlertDialog(onDismissRequest = { confirmation = null },
             title = { Text("预约这部作品？") },
-            text = { Text("将在红果账号中预约《${work.series.title}》，上线后可在账号的预约列表查看。") },
+            text = { Text("将在红果账号中预约《${work.series.title}》" + work.releaseText.takeIf { it.isNotEmpty() }?.let { "（$it）" }.orEmpty() +
+                "，上线后可在账号的预约列表查看。") },
             confirmButton = { TextButton(onClick = { confirmation = null; accountModel.reserve(work) },
                 modifier = Modifier.testTag("related_reserve_confirm")) { Text("预约") } },
             dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } })

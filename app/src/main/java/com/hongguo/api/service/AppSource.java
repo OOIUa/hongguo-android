@@ -312,8 +312,19 @@ public final class AppSource {
     }
 
     /**
-     * 从备用模型选档。全档 ByteVC2 时，在同一地址加官方播放器的兼容参数再读一次：这类分集曾由此拿到 HEVC
-     * （同步自 hongguoTV 0.1.20，issue #56，提交 {@code 265472f}）。参数名不保证编码，返回结果仍按实际编码过滤。
+     * 备用接口的兼容编码参数，按顺序尝试。2026-11-10 实测（issue #3，《谁让这个文盲修仙的第六季》第 58 集）：
+     * 原地址带 {@code codec_type=4}，全档 ByteVC2；{@code codec_type=1} 全档返回 h265，
+     * 旧的 {@code codec_type=0&force_codec=h264} 仍是 ByteVC2。旧参数保留在后，覆盖曾由它拿到 HEVC 的分集
+     * （同步自 hongguoTV 0.1.20，issue #56，提交 {@code 265472f}）。
+     */
+    static final String[] COMPATIBLE_CODEC_QUERIES = {
+            "codec_type=1",
+            "codec_type=0&force_codec=h264",
+    };
+
+    /**
+     * 从备用模型选档。全档 ByteVC2 时，在同一地址依次换兼容编码参数再读。参数名不保证编码，
+     * 返回结果仍按实际编码过滤，并须与原模型是同一视频、同一时长。
      */
     private static Stream.VideoTrack fallbackTrack(Map<String, Object> info, String fallback, String quality)
             throws Exception {
@@ -321,14 +332,24 @@ public final class AppSource {
             return selectTrack(info, quality, false, 0);
         } catch (ByteVc2Only onlyByteVc2) {
             if (fallback == null || fallback.isEmpty()) throw onlyByteVc2;
-            Map<String, Object> other = readFallback(compatibleFallback(fallback));
-            confirmSameVideo(info, other);
-            return selectTrack(other, quality, false, 0);
+            for (String codecQuery : COMPATIBLE_CODEC_QUERIES) {
+                try {
+                    Map<String, Object> other = readFallback(compatibleFallback(fallback, codecQuery));
+                    confirmSameVideo(info, other);
+                    return selectTrack(other, quality, false, 0);
+                } catch (InterruptedIOException e) {
+                    throw e;
+                } catch (Exception e) {
+                    if (Thread.currentThread().isInterrupted()) throw e;
+                    onlyByteVc2.addSuppressed(e);
+                }
+            }
+            throw onlyByteVc2;
         }
     }
 
     /** 替换 codec_type / force_codec，其余参数按原样保留（不解码再编码，避免改动已签名的值）。 */
-    static String compatibleFallback(String fallback) {
+    static String compatibleFallback(String fallback, String codecQuery) {
         String url = cleanUrl(fallback);
         int q = url.indexOf('?');
         StringBuilder sb = new StringBuilder(q < 0 ? url : url.substring(0, q)).append('?');
@@ -339,7 +360,7 @@ public final class AppSource {
                 sb.append(part).append('&');
             }
         }
-        return sb.append("codec_type=0&force_codec=h264").toString();
+        return sb.append(codecQuery).toString();
     }
 
     /** 替换模型在双方都声明时，不得指向另一个视频或另一完整时长。 */

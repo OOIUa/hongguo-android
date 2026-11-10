@@ -184,7 +184,8 @@ internal fun LazyListScope.cloudLibraryItems(
             row.forEach { entry ->
                 AccountLibraryCell(entry, state.selectedSection, state.selectedSection != AccountSection.RESERVATIONS || entry.card.id in state.reservationOnlineIds,
                     entry.card.id in state.favoriteUncertainIds, entry.card.id in state.favoriteBusyIds, Modifier.weight(1f),
-                    { onOpenLibrary(entry) }, { onRemove(entry) }, { accountModel.resolveFavorite(entry.card.id) })
+                    { onOpenLibrary(entry) }, { onRemove(entry) }, { accountModel.resolveFavorite(entry.card.id) },
+                    releaseText = state.reservationReleaseTexts[entry.card.id].orEmpty())
             }
             repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
         }
@@ -206,12 +207,13 @@ internal fun accountStatsLine(state: AccountState): String? {
 
 @Composable
 private fun AccountLibraryCell(entry: LibraryEntry, section: AccountSection, canOpen: Boolean, uncertain: Boolean, favoriteBusy: Boolean,
-                               modifier: Modifier, onOpen: () -> Unit, onRemove: () -> Unit, onResolve: () -> Unit) {
+                               modifier: Modifier, onOpen: () -> Unit, onRemove: () -> Unit, onResolve: () -> Unit,
+                               releaseText: String = "") {
     val count = if (entry.card.episodeCount > 0) "${entry.card.episodeCount} 集" else "查看剧集"
     LibraryPosterCell(entry, when (section) {
         AccountSection.HISTORY -> "第 ${entry.episodeIndex.coerceAtLeast(1)} 集 · ${accountPosition(entry.positionMs)}"
         AccountSection.FAVORITES, AccountSection.LIKES -> count
-        AccountSection.RESERVATIONS -> if (canOpen) "已上线" else "等待上线"
+        AccountSection.RESERVATIONS -> if (canOpen) "已上线" else releaseLabel(releaseText, entry.updatedAt).ifEmpty { "上线时间暂未公布" }
     }, "account_entry_${entry.card.id}", modifier, enabled = canOpen, showProgress = section == AccountSection.HISTORY, onOpen = onOpen, footer = {
         if (section == AccountSection.FAVORITES) {
             if (favoriteBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)

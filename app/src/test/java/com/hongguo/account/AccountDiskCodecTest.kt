@@ -16,7 +16,8 @@ class AccountDiskCodecTest {
         val other = "7000000000000000002"
         val entry = LibraryEntry(DramaCard("7300000000000000001", "甲", "", 80, ""), "7400000000000000001", 4, 9999, 1700000000000)
         val cache = AccountCache(history = listOf(entry), favorites = listOf(entry), reservations = listOf(entry),
-            reservationOnlineIds = setOf(entry.card.id), pending = mapOf(entry.card.id to PendingProgress(entry, 60000, 42)),
+            reservationOnlineIds = setOf(entry.card.id),
+            reservationReleaseTexts = mapOf(entry.card.id to "预计11月21日上线", "reservation:7500000000000000001" to "明天上线"), pending = mapOf(entry.card.id to PendingProgress(entry, 60000, 42)),
             favoriteAttempts = mapOf(entry.card.id to FavoriteAttempt(true, 1700000000001)), syncEnabled = true)
         val source = AccountDisk(AccountCredentials("sessionid=fixture-private", "7100000000000000001", "7200000000000000001"),
             CloudProfile(uid, "测试"), mapOf(uid to cache, other to AccountCache()), 1700000060000)
@@ -53,6 +54,23 @@ class AccountDiskCodecTest {
         assertEquals(setOf(uid), decoded.accounts.keys)
         assertEquals(setOf(numeric), decoded.accounts.getValue(uid).reservationOnlineIds)
         assertEquals(setOf(numeric), decoded.accounts.getValue(uid).favoriteAttempts.keys)
+    }
+
+    @Test fun reservationReleaseTextsKeepOnlyContentKeysAndShortText() {
+        val uid = "7000000000000000001"
+        val numeric = "7300000000000000001"
+        val cache = AccountCache(reservationReleaseTexts = mapOf(numeric to "预计11月21日上线", "reservation:7500000000000000001" to "  明天上线 ",
+            "bad" to "x", "0" to "y", "7300000000000000002" to "长".repeat(80)))
+        val decoded = AccountDiskCodec.decode(AccountDiskCodec.encode(AccountDisk(AccountCredentials("sessionid=release-fixture"),
+            CloudProfile(uid, "测试"), mapOf(uid to cache)))).accounts.getValue(uid).reservationReleaseTexts
+        assertEquals(setOf(numeric, "reservation:7500000000000000001", "7300000000000000002"), decoded.keys)
+        assertEquals("明天上线", decoded["reservation:7500000000000000001"])
+        assertEquals(40, decoded.getValue("7300000000000000002").length)
+        // Data saved before 0.7.25 has no release texts.
+        val legacy = AccountDiskCodec.encode(AccountDisk(AccountCredentials("sessionid=legacy-fixture"), CloudProfile(uid, "测试"),
+            mapOf(uid to AccountCache()))).replace(",\"releaseTexts\":{}", "")
+        assertFalse(legacy.contains("releaseTexts"))
+        assertTrue(AccountDiskCodec.decode(legacy).accounts.getValue(uid).reservationReleaseTexts.isEmpty())
     }
 
     @Test fun avatarAndWebsiteProfileRoundTrip() {

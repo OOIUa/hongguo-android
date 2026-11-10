@@ -567,6 +567,15 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
                 catch (error: CancellationException) { throw error }
                 catch (_: Exception) { return@launch }
             if (version == detailVersion) mutableState.update { it.copy(related = works) }
+            // The related plan carries no release date; look up the few upcoming works one by one.
+            for (work in works.filter { it.upcoming }.take(3)) {
+                val text = try { repository.upcomingRelease(work) }
+                    catch (error: CancellationException) { throw error }
+                    catch (_: Exception) { "" }
+                if (text.isEmpty() || version != detailVersion) continue
+                mutableState.update { state -> state.copy(related = state.related.map {
+                    if (it.series.id == work.series.id) it.copy(releaseText = text) else it }) }
+            }
         }
         detailJob = viewModelScope.launch {
             try {
@@ -814,7 +823,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             val next = RelatedWorks.nextSeason(current.related)
             when {
                 next == null -> onPlaybackStatus(episodeId, requestId, "已播完最后一集")
-                next.upcoming -> onPlaybackStatus(episodeId, requestId, "已播完最后一集，${next.season}待上线，可在详情页预约")
+                next.upcoming -> onPlaybackStatus(episodeId, requestId, "已播完最后一集，${next.season}" +
+                    next.releaseText.ifEmpty { "待上线" } + "，可在详情页预约")
                 current.autoPlayNext -> playDrama(next.toCard())
                 else -> onPlaybackStatus(episodeId, requestId, "已播完最后一集，${next.season}可在详情页观看")
             }

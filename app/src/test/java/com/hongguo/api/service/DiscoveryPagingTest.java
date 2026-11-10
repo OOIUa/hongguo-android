@@ -148,4 +148,24 @@ public class DiscoveryPagingTest {
         Map<String, Object> genuineEmpty = Client.parseApiResponse("{\"code\":0,\"data\":{\"video_data\":[],\"has_more\":false}}", 200);
         assertTrue(Json.optArr(Json.optObj(genuineEmpty.get("data")).get("video_data")).isEmpty());
     }
+
+    /** 2026-11-10 实测：按完整标题搜索待上线作品，综合结果的预约卡片带官方文案与秒级时间。 */
+    @Test public void upcomingReleaseComesFromTheMatchingSearchReservationCard() {
+        String other = "{\"item_id_str\":\"7704905932207049999\",\"sub_info\":\"预计12月1日上线\",\"schedule_publish_time\":1796054400}";
+        String match = "{\"item_id\":7704905932207049752,\"item_id_str\":\"7704905932207049752\",\"sub_info\":\" 预计11月21日上线 \",\"schedule_publish_time\":1795190400}";
+        Map<String, Object> response = Json.parseObject("{\"search_tabs\":[{\"data\":[{\"video_data\":[{}]},{\"subscribe_items\":["
+                + other + "," + match + "]}]}]}");
+        Map<String, Object> release = Client.parseUpcomingRelease(response, "7704905932207049752");
+        assertEquals("预计11月21日上线", release.get("text"));
+        assertEquals(1795190400000L, release.get("publish_at"));
+        assertNull("只认编号相同的卡片", Client.parseUpcomingRelease(response, "7704905932207040000"));
+
+        Map<String, Object> onlyTime = Json.parseObject("{\"search_tabs\":[{\"data\":[{\"subscribe_items\":[{\"item_id\":7704905932207049752,"
+                + "\"schedule_publish_time\":1795190400000}]}]}]}");
+        assertEquals("", Client.parseUpcomingRelease(onlyTime, "7704905932207049752").get("text"));
+        assertEquals(1795190400000L, Client.parseUpcomingRelease(onlyTime, "7704905932207049752").get("publish_at"));
+        Map<String, Object> nothing = Json.parseObject("{\"search_tabs\":[{\"data\":[{\"subscribe_items\":[{\"item_id\":7704905932207049752}]}]}]}");
+        assertNull(Client.parseUpcomingRelease(nothing, "7704905932207049752"));
+        assertNull(Client.parseUpcomingRelease(null, "7704905932207049752"));
+    }
 }

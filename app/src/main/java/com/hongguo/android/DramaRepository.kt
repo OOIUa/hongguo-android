@@ -110,6 +110,12 @@ class DramaRepository {
 
     suspend fun related(id: String): List<RelatedWork> = runInterruptible(Dispatchers.IO) { relatedClient.related(id) }
 
+    /** 待上线作品的预计上线文案；查不到时为空。 */
+    suspend fun upcomingRelease(work: RelatedWork): String = runInterruptible(Dispatchers.IO) {
+        val release = Client.upcomingRelease(work.series.id, work.series.title) ?: return@runInterruptible ""
+        releaseLabel(Json.optStr(release["text"], ""), Json.optLong(release["publish_at"], 0))
+    }
+
     suspend fun details(card: DramaCard): DramaDetail = runInterruptible(Dispatchers.IO) {
         val result = Client.getEpisodes(card.id)
         val meta = Json.optObj(result["meta"]) ?: emptyMap<String, Any>()
@@ -200,6 +206,7 @@ fun readableFailure(error: Throwable, action: String): String {
         hint.contains("上游未返回数据") -> "内容服务暂未返回数据，请稍后重试。"
         hint.contains("empty_episodes") -> "暂时没有获取到可播放剧集，请稍后重试。"
         hint.contains("风控") || hint.contains("risk") || hint.contains("429") -> "片源服务暂时限制访问，请稍后重试。"
+        hint.contains("bytevc2") -> "该集目前只有本机无法解码的 ByteVC2 片源，重试也无法播放，请选择其他集或稍后再试。"
         hint.contains("无直链") || hint.contains("video_model") || hint.contains("片源") -> "该集片源暂时不可用，可重试或选择其他集。"
         hint.contains("解密") || hint.contains("cenc") || hint.contains("decrypt") ||
             hint.contains("封装") || hint.contains("媒体校验") || hint.contains("密钥格式") ||
