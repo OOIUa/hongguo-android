@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复部分新剧（如《谁让这个文盲修仙的第六季》）大量分集准备播放失败、重试也无法播放的问题；详情页相关作品中的待上线作品和账号预约列表显示预计上线日期。'
+        notes = '修复从今天起所有剧集提示「播放接口返回空响应」无法播放的问题（改用带完整签名的单集取流接口）；修复播放页上下滑动起手略偏横向时滑不动、无法切集的问题。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

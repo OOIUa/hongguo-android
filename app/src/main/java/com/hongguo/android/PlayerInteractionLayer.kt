@@ -96,7 +96,8 @@ internal fun Modifier.playerPinch(enabled: Boolean, onDecided: (Boolean) -> Unit
 }
 
 /**
- * Put below the player's buttons/seek bar. A vertical drag cancels the tap detector before its
+ * Put below the player's buttons/seek bar. The seek/sideways handler comes before the tap detector in the modifier
+ * chain, so its Final-pass consumption reaches the tap detector but not the pager above. A vertical drag cancels the tap detector before its
  * long-press timeout, so the surrounding VerticalPager still owns normal episode swipes.
  * enabled controls both touch and accessibility clicks; a paused player can keep this layer
  * enabled and decide whether to accept a hold in its callback without losing tap-to-resume.
@@ -180,36 +181,6 @@ internal fun PlayerInteractionLayer(
                 } else false
             }
         }
-        .pointerInput(enabled, foreground, lifecycle, onDoubleTap != null) {
-            if (!enabled || !foreground) return@pointerInput
-            try {
-                detectTapGestures(
-                    onPress = {
-                        try { tryAwaitRelease() }
-                        finally { releaseHold() }
-                    },
-                    onDoubleTap = if (onDoubleTap == null) null else { position ->
-                        if (currentEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-                            currentDoubleTap?.invoke(position.x / size.width.coerceAtLeast(1))
-                    },
-                    onTap = { position ->
-                        if (currentEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-                            currentTap(position.x / size.width.coerceAtLeast(1))
-                    },
-                    onLongPress = { position ->
-                        if (currentEnabled &&
-                            lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !holding) {
-                            holding = true
-                            // A short buzz confirms that holding switched to 2×.
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            currentHoldChange(true)
-                        }
-                    },
-                )
-            } finally {
-                releaseHold()
-            }
-        }
         .pointerInput(enabled, foreground, lifecycle, onSeekDrag != null) {
             if (!enabled || !foreground || onSeekDrag == null) return@pointerInput
             var taken = false
@@ -242,12 +213,18 @@ internal fun PlayerInteractionLayer(
                             continue
                         }
                         // Before the long press a drag is never a seek. A clearly sideways swipe does nothing at all:
-                        // consuming it cancels the tap and the long press, while other movement stays the pager's.
+                        // consuming it cancels the tap and the long press. It is consumed only on the Final pass, after
+                        // the VerticalPager above has seen the event: a Main-pass consumption made the pager drop the
+                        // whole gesture, so a thumb swipe that opened with a short sideways arc never changed the
+                        // episode. The tap detector below this modifier checks the Final pass and still cancels.
                         if (!holding) {
                             val moved = change.position - down.position
                             if (!swipedSideways && kotlin.math.abs(moved.x) > viewConfiguration.touchSlop &&
                                 isSidewaysDrag(moved.x, moved.y)) swipedSideways = true
-                            if (swipedSideways) change.consume()
+                            if (swipedSideways) {
+                                awaitPointerEvent(PointerEventPass.Final).changes
+                                    .firstOrNull { it.id == down.id }?.consume()
+                            }
                             continue
                         }
                         val anchor = anchorX ?: change.position.x.also { anchorX = it }
@@ -265,6 +242,36 @@ internal fun PlayerInteractionLayer(
                 }
             } finally {
                 finish(SeekDragPhase.CANCEL)
+            }
+        }
+        .pointerInput(enabled, foreground, lifecycle, onDoubleTap != null) {
+            if (!enabled || !foreground) return@pointerInput
+            try {
+                detectTapGestures(
+                    onPress = {
+                        try { tryAwaitRelease() }
+                        finally { releaseHold() }
+                    },
+                    onDoubleTap = if (onDoubleTap == null) null else { position ->
+                        if (currentEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+                            currentDoubleTap?.invoke(position.x / size.width.coerceAtLeast(1))
+                    },
+                    onTap = { position ->
+                        if (currentEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+                            currentTap(position.x / size.width.coerceAtLeast(1))
+                    },
+                    onLongPress = { position ->
+                        if (currentEnabled &&
+                            lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !holding) {
+                            holding = true
+                            // A short buzz confirms that holding switched to 2×.
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            currentHoldChange(true)
+                        }
+                    },
+                )
+            } finally {
+                releaseHold()
             }
         })
 }

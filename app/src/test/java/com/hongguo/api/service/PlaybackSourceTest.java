@@ -58,6 +58,10 @@ public class PlaybackSourceTest {
         AppSource.setPlaybackPostForTest(null);
         // 默认让 video_tab 不可用，覆盖旧接口回退路径；需要新接口的用例自行注入。
         AppSource.setPlaybackTabForTest((vid, identity) -> null);
+        // 默认让单集接口回空，覆盖旧路径；需要单集接口的用例自行注入。
+        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+            throw new AppSource.EmptyPlaybackResponseException();
+        });
     }
 
     @After public void restore() {
@@ -65,6 +69,7 @@ public class PlaybackSourceTest {
         PlaybackDevice.resetForTest(null);
         AppSource.setPlaybackPostForTest(null);
         AppSource.setPlaybackTabForTest(null);
+        AppSource.setSinglePlaybackForTest(null);
     }
 
     // ==================== ttEncrypt 注册请求体 ====================
@@ -320,6 +325,66 @@ public class PlaybackSourceTest {
         AppSource.setPlaybackPostForTest((body, identity, host) -> response("7600000000000000001", good));
         assertEquals("https://v1.qznovelvod.com/1080.mp4", AppSource.fetch("7600000000000000001", "auto").url);
         assertEquals(1, tabs.get());
+    }
+
+    // ==================== 单集接口（2026-11-11） ====================
+
+    @Test public void singlePlaybackSucceedsWithoutCallingLegacyPaths() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        AtomicInteger legacy = new AtomicInteger();
+        Stream.VideoTrack track = new Stream.VideoTrack();
+        track.url = "https://v1.qznovelvod.com/single.mp4";
+        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> track);
+        AppSource.setPlaybackTabForTest((vid, identity) -> { legacy.incrementAndGet(); return null; });
+        AppSource.setPlaybackPostForTest((body, identity, host) -> { legacy.incrementAndGet(); throw new IOException(); });
+        assertSame(track, AppSource.fetch("7600000000000000001", "auto"));
+        assertEquals(0, legacy.get());
+    }
+
+    @Test public void emptySingleReplyFallsBackToLegacyRoutes() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        Map<String, Object> good = Json.obj();
+        List<Object> list = Json.arr();
+        list.add(item("h264", 1080, 1920, "https://v1.qznovelvod.com/legacy.mp4", VALID_SPADE));
+        good.put("video_list", list);
+        AppSource.setPlaybackTabForTest((vid, identity) -> response(vid, good));
+        assertEquals("https://v1.qznovelvod.com/legacy.mp4", AppSource.fetch("7600000000000000001", "auto").url);
+    }
+
+    @Test public void singleModelErrorIsReportedWhenLegacyRoutesAreEmpty() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+            throw new IllegalStateException("本集仅提供 ByteVC2");
+        });
+        AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+        try {
+            AppSource.fetch("7600000000000000001", "auto");
+            fail();
+        } catch (AppSource.EmptyPlaybackResponseException e) {
+            fail("单集接口的模型错误应优先于旧路径的空响应");
+        } catch (IllegalStateException e) {
+            assertEquals("本集仅提供 ByteVC2", e.getMessage());
+        }
+    }
+
+    @Test public void inlineMapDoesNotRequireFallbackUrl() throws Exception {
+        String vid = "7600000000000000001";
+        Map<String, Object> list = Json.obj();
+        list.put("video_1", item("h264", 720, 1280, "https://v1.qznovelvod.com/test.mp4", VALID_SPADE));
+        Map<String, Object> model = Json.obj();
+        model.put("video_list", list);
+        assertEquals("https://v1.qznovelvod.com/test.mp4", AppSource.parseModel(vid, response(vid, model), "auto").url);
+    }
+
+    @Test public void singleUrlIsSortedAndUsesSingleVersion() {
+        PlaybackDevice.Identity id = new PlaybackDevice.Identity("1111", "2222", "cd", "");
+        String url = AppSource.singleUrl(id, 1700000000123L);
+        assertTrue(url.startsWith("https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/?_rticket=1700000000123&ac=wifi&"));
+        assertTrue(url.contains("&device_id=1111&"));
+        assertTrue(url.contains("&iid=2222&"));
+        assertTrue(url.contains("&version_code=73532&version_name=7.3.5.32"));
+        assertFalse(url.contains("pv_player"));
+        assertFalse(url.contains("cdid"));
     }
 
     @Test public void unusableModelOnEveryRouteReportsTheModelError() throws Exception {

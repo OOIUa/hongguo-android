@@ -1,3 +1,14 @@
+# 0.7.26 单集取流接口与完整签名、修复起手偏横的上下滑
+
+验证日期：2026-11-11（Asia/Shanghai）。versionName 0.7.26、versionCode 37。
+
+- 播放：北京时间 2026-11-11 中午起，多集接口的全部路径（签名 GET `video_tab`、签名 POST、两个主机、不同版本号与新注册身份）都只回 HTTP 200 + 0 字节，剧集列表等接口正常；hongguo-drama 6.8、hongguoTV、hongguo-web 同时失效。`AppSource.fetch` 改为先用同一注册身份请求 `POST /novel/player/video_model/v1/`（7.3.5.32 设备参数、按键名排序的 query），由新的 `PlayerSign` 计算完整 x-gorgon / x-argus / x-ladon（同步自 LiuWQ0809/hongguo-android，算法源自 Xanerix/guoapp，见 THIRD_PARTY_NOTICES）；失败再按原顺序试旧路径，单集接口的模型错误优先于旧路径空响应报告。内联 `video_list` 也接受对象 map。
+- 实网（JDK 17 直接运行 Java 核心）：两部剧共 8 集（含原来只有 ByteVC2 的《谁让这个文盲修仙的第六季》第 2、7、58 集，以及无 `encrypt_info` 的明文第 14、22 集）都由单集接口取到片源，完整下载、解密后由 AVFoundation 在开头、中段、结尾各解码一帧（hvc1 720P/1080P）。
+- 上下滑：播放页拖动进度手势在 0.7.21 加入「明显横滑不做任何事」，一旦起手横向位移先超过触摸阈值，就在 Main pass 消费整次手势的后续事件，外层 VerticalPager 在达到纵向阈值前看到被消费的事件即放弃该手势，起手带一点横向弧线的上下滑因此切不了集。改为只在 Final pass 消费（翻页器已先看过事件），并把该处理放到点击检测之前，使点击与长按 2× 仍被取消。新增仪器测试 `swipeThatStartsSidewaysStillChangesThePage`：修改前失败（页码保持 0），修改后通过。
+- 模拟器（Medium_Phone_API_37.0）实机操作：推荐页「立即播放」出画面；直滑切到第 2 集；起手先横移约 100px 再上滑约 1600px 切到第 3 集。
+- 模拟器仪器测试：PlayerHoldSpeedGestureTest、PlayerControlsTest、PlayerInsetsTest、PlayerSidePanelTest 共 24 项通过。`VerticalPlayerFlowTest` 与 `AccountUiFlowTest` 仍按旧版首页的 `home_search` 查找控件，而首页加载动画使 Compose 一直不空闲，两者都会挂起，与本次改动无关，未计入。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`:app:assembleDebug :app:testDebugUnitTest :app:lintDebug` 通过（356 项单元测试，新增签名逐字节对照、单集请求参数、三种模型形态、单集优先与回退顺序、对象 map 内联片源）。
+
 # 0.7.25 ByteVC2 分集改取 H.265、预约上线时间
 
 验证日期：2026-11-10（Asia/Shanghai）。versionName 0.7.25、versionCode 36。来源：issue #3（《谁让这个文盲修仙的第六季》第 58 集「准备播放失败，请检查网络后重试」，重试无效；希望像官方一样显示预约剧集的上线时间）。

@@ -167,6 +167,42 @@ class PlayerHoldSpeedGestureTest {
         }
     }
 
+    /**
+     * A thumb swipe often starts with a short sideways arc before going up. That opening must not cost the pager the
+     * swipe: the page still changes, and the gesture neither taps, holds nor seeks.
+     */
+    @Test fun swipeThatStartsSidewaysStillChangesThePage() {
+        val phases = mutableListOf<SeekDragPhase>()
+        var taps = 0
+        val holds = mutableListOf<Boolean>()
+        lateinit var pager: PagerState
+        compose.setContent {
+            MaterialTheme {
+                pager = rememberPagerState(pageCount = { 3 })
+                VerticalPager(pager, Modifier.fillMaxSize()) {
+                    PlayerInteractionLayer(Modifier.testTag("gesture_layer"), onTap = { taps++ }, onHoldSpeedChange = holds::add,
+                        onSeekDrag = { phase, _ -> phases += phase; true })
+                }
+            }
+        }
+        compose.onNodeWithTag("gesture_layer").performTouchInput {
+            val slop = viewConfiguration.touchSlop
+            val start = Offset(width * .4f, height * .8f)
+            down(start)
+            // Sideways first: well past the touch slop with almost no vertical movement.
+            for (step in 1..4) moveTo(start + Offset(slop * .8f * step, -slop * .1f * step))
+            // Then a long upward swipe.
+            for (step in 1..12) moveTo(start + Offset(slop * 3.5f, -height * .05f * step))
+            up()
+        }
+        compose.runOnIdle {
+            assertEquals("the swipe changes the episode", 1, pager.currentPage)
+            assertTrue(phases.isEmpty())
+            assertEquals(0, taps)
+            assertFalse(holds.any { it })
+        }
+    }
+
     @Test fun refusedDragNeitherSeeksNorTaps() {
         val phases = mutableListOf<SeekDragPhase>()
         var taps = 0

@@ -4,7 +4,7 @@
 
 - GitHub 仓库：[OOIUa/hongguo-android](https://github.com/OOIUa/hongguo-android)。
 - 首个支持在线更新的版本：`0.3.0`，`versionCode=3`，tag 为 `v0.3.0`。
-- 当前源码版本：`0.7.25`，`versionCode=36`，tag 为 `v0.7.25`；修复部分新剧（如《谁让这个文盲修仙的第六季》约一半分集）只提供 ByteVC2 编码导致「准备播放失败」（备用接口改为先请求 `codec_type=1` 取 H.265，再试旧的 H.264 参数），这类分集不再提示检查网络；详情页「相关作品」的待上线作品和账号预约列表显示预计上线日期（issue #3）；0.7.24 起从播放页点剧名进入详情后返回会回到播放页接着播放（之前直接回到首页）；横屏点剧名改为从左侧半屏展开详情；横屏顶栏不再给隐藏的状态栏留高度，标题上移；横屏底部改为时间、进度条、总时长一行加播放按钮一行，并避开左右刘海；0.7.23 起横屏全屏去掉进度条上方的剧名行（issue #5 误触），收藏移到顶栏，点击顶栏剧名进入详情，选集与收藏从右侧半屏滑出；倍速改为按钮上方的竖向列表；竖屏剧名只有文字可点；0.7.22 起移除左右两侧双击快进 / 快退，双击任意位置暂停或继续，进度只能长按 2 倍速后左右拖动调整；0.7.21 起修复第二季等部分分集「该集片源暂时不可用」（未加密分集不带加密信息时按明文播放并校验媒体索引，单条请求路径解析失败继续试其他路径）；拖动进度改为先长按 2 倍速再左右拖动，下拉通知栏不再误触；竖屏清屏与长按 2 倍速只隐藏播放器控件、保留系统栏；小窗自动播下一集不再卡住或显示剧名；0.7.20 起播放页可调整进度；0.7.19 起修复偶发播放失败（片源 CDN 切换节点时不再误判为片源已更新，分段读取失败自动重试）；长按视频左侧或右侧都可临时 2 倍速；播放页手势参考 B 站（轻点显示或隐藏控件，双击中间暂停或继续，双击两侧快退或快进 10 秒），点击播放页的短剧名称回到详情页。
+- 当前源码版本：`0.7.26`，`versionCode=37`，tag 为 `v0.7.26`；修复 2026-11-11 起所有剧集「播放接口返回空响应」无法播放：取流改为先走带完整 x-argus / x-ladon 签名的单集接口 `/novel/player/video_model/v1/`，失败再试旧接口；修复播放页起手略偏横向的上下滑动被整个吞掉、无法切集的问题。
 - 账号功能仍处于测试阶段。发行说明需简要说明官网验证、固定批次片单及可选进度上报的使用范围，实际登录与同步结果需用本人账号核对。
 - 应用 ID：`com.hongguo.android`；当前最低系统为 API 26。
 - 固定清单地址：`https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json`。
@@ -24,13 +24,13 @@
 
 ## 构建与验证
 
-在保有原签名密钥的机器上构建。例如准备 0.7.25：
+在保有原签名密钥的机器上构建。例如准备 0.7.26：
 
 ```powershell
-.\gradlew.bat -PappVersionCode=36 -PappVersionName=0.7.25 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+.\gradlew.bat -PappVersionCode=37 -PappVersionName=0.7.26 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-当前版本 APK 来自 `app/build/outputs/apk/debug/app-debug.apk`。后续版本应严格增加 `appVersionCode`，例如 0.7.26 使用 37；版本名可为三段或四段数字（如 0.7.5.1）；不要通过提高 `versionName`、修改 tag 或替换清单来绕过 versionCode 检查。
+当前版本 APK 来自 `app/build/outputs/apk/debug/app-debug.apk`。后续版本应严格增加 `appVersionCode`，例如 0.7.27 使用 38；版本名可为三段或四段数字（如 0.7.5.1）；不要通过提高 `versionName`、修改 tag 或替换清单来绕过 versionCode 检查。
 
 发布前核对最终 APK 的真实包名、versionCode、versionName、minSdk 和签名证书。清单中的版本名称和最低系统版本必须与 APK 完全一致。若构建后又重新签名或改动 APK，必须重新计算文件大小及 SHA-256。
 
@@ -79,7 +79,7 @@ pwsh -File scripts/prepare-release.ps1
 1. 将本次对应的应用源码、Gradle wrapper、构建配置、许可证和改动说明提交至仓库，再创建对应 tag。
 2. 在该 tag 创建 release，可先保留为草稿，上传脚本生成的 APK、源码 ZIP、`update.json` 和 `SHA256SUMS-<版本>.txt`。签名公开指纹与版本说明也可一并提供，私钥始终留在本地。
 3. 确认该 tag 可以取得对应完整源码。应用按 GPL-3.0-only 分发，不能只上传 APK 而遗漏该版本的对应源码；来源和通知见 `THIRD_PARTY_NOTICES.md`。
-4. 发布为**非草稿、非 prerelease** 的正式 release，并使其成为 Latest。0.7.25 对应 tag 为 `v0.7.25`；prerelease 不用于本应用固定的 latest 清单入口。
+4. 发布为**非草稿、非 prerelease** 的正式 release，并使其成为 Latest。0.7.26 对应 tag 为 `v0.7.26`；prerelease 不用于本应用固定的 latest 清单入口。
 5. 匿名访问固定的 `latest/download/update.json`，确认可经 HTTPS 重定向取得新清单；再校验清单指向的 tag、APK 文件名、真实文件大小及哈希。此过程不应需要 GitHub 账号或 token。
 6. 在已装旧版本且签名一致的测试设备上，手动检查更新，核对显示版本、下载进度、安装来源权限、系统安装交接与安装后的数据保留。
 

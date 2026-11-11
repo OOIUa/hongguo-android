@@ -1,5 +1,6 @@
 package com.hongguo.api.service;
 
+import com.hongguo.api.core.PlayerSign;
 import com.hongguo.api.core.PureSign;
 import com.hongguo.api.core.Spade;
 import com.hongguo.api.util.Crypto;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * App 取直链，移植自 jackotom/hongguo-drama 的 src/native/app-source.js。
@@ -124,6 +126,21 @@ public final class AppSource {
         Exception failure = null;
         Exception modelFailure = null;
         IOException renewal = null;
+        // 2026-11-11 起旧的多集接口（GET video_tab / POST）对占位 argus/ladon 一律回空，先走完整签名的单集接口；
+        // 它失败时再按原顺序试旧路径。
+        try {
+            return singlePlayback.get(vid, quality, identity);
+        } catch (InterruptedIOException e) {
+            throw e;
+        } catch (EmptyPlaybackResponseException e) {
+            // 与旧路径的空响应同类，交给后面的路径。
+        } catch (PlaybackHttpException | IOException e) {
+            if (Thread.currentThread().isInterrupted()) throw e;
+            failure = e;
+        } catch (Exception e) {
+            if (Thread.currentThread().isInterrupted()) throw e;
+            modelFailure = e;
+        }
         for (PlaybackRoute route : PLAYBACK_ROUTES) {
             if (System.currentTimeMillis() - started >= PLAYBACK_BUDGET_MS) break;
             if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("播放请求已取消");
@@ -215,6 +232,17 @@ public final class AppSource {
         playbackPost = post == null ? AppSource::postPlayback : post;
     }
 
+    /** 可替换的单集取流（JVM 测试注入）；生产实现见 {@link #fetchSingle}。 */
+    interface SinglePlayback {
+        Stream.VideoTrack get(String vid, String quality, PlaybackDevice.Identity identity) throws Exception;
+    }
+
+    private static SinglePlayback singlePlayback = AppSource::fetchSingle;
+
+    static void setSinglePlaybackForTest(SinglePlayback playback) {
+        singlePlayback = playback == null ? AppSource::fetchSingle : playback;
+    }
+
     /** 可替换的 video_tab 请求（JVM 测试注入）；返回 null 表示该接口不可用、应回退旧流程。 */
     interface PlaybackTab {
         Map<String, Object> get(String vid, PlaybackDevice.Identity identity) throws Exception;
@@ -256,8 +284,11 @@ public final class AppSource {
             throw new IllegalStateException("App 接口未返回 video_model");
         }
 
-        // ---- 2. 片源模型：新版直接内联 video_list，旧版跟随 fallback_api 二次请求 ----
-        if (Json.optArr(model.get("video_list")).isEmpty()) {
+        // ---- 2. 片源模型：新版直接内联 video_list（数组或对象 map），旧版跟随 fallback_api 二次请求 ----
+        Object inlineList = model.get("video_list");
+        boolean inline = inlineList instanceof List && !((List<?>) inlineList).isEmpty()
+                || inlineList instanceof Map && !((Map<?, ?>) inlineList).isEmpty();
+        if (!inline) {
             return fallbackTrack(readFallback(model), parseFallback(model.get("fallback_api")), quality);
         }
         try {
@@ -677,6 +708,98 @@ public final class AppSource {
     /** 与官方请求一致：* 不编码，其余同 {@link #pyEncode}。 */
     private static String queryEncode(String raw) {
         return pyEncode(raw).replace("%2A", "*");
+    }
+
+    // ==================== 单集接口（2026-11-11） ====================
+    // 同步自 LiuWQ0809/hongguo-android（commits 675f895、10bda56、1765bfa，2026-11-11，GPL-3.0）。
+
+    /** 单集接口地址。 */
+    private static final String SINGLE_API = "https://" + VIDEO_API_HOST + "/novel/player/video_model/v1/";
+    private static final String SINGLE_VERSION_CODE = "73532";
+    private static final String SINGLE_VERSION_NAME = "7.3.5.32";
+
+    /** 单集接口使用 7.3.5.32 播放器身份；query 按键名排序，签名就对这串最终发送的 query 计算。 */
+    static String singleUrl(PlaybackDevice.Identity identity, long now) {
+        Map<String, Object> q = new TreeMap<>(deviceBase());
+        for (String name : new String[]{"host_abi", "dragon_device_type", "pv_player", "compliance_status",
+                "need_personal_recommend", "player_so_load", "is_android_pad_screen"}) {
+            q.remove(name);
+        }
+        for (String name : new String[]{"version_code", "manifest_version_code", "update_version_code"}) {
+            q.put(name, SINGLE_VERSION_CODE);
+        }
+        q.put("version_name", SINGLE_VERSION_NAME);
+        q.put("device_id", identity.deviceId);
+        q.put("iid", identity.iid);
+        q.put("_rticket", now);
+        StringBuilder query = new StringBuilder();
+        for (Map.Entry<String, Object> e : q.entrySet()) {
+            if (query.length() > 0) query.append('&');
+            query.append(Http.urlencode(e.getKey())).append('=').append(Http.urlencode(String.valueOf(e.getValue())));
+        }
+        return SINGLE_API + "?" + query;
+    }
+
+    /** 单集接口请求体。 */
+    static byte[] singleBody(String vid) {
+        Map<String, Object> biz = Json.obj();
+        biz.put("need_all_video_definition", true);
+        biz.put("video_platform", 3);
+        Map<String, Object> payload = Json.obj();
+        payload.put("video_id", vid);
+        payload.put("content_type", 1);
+        payload.put("biz_param", biz);
+        return Json.stringify(payload).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** 完整签名的单集 POST；空正文按空响应处理，模型交给 {@link #parseModel}（ByteVC2 与备用片源规则不变）。 */
+    private static Stream.VideoTrack fetchSingle(String vid, String quality, PlaybackDevice.Identity identity)
+            throws Exception {
+        byte[] body = singleBody(vid);
+        long now = System.currentTimeMillis();
+        String url = singleUrl(identity, now);
+        Http.Req req = new Http.Req(url).method("POST").timeout(PLAYBACK_TIMEOUT_MS);
+        req.followRedirect = false;
+        req.header("User-Agent", VIDEO_UA.replace("71332", SINGLE_VERSION_CODE));
+        req.header("Accept", "application/json");
+        req.header("Content-Type", "application/json; charset=utf-8");
+        req.header("x-xs-from-web", "0");
+        req.header("sdk-version", "2");
+        for (Map.Entry<String, String> e : PlayerSign.headers(URI.create(url).getRawQuery(), body, now,
+                identity.deviceId).entrySet()) {
+            req.header(e.getKey(), e.getValue());
+        }
+        req.body(body);
+        Http.Resp res = Http.send(req);
+        if (res.status != 200) throw new PlaybackHttpException(res.status);
+        return parseModel(vid, parseSingleResponse(vid, res.text()), quality);
+    }
+
+    /** 单集接口把模型放在 {@code data.video_model}（对象、JSON 字符串或 Base64）；整理成 parseModel 的形态。 */
+    static Map<String, Object> parseSingleResponse(String vid, String text) {
+        if (vid == null || !vid.matches("\\d{1,30}")) throw new IllegalArgumentException("分集编号无效");
+        Map<String, Object> root = parsePlaybackResponse(text);
+        Object code = root.containsKey("code") ? root.get("code") : root.get("Code");
+        if (code == null || Json.optInt(code, -1) != 0) throw new IllegalStateException("单集接口暂未提供播放信息");
+        Map<String, Object> data = Json.optObj(root.get("data"));
+        Object raw = data == null ? null : data.get("video_model");
+        if (raw instanceof String && !((String) raw).trim().startsWith("{")) {
+            try {
+                raw = new String(Crypto.base64Decode(((String) raw).trim()), StandardCharsets.UTF_8);
+            } catch (Exception ignored) {
+                throw new IllegalStateException("单集播放信息格式无效");
+            }
+        }
+        Map<String, Object> model = asObject(raw);
+        if (model.isEmpty()) throw new IllegalStateException("单集接口未返回播放模型");
+        Map<String, Object> entry = Json.obj();
+        entry.put("video_model", model);
+        Map<String, Object> episodes = Json.obj();
+        episodes.put(vid, entry);
+        Map<String, Object> result = Json.obj();
+        result.put("code", 0L);
+        result.put("data", episodes);
+        return result;
     }
 
     /** video_tab 接口地址（与旧接口同主机）。 */

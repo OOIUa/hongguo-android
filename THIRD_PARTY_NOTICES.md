@@ -131,3 +131,11 @@ When every rendition of the fallback model is ByteVC2, `AppSource.fallbackTrack`
   https://github.com/tsukiyo-zero/hongguoTV/tree/265472f2d310f1f979dfcbb325e9453c6582fc96/kotlin-tv
 
 Local changes: inline models whose rows are all ByteVC2 also go to the fallback; the other query parameters are kept byte-for-byte; the answer is still filtered by its actual codec, and a replacement that declares another video id or a full duration more than 0.5 s apart is refused. Not verified against a live ByteVC2-only episode.
+
+### Single-episode endpoint and player signature (2026-11-11)
+
+From 2026-11-11 every multi-episode playback route (signed GET `video_tab`, signed POST, both hosts) answered 200 with an empty body; the placeholder `x-argus` / `x-ladon` produced by `PureSign` are no longer accepted. `core/PlayerSign.java` computes the full `x-gorgon`, `x-argus` and `x-ladon`, and `AppSource.fetch` first posts to `/novel/player/video_model/v1/` (7.3.5.32 profile, sorted query) with the request's registered identity, then tries the earlier routes. Synchronized from LiuWQ0809/hongguo-android, commits `3eaf813` (`PlayerSign.java`), `675f895`, `10bda56`, `1765bfa` and `5a29948` (2026-11-11), GPL-3.0-only; its signature algorithm cites Xanerix/guoapp `ad8dc125` (GPL-3.0).
+  https://github.com/LiuWQ0809/hongguo-android/tree/1267cdb
+  https://github.com/Xanerix/guoapp
+
+Local changes: the single model goes through the same `parseModel` rules (ByteVC2, fallback, undeclared plain rows); its model error is reported ahead of empty answers from the old routes; no cookie is sent with the single request, as upstream verified. Anonymous live check on 2026-11-11: 8 episodes from two series, including previously ByteVC2-only episodes, were downloaded in full, decrypted and decoded (hvc1 720P/1080P).
