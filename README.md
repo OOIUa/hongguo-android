@@ -222,3 +222,13 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 本 Android 应用按 **GPL-3.0-only** 分发。协议与媒体核心参考 [sunnysky123/hongguo-web](https://github.com/sunnysky123/hongguo-web)，其中部分实现注明来自 [jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama)；保留原有来源注释及 MIT / GPL 通知。
 
 完整条款、来源版本与改动说明见 [LICENSE](LICENSE) 和 [第三方通知](THIRD_PARTY_NOTICES.md)。发布 APK 时应同时提供该版本对应的完整源码与构建文件。
+
+## Star History
+
+<a href="https://www.star-history.com/#OOIUa/hongguo-android&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=OOIUa/hongguo-android&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=OOIUa/hongguo-android&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=OOIUa/hongguo-android&type=Date" />
+  </picture>
+</a>
