@@ -16,14 +16,14 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.26**（versionCode 37）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.27**（versionCode 38）· Android **8.0 / API 26** 及以上。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.26 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.26/hongguo-android-0.7.26.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.26/hongguo-android-0.7.26.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.26/hongguo-android-0.7.26.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.26 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.26/hongguo-android-0.7.26-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.26/SHA256SUMS-0.7.26.txt) |
+| GitHub 直连 | [下载 v0.7.27 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/hongguo-android-0.7.27.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/hongguo-android-0.7.27.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/hongguo-android-0.7.27.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.27 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/hongguo-android-0.7.27-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/SHA256SUMS-0.7.27.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 

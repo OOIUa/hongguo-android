@@ -1,3 +1,12 @@
+# 0.7.27 排行榜改读内联数据、收藏改读新书架列表、预约拒绝如实提示
+
+验证日期：2026-11-12（Asia/Shanghai）。versionName 0.7.27、versionCode 38。来源：issue #6（收藏读取失败）、#7（无法预约）、#8（排行榜接口已失效）。
+
+- 排行榜（#8）：官网榜单页不再输出带 `content` 载荷的 `data-fn-args`，改为内联 `_ROUTER_DATA = {...}`，数据位于 `loaderData["rank_<route>/page"].content`。解析器先读内联数据，旧格式保留兜底。实网：综合、真人剧、漫剧、AI 剧四榜第 1 页及综合第 2 页各 20 条、共 5 页；模拟器（Medium_Phone_API_37.0）中四个分榜均正常显示。
+- 收藏（#6）：匿名注册设备实测 `bookshelf/video/info/v1/` 返回 `code 0 + data:null`，原解析器视为格式变化而报「收藏读取失败」；官方新版（据 Zxingtsai/HG-ATV 对 7.4.1.32 的静态分析）改用 `bookshelf/video/list/v1/`，匿名实测返回 `{video_shelf_info:[], max_bookshelf_cnt}`。改为先读 list，再用 multi-detail 分批补名称（最近 200 部）；list 失败回退 info，list 为空时再试 info 且 info 的空数据按空书架处理，登录失效不被回退掩盖。**未经本人登录账号实测。**
+- 预约（#7）：匿名设备下 `search/uncover_subscribe/v1/` 一律返回 `101144 HIT_SHARK_RULE`（换真签名、版本号、加 `shark_extra`、不压缩正文均同），加收藏写入亦同。现在服务端业务码拒绝时提示「红果风控拒绝了本次预约（错误码 101144），未写入账号」，HTTP 错误仍提示结果不确定。登录账号下是否同样被风控拦截**尚未验证**，本版不能视为已修复预约。
+- 本机构建（macOS arm64，Temurin JDK 17.0.21，原 debug 签名）：`clean :app:assembleDebug :app:testDebugUnitTest :app:lintDebug` 通过（363 项单元测试，新增内联榜单、轻量书架与回退、预约拒绝提示；lint 0 错误）。
+
 # 0.7.26 单集取流接口与完整签名、修复起手偏横的上下滑
 
 验证日期：2026-11-11（Asia/Shanghai）。versionName 0.7.26、versionCode 37。

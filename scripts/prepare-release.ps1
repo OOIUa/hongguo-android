@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复从今天起所有剧集提示「播放接口返回空响应」无法播放的问题（改用带完整签名的单集取流接口）；修复播放页上下滑动起手略偏横向时滑不动、无法切集的问题。'
+        notes = '修复排行榜打不开（官网改版）；修复收藏提示「收藏读取失败」（改读官方新版书架列表）；预约被红果拒绝时明确提示未写入账号。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)
