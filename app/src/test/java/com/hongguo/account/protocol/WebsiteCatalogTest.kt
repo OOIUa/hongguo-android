@@ -34,6 +34,23 @@ class WebsiteCatalogTest {
         assertEquals(5, result.totalPages)
     }
 
+    /** Shape served since 2026-11-11 (issue #8): loader data inline, the fn-args call carries no payload. */
+    private fun inlinePage(route: String, number: Int = 1) = """<html><script async="" data-script-src="modern-inline">_ROUTER_DATA = {"loaderData":{"rank_layout":null,
+        "rank_${route}/page":{"pageNum":$number,"content":{"isSuccess":true,"rankList":[
+        {"id":"801","seriesId":"801","rank":1,"title":"甲</b>","cover":"https://p.example.invalid/1.jpg","heatText":"8835万热度","episodeCount":120},
+        {"seriesId":"802","rank":2,"title":"乙"}],"pagination":{"pageNum":$number,"totalPages":5}}}},"errors":null};
+        function runWindowFn(){}</script><script async="" data-fn-name="mergeLoaderData" data-fn-args="[&quot;rank_$route/page&quot;,[]]">runWindowFn();</script></html>"""
+
+    @Test fun parsesTheInlineRouterData() {
+        val result = WebsiteCatalog.parseRank(inlinePage("hot-comic-drama", 2), RankBoard.COMIC, 2)
+        assertEquals(listOf("801", "802"), result.entries.map { it.series.id })
+        assertEquals("https://p.example.invalid/1.jpg", result.entries[0].series.cover)
+        assertEquals(120, result.entries[0].episodeCount)
+        assertEquals(5, result.totalPages)
+        assertThrows(AccountProtocolException::class.java) { WebsiteCatalog.parseRank(inlinePage("hot-drama"), RankBoard.COMIC, 1) }
+        assertThrows(AccountProtocolException::class.java) { WebsiteCatalog.parseRank(inlinePage("hot-comic-drama", 3), RankBoard.COMIC, 1) }
+    }
+
     @Test fun rejectsAnotherBoardFailureOrPageMismatch() {
         assertThrows(AccountProtocolException::class.java) { WebsiteCatalog.parseRank(page("hot-ai-drama"), RankBoard.ALL, 1) }
         assertThrows(AccountProtocolException::class.java) { WebsiteCatalog.parseRank(page("hot-drama", success = false), RankBoard.ALL, 1) }

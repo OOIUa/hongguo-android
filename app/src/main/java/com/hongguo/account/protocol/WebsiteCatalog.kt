@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 
 enum class RankBoard(val label: String, val route: String) {
     ALL("综合", "hot-drama"), REAL("真人剧", "hot-real-drama"), COMIC("漫剧", "hot-comic-drama"), AI("AI 剧", "hot-ai-drama");
@@ -45,9 +46,11 @@ class WebsiteCatalogClient internal constructor(http: OkHttpClient, private val 
 }
 
 internal object WebsiteCatalog {
+    private const val ROUTER_DATA = "_ROUTER_DATA = "
     private val ARGUMENTS = listOf(Regex("data-fn-args='([^']*)'"), Regex("data-fn-args=\"([^\"]*)\""))
 
     fun parseRank(html: String, board: RankBoard, page: Int): RankPage {
+        inlineRankContent(html, board)?.let { return rankPage(it, page) }
         for (pattern in ARGUMENTS) for (match in pattern.findAll(html)) {
             val args = try { JSONArray(decodeEntities(match.groupValues[1])) } catch (_: Exception) { continue }
             if (args.optString(0) != board.loader || args.optString(1) != "content") continue
@@ -56,22 +59,38 @@ internal object WebsiteCatalog {
                 is String -> try { JSONObject(raw) } catch (_: Exception) { continue }
                 else -> continue
             }
-            if (!payload.optBoolean("isSuccess")) throw AccountProtocolException("榜单暂不可用")
-            val rows = payload.optJSONArray("rankList") ?: throw AccountProtocolException("榜单格式已变化")
-            val paging = payload.optJSONObject("pagination") ?: throw AccountProtocolException("榜单分页信息缺失")
-            val total = paging.optInt("totalPages", 0)
-            if (total < 1 || paging.optInt("pageNum", page) != page) throw AccountProtocolException("榜单分页信息异常")
-            val entries = rows.objects().mapNotNull { row ->
-                val id = row.str("seriesId").ifEmpty { row.str("id") }
-                val title = row.str("title")
-                if (!id.matches(Regex("[0-9]{1,30}")) || title.isBlank()) return@mapNotNull null
-                val count = row.optInt("episodeCount", row.optJSONArray("episodeVids")?.length() ?: 0).coerceAtLeast(0)
-                RankEntry(Series(id, title, cleanUrl(row.str("cover")), row.str("description"),
-                    if (count > 0) "全 $count 集" else row.str("heatText")), row.optInt("rank").coerceAtLeast(0), row.str("heatText"), count)
-            }.distinctBy { it.series.id }
-            return RankPage(entries, page, minOf(total, 100))
+            return rankPage(payload, page)
         }
         throw AccountProtocolException("榜单格式已变化")
+    }
+
+    /** Since 2026-11-11 the site renders the whole loader result inline as `_ROUTER_DATA = {...}`
+     *  (loaderData["rank_<route>/page"].content); the streamed data-fn-args payload is gone. */
+    private fun inlineRankContent(html: String, board: RankBoard): JSONObject? {
+        var at = html.indexOf(ROUTER_DATA)
+        while (at >= 0) {
+            val root = try { JSONTokener(html.substring(at + ROUTER_DATA.length)).nextValue() as? JSONObject } catch (_: Exception) { null }
+            root?.optJSONObject("loaderData")?.optJSONObject(board.loader)?.optJSONObject("content")?.let { return it }
+            at = html.indexOf(ROUTER_DATA, at + ROUTER_DATA.length)
+        }
+        return null
+    }
+
+    private fun rankPage(payload: JSONObject, page: Int): RankPage {
+        if (!payload.optBoolean("isSuccess")) throw AccountProtocolException("榜单暂不可用")
+        val rows = payload.optJSONArray("rankList") ?: throw AccountProtocolException("榜单格式已变化")
+        val paging = payload.optJSONObject("pagination") ?: throw AccountProtocolException("榜单分页信息缺失")
+        val total = paging.optInt("totalPages", 0)
+        if (total < 1 || paging.optInt("pageNum", page) != page) throw AccountProtocolException("榜单分页信息异常")
+        val entries = rows.objects().mapNotNull { row ->
+            val id = row.str("seriesId").ifEmpty { row.str("id") }
+            val title = row.str("title")
+            if (!id.matches(Regex("[0-9]{1,30}")) || title.isBlank()) return@mapNotNull null
+            val count = row.optInt("episodeCount", row.optJSONArray("episodeVids")?.length() ?: 0).coerceAtLeast(0)
+            RankEntry(Series(id, title, cleanUrl(row.str("cover")), row.str("description"),
+                if (count > 0) "全 $count 集" else row.str("heatText")), row.optInt("rank").coerceAtLeast(0), row.str("heatText"), count)
+        }.distinctBy { it.series.id }
+        return RankPage(entries, page, minOf(total, 100))
     }
 
     fun parseSuggestions(root: JSONObject): List<String> =

@@ -161,7 +161,8 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
             val json=parseObject(text)
             val code=json.optInt("code",-1)
             if(code!=0) throw AccountProtocolException("账号接口不可用（错误码 $code），请重新登录或稍后重试", code, code == 1003,
-                diagnostic = if (onGatewayLogin != null) appProfileDiagnostic(json, credentials, gatewayLogin) else null)
+                diagnostic = if (onGatewayLogin != null) appProfileDiagnostic(json, credentials, gatewayLogin) else null,
+                businessRefusal = true)
             json
         }
     }
@@ -271,9 +272,29 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
         fun count(key: String) = if (data.has(key) && !data.isNull(key)) data.optInt(key).coerceAtLeast(0) else null
         return CloudStats(count("follow_user_num"),count("fans_num"),count("recv_digg_num"),data.str("author_desc").trim().take(200))
     }
-    /** Read-only video shelf. Protocol reference: charlie901208/HGTV AccountParser.favorites. */
-    fun favorites(credentials: AccountCredentials): List<CloudFavorite> =
-        parseFavorites(json(credentials,"/reading/bookapi/bookshelf/video/info/v1/"))
+    /** Read-only video shelf.
+     * Current official clients read the light `video/list` shelf; on accounts moved to that logic `video/info`
+     * answers code 0 with `data: null` (seen 2026-11-11, issue #6). Rows carry only ids and times, so names come
+     * from the detail batch. `video/info` (charlie901208/HGTV AccountParser.favorites) stays as the fallback
+     * when the light list fails or is empty, for accounts still on the old logic.
+     */
+    fun favorites(credentials: AccountCredentials): List<CloudFavorite> {
+        val light = try { parseFavoriteList(json(credentials,"/reading/bookapi/bookshelf/video/list/v1/")) }
+            catch (problem: AccountProtocolException) { if (problem.requiresLogin) throw problem; null }
+            catch (cancelled: java.io.InterruptedIOException) { throw cancelled }
+            catch (_: IOException) { null }
+        if (light == null) return parseFavorites(json(credentials,"/reading/bookapi/bookshelf/video/info/v1/"))
+        if (light.isEmpty()) {
+            // The light list already answered; the legacy shelf can only add rows, never turn that answer into an error.
+            return try { parseFavorites(json(credentials,"/reading/bookapi/bookshelf/video/info/v1/")) }
+                catch (problem: AccountProtocolException) { if (problem.requiresLogin) throw problem; emptyList() }
+                catch (cancelled: java.io.InterruptedIOException) { throw cancelled }
+                catch (_: IOException) { emptyList() }
+        }
+        val details = light.take(FAVORITE_DETAIL_LIMIT).map { it.series.id }.chunked(50)
+            .fold(emptyMap<String,JSONObject>()) { all, ids -> all + detailRows(credentials, ids) }
+        return light.map { it.copy(series=detailedSeries(details[it.series.id],it.series)) }
+    }
     /** Video shelf only (novel bookshelf/add can acknowledge without changing video favorites).
      * Protocol reference: HGTV videoShelf public request model.
      * No automatic retry: callers must read the shelf back before reporting success.
@@ -330,6 +351,23 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
         json(credentials,"/reading/bookapi/read_progress/upload/v1/",body=body)
     }
     companion object {
+        private const val FAVORITE_DETAIL_LIMIT = 200
+        /** `video/list` light rows: series_id, book_type, collect_time, last_operate_time, modify_time … no names. */
+        fun parseFavoriteList(raw: JSONObject): List<CloudFavorite> {
+            val data=raw.optJSONObject("data") ?: throw IOException("账户收藏数据格式已变化")
+            if(!data.has("video_shelf_info")) throw IOException("账户收藏列表格式已变化")
+            val rows=if(data.isNull("video_shelf_info")) JSONArray() else data.optJSONArray("video_shelf_info")
+                ?: throw IOException("账户收藏列表格式已变化")
+            val result=rows.objects().mapNotNull { row ->
+                val id=row.str("series_id").ifBlank { row.str("book_id") }
+                if(!id.matches(Regex("[0-9]{1,30}"))) return@mapNotNull null
+                val stamp=(row.optLong("collect_time").takeIf { it>0 } ?: row.optLong("last_operate_time")).coerceAtLeast(0)
+                    .let { if(it in 1..9999999999L) it*1000 else it }
+                CloudFavorite(Series(id,"剧集 $id"),stamp)
+            }
+            if(rows.length()>0 && result.isEmpty()) throw IOException("账户收藏条目格式已变化")
+            return result.sortedByDescending { it.collectedAt }.distinctBy { it.series.id }
+        }
         private fun episodeBadge(row: JSONObject): String {
             val count=listOf("episode_cnt","episode_count","drama_chapter_number").map { row.optInt(it) }.firstOrNull { it>0 } ?: 0
             return if(count>0) "全 $count 集" else ""

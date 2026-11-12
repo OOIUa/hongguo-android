@@ -73,7 +73,8 @@ class CloudAccountDeviceCookieTest {
         val server = MockWebServer(); server.start()
         val http = OkHttpClient()
         try {
-            server.enqueue(MockResponse().setBody("""{"code":0,"data":{"video_shelf_info":[]}}"""))
+            // Empty light list, then the legacy shelf.
+            repeat(2) { server.enqueue(MockResponse().setBody("""{"code":0,"data":{"video_shelf_info":[]}}""")) }
             val credentials = AccountCredentials(websiteCookie, "7100000000000000001", "7200000000000000001",
                 appDeviceCookie = "ttreq=registered-request; store-region=cn-sh; store-region-src=did")
             val client = CloudAccountClient(http, server.url("/"), server.url("/service/2/device_register/"))

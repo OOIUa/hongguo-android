@@ -592,7 +592,7 @@ class AccountRepository internal constructor(
             catch (error: Exception) {
                 if (current(g)) {
                     if (requiresLogin(error)) invalidate(g)
-                    else state { it.copy(message = if (submitted) "预约结果不确定，请稍后刷新核对；不会自动重试" else "预约未提交，请检查网络后重试") }
+                    else state { it.copy(message = reserveFailure(error, submitted)) }
                 }
             } finally {
                 synchronized(lock) {
@@ -848,6 +848,17 @@ class AccountRepository internal constructor(
     }
 
     internal companion object {
+        const val SHARK_REJECTED = 101144
+        /** A business code in the reply is a definite refusal, not an unknown outcome (issue #7). */
+        fun reserveFailure(error: Exception, submitted: Boolean): String {
+            val code = (error as? AccountProtocolException)?.takeIf { it.businessRefusal }?.errorCode
+            return when {
+                !submitted -> "预约未提交，请检查网络后重试"
+                code == SHARK_REJECTED -> "红果风控拒绝了本次预约（错误码 $code），未写入账号；可稍后重试或在官方 App 预约"
+                code != null -> "红果拒绝了本次预约（错误码 $code），未写入账号"
+                else -> "预约结果不确定，请稍后刷新核对；不会自动重试"
+            }
+        }
         fun card(series: Series, count: Int = 0) = DramaCard(series.id, series.title, series.cover,
             if (count > 0) count else Regex("[0-9]+").find(series.badge)?.value?.toIntOrNull() ?: 0, series.description)
         fun historyEntry(progress: CloudProgress) = LibraryEntry(card(progress.series, progress.episodeCount), progress.episodeId,

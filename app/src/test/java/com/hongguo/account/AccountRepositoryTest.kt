@@ -201,6 +201,18 @@ class AccountRepositoryTest {
         assertTrue(repo.state.value.message!!.contains("不确定"))
     }
 
+    @Test fun businessRefusalOfAReservationIsReportedAsNotWritten() = runTest {
+        val api = Gateway(); api.reserveError = AccountProtocolException("账号接口不可用（错误码 101144）", 101144, businessRefusal = true)
+        val repo = repository(signedStore(), api); runCurrent()
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertTrue(repo.state.value.message!!.contains("风控"))
+        assertTrue(repo.state.value.message!!.contains("未写入"))
+        assertTrue(repo.state.value.reservationBusyIds.isEmpty())
+        // An HTTP status is not a business answer: the outcome stays unknown.
+        assertTrue(AccountRepository.reserveFailure(AccountProtocolException("HTTP 502", 502), true).contains("不确定"))
+        assertTrue(AccountRepository.reserveFailure(AccountProtocolException("x", 4, businessRefusal = true), true).contains("错误码 4"))
+    }
+
     @Test fun reservationNeedsTheSameOwnerAndAnUpcomingWork() = runTest {
         val api = Gateway(); val repo = repository(signedStore(), api); runCurrent()
         repo.reserve(upcomingWork, "other-owner"); runCurrent()
