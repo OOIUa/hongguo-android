@@ -28,6 +28,16 @@ class LibraryCodecTest {
         assertEquals(LibrarySnapshot(), LibraryCodec.decode(null))
     }
 
+    @Test fun storageDecodeRejectsDamageRatherThanAuthorizingAnEmptyWrite() {
+        for (raw in listOf("{broken", "{}", "[]", "{\"version\":2}", "{\"favorites\":null,\"history\":[]}")) {
+            try { LibraryCodec.decodeChecked(raw); fail("Unreadable library accepted: $raw") }
+            catch (_: IllegalArgumentException) { }
+            catch (_: IllegalStateException) { }
+        }
+        assertEquals(LibrarySnapshot(), LibraryCodec.decodeChecked(null))
+        assertEquals(LibrarySnapshot(), LibraryCodec.decodeChecked(LibraryCodec.encode(LibrarySnapshot())))
+    }
+
     @Test fun malformedRowsDoNotEraseIndependentValidRows() {
         val valid = Json.optArr(Json.parseObject(LibraryCodec.encode(LibrarySnapshot(history = listOf(entry("valid", 4)))))["history"])[0]
         val numericId = linkedMapOf("card" to linkedMapOf("id" to 9007199254740993L))

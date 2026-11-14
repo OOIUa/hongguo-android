@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复排行榜打不开（官网改版）；修复收藏提示「收藏读取失败」（改读官方新版书架列表）；预约被红果拒绝时明确提示未写入账号。'
+        notes = '修复推荐跨启动重复和首页重复展示；修复漫剧榜单续页重复；本机片单读取失败时保留原数据并支持重试；修复预约成功后回读失败被误报为未写入。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

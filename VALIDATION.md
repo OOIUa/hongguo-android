@@ -1,3 +1,16 @@
+# 0.7.28：首页推荐去重、漫剧续页与数据保护
+
+验证日期：2026-11-14（Asia/Shanghai）。versionName 0.7.28、versionCode 39。沿用历史签名；实际发布状态与安装包元数据见 GitHub Release 的 update.json 和 SHA256SUMS。
+
+- 推荐：按匿名与稳定账号分别持久化最近 540 部推荐，磁盘仅保存账号键哈希、剧集 ID 和时间；重建分页器或重开应用后恢复去重，不同账号隔离，取消的响应不提交。最近记录文件损坏时保留原文件。
+- 首页：暖白顶部推荐不再重复进入下方网格；卡片主题原本已将前五条与网格分开，保持其行为。
+- 漫剧榜单：参考 hongguo-web `1b00f06`，上游 offset 被忽略时改用 filter_ids 续页，缓存本轮唯一作品并按已展示条数切页；每次最多四次请求，无新增时停止。
+- 本机片单：严格区分空片单与读取失败；损坏或读取异常时保留原数据、暂停写入，并保留最后一次成功读取的内存记录；本机片单、历史与收藏页面支持重新读取，恢复成功后再开放写入。
+- 预约：写入已被确认后，回读遭业务拒绝只提示结果未确认，不再误报“未写入”；新增生产 AccountRepository 状态流回归，未进行真实账号写入。
+- 构建：使用本机 Temurin 17.0.21、Android SDK 36；`:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 全部通过，372 个 JVM 测试、0 失败、0 跳过，lint 无错误。APK 在 `app/build/outputs/apk/debug/app-debug.apk`；发布时附对应源码、update.json 和 SHA-256 校验文件。
+- 设备：专用干净 Android 17 / API 37 ARM64 模拟器，`HomeRegressionTest` 4 项、0 失败（约 9.4 秒）。覆盖暖白首页顶部与网格无重复、真实 SharedPreferences 损坏保护与恢复、Android 文件系统上的推荐落盘和分页器重建，以及匿名实网漫剧两页各 18 部、交集为 0、游标递增。通过仪器参数 `live=true` 显式开启最后一项联网测试，其余三项使用本机构造数据，不下载媒体。
+- 本轮证据：`/tmp/hongguo-android-home-complete.log`、`/tmp/hongguo-android-home-final-device.log`、`/tmp/hongguo-android-home-warm.png`。未验证实体设备、真实账号推荐及真实账号预约写入，也未重跑全部旧版设备 UI 流程。
+
 # 0.7.27 排行榜改读内联数据、收藏改读新书架列表、预约拒绝如实提示
 
 验证日期：2026-11-12（Asia/Shanghai）。versionName 0.7.27、versionCode 38。来源：issue #6（收藏读取失败）、#7（无法预约）、#8（排行榜接口已失效）。

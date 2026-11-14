@@ -2,6 +2,10 @@ package com.hongguo.android
 
 import com.hongguo.account.protocol.GuessBatch
 import com.hongguo.account.protocol.GuessCursor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 /**
  * One browse round of 猜你喜欢 for one owner (null = anonymous). The server cursor stays in memory only; a new
@@ -19,19 +23,29 @@ internal class GuessFeedPager(
     val owner: String?,
     private val fetch: suspend (String?, GuessCursor) -> GuessBatch,
     previous: GuessFeedPager? = null,
+    private val history: RecommendationHistory? = null,
+    private val historyKey: String = "anonymous",
 ) {
     private val cursor = GuessCursor()
     private val seen: LinkedHashSet<String> = LinkedHashSet<String>().apply { if (previous != null && previous.owner == owner) addAll(previous.seen) }
     private var served = 0
+    private var restored = false
 
     val rememberedCount get() = seen.size
 
     suspend fun next(): DramaPage {
+        if (!restored) {
+            val saved = history?.let { withContext(Dispatchers.IO) { it.recent(historyKey) } }.orEmpty()
+            val merged = RecommendationHistory.normalized(saved + seen)
+            seen.clear(); seen.addAll(merged); restored = true
+        }
+        currentCoroutineContext().ensureActive()
         val cards = mutableListOf<DramaCard>()
         var requests = 0
         while (cards.size < TARGET && requests < MAX_REQUESTS && cursor.offset <= MAX_OFFSET) {
             cursor.filterIds = seen.toList()
             val batch = fetch(owner, cursor)
+            currentCoroutineContext().ensureActive()
             requests++
             served++
             batch.items.forEach { item ->
@@ -40,6 +54,7 @@ internal class GuessFeedPager(
             }
             while (seen.size > SEEN_LIMIT) seen.remove(seen.first())
         }
+        history?.let { withContext(Dispatchers.IO) { it.remember(historyKey, seen.toList()) } }
         return DramaPage(cards, cards.isNotEmpty() && cursor.offset <= MAX_OFFSET, served)
     }
 
@@ -47,7 +62,7 @@ internal class GuessFeedPager(
         const val TARGET = 6
         const val MAX_REQUESTS = 3
         const val MAX_OFFSET = 600
-        const val SEEN_LIMIT = 540
+        const val SEEN_LIMIT = RecommendationHistory.LIMIT
     }
 }
 

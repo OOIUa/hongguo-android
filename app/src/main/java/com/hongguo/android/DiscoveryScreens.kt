@@ -78,7 +78,7 @@ internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
     CatalogGrid(
         feed = state.home, tagPrefix = "home", emptyTitle = "这一页暂时没有剧集", columns = warmColumns(),
         emptyHint = "可以刷新，或切换上方内容类型。", onOpen = model::openDrama,
-        onRefresh = model::refreshHome, onMore = model::loadMoreHome,
+        onRefresh = model::refreshHome, onMore = model::loadMoreHome, skipLeading = 1,
         header = {
             item(key = "home_search", span = { GridItemSpan(maxLineSpan) }) {
                 CatalogSearchEntry("搜索剧名，发现好故事", "home_search") { model.selectTab(AppTab.SEARCH) }
@@ -321,7 +321,7 @@ private fun SelectorChip(label: String, selected: Boolean, tag: String, onClick:
 private fun CatalogGrid(
     feed: FeedState, tagPrefix: String, emptyTitle: String, emptyHint: String,
     onOpen: (DramaCard) -> Unit, onRefresh: () -> Unit, onMore: () -> Unit,
-    canLoadMore: Boolean = true, columns: Int = 0, header: LazyGridScope.() -> Unit,
+    canLoadMore: Boolean = true, columns: Int = 0, skipLeading: Int = 0, header: LazyGridScope.() -> Unit,
 ) {
     val minimumCardWidth = if (LocalDensity.current.fontScale >= 1.5f) 184.dp else 148.dp
     val grid = rememberLazyGridState()
@@ -336,7 +336,7 @@ private fun CatalogGrid(
         if (feed.loaded && !feed.loading && feed.items.isEmpty() && feed.error == null) {
             item(span = { GridItemSpan(maxLineSpan) }) { EmptyPrompt(emptyTitle, emptyHint) }
         }
-        itemsIndexed(feed.items, key = { _, card -> card.id }) { index, card ->
+        itemsIndexed(feed.items.drop(skipLeading), key = { _, card -> card.id }) { index, card ->
             CatalogPoster(card, "${tagPrefix}_result_$index", tall = columns >= 3, Modifier.animateItem()) { onOpen(card) }
         }
         feed.error?.let { error ->

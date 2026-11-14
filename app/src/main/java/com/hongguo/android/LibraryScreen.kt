@@ -86,7 +86,7 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
             HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = Line)
             Text(if (history) "本机观看记录" else "本机收藏", fontSize = 12.sp, color = Muted,
                 modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
-            LocalLibraryList(entries, history, managing, model, Modifier.fillMaxWidth().weight(1f))
+            LocalLibraryList(entries, history, managing, model, Modifier.fillMaxWidth().weight(1f), state.libraryError)
         }
     }
     if (confirmClear) LocalClearDialog(history, model) { confirmClear = false }
@@ -122,11 +122,12 @@ internal fun libraryPositionLabel(positionMs: Long): String {
 
 /** The device's own records in three columns, shared by 追剧/片单 and the pages opened from 我的. */
 @Composable
-internal fun LocalLibraryList(entries: List<LibraryEntry>, history: Boolean, managing: Boolean, model: HongguoViewModel, modifier: Modifier) {
+internal fun LocalLibraryList(entries: List<LibraryEntry>, history: Boolean, managing: Boolean, model: HongguoViewModel, modifier: Modifier, storageError: String? = null) {
     val kind = if (history) "history" else "favorites"
     LazyColumn(modifier.testTag("${kind}_list"),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 6.dp).plusNavClearance()) {
-        if (entries.isEmpty()) item {
+        if (storageError != null) item { FailurePanel(storageError, model::reloadLibrary, "${kind}_storage_retry") }
+        if (entries.isEmpty() && storageError == null) item {
             EmptyPrompt(if (history) "还没有观看记录" else "还没有收藏的剧集",
                 if (history) "开始播放后，这里会记住集数和进度。" else "在剧集详情或播放器中收藏，喜欢的故事就会留在这里。")
         }

@@ -55,6 +55,7 @@ data class HongguoUiState(
     val filtersLoading: Boolean = false,
     val filtersError: String? = null,
     val favorites: List<LibraryEntry> = emptyList(),
+    val libraryError: String? = null,
     val history: List<LibraryEntry> = emptyList(),
     val libraryCloud: Boolean = false,
     val query: String = "",
@@ -134,6 +135,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var prefetchAttemptedFor = -1L
     private var homeJob: Job? = null
     private var guessPager: GuessFeedPager? = null
+    private val recommendationHistory = RecommendationHistory(application.filesDir.resolve("recommendations"))
     private var relatedJob: Job? = null
     private var categoryJob: Job? = null
     private var filtersJob: Job? = null
@@ -231,10 +233,10 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     }
 
     init {
-        mutableState.update { it.copy(favorites = library.state.value.favorites, history = library.state.value.history) }
+        mutableState.update { it.copy(favorites = library.state.value.favorites, history = library.state.value.history, libraryError = library.state.value.storageError) }
         viewModelScope.launch {
             library.state.collect { snapshot -> mutableState.update {
-                it.copy(favorites = snapshot.favorites, history = snapshot.history)
+                it.copy(favorites = snapshot.favorites, history = snapshot.history, libraryError = snapshot.storageError)
             } }
         }
         viewModelScope.launch {
@@ -305,7 +307,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun guessPage(append: Boolean): DramaPage {
         val owner = accounts.ownerKey
         val pager = guessPager?.takeIf { append && it.owner == owner }
-            ?: GuessFeedPager(owner, accounts::recommendations, previous = guessPager).also { guessPager = it }
+            ?: GuessFeedPager(owner, accounts::recommendations, previous = guessPager, history = recommendationHistory,
+                historyKey = accounts.recommendationHistoryKey(owner)).also { guessPager = it }
         val page = pager.next()
         // 重建分页仍只回到已看过的作品时直接说明，不把旧批次当新推荐重播。
         if (!append && page.items.isEmpty() && pager.rememberedCount > 0)
@@ -405,6 +408,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         library.toggleFavorite(if (detail == null) card else cardFor(detail))
     }
     fun removeHistory(id: String) = library.deleteHistory(id)
+    fun reloadLibrary() = library.reload()
     fun clearFavorites() = library.clearFavorites()
     fun clearHistory() = library.clearHistory()
     fun openLibrary(entry: LibraryEntry) = openDramaInternal(entry.card, entry)

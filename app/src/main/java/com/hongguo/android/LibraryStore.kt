@@ -8,22 +8,24 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.WeakHashMap
 
 /** One bounded local JSON snapshot. Shared instances use one lock and one observable state. */
-class LibraryStore(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+class LibraryStore internal constructor(private val preferences: SharedPreferences) {
+    constructor(context: Context) : this(context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE))
     private val mutableState: MutableStateFlow<LibrarySnapshot>
     val state: StateFlow<LibrarySnapshot>
 
     init {
         synchronized(LOCK) {
-            val raw = try { preferences.getString(SNAPSHOT_KEY, null) } catch (_: ClassCastException) { "" }
-            val loaded = LibraryCodec.decode(raw)
-            mutableState = STATES.getOrPut(preferences) { MutableStateFlow(loaded) }
-            mutableState.value = loaded
-            // Repair malformed, partially valid, or pre-canonical data without keeping raw inputs/logs.
-            val canonical = LibraryCodec.encode(loaded)
-            if (raw != null && raw != canonical) preferences.edit().putString(SNAPSHOT_KEY, canonical).apply()
+            mutableState = STATES.getOrPut(preferences) { MutableStateFlow(LibrarySnapshot()) }
         }
         state = mutableState.asStateFlow()
+        reload()
+    }
+
+    fun reload() = synchronized(LOCK) {
+        try { mutableState.value = LibraryCodec.decodeChecked(preferences.getString(SNAPSHOT_KEY, null)) }
+        catch (_: Exception) {
+            mutableState.value = mutableState.value.copy(storageError = "本机片单读取失败，原数据已保留，已暂停写入。请稍后重试读取。")
+        }
     }
 
     fun toggleFavorite(card: DramaCard) = change { LibraryCodec.toggleFavorite(it, card, System.currentTimeMillis()) }
@@ -44,6 +46,7 @@ class LibraryStore(context: Context) {
     private fun change(transform: (LibrarySnapshot) -> LibrarySnapshot) {
         synchronized(LOCK) {
             val current = mutableState.value
+            if (current.storageError != null) return
             val next = transform(current)
             if (next == current) return
             // One preference value commits both lists together; apply updates its memory synchronously.

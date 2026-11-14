@@ -138,6 +138,13 @@ class AccountRepository internal constructor(
     val ownerKey: String? get() = synchronized(lock) {
         disk.profile?.id?.takeIf { mutableState.value.sessionStatus == AccountSessionStatus.LOGGED_IN }?.let { "$it:$ownerGeneration" }
     }
+    fun recommendationHistoryKey(expectedOwner: String?): String = synchronized(lock) {
+        if (expectedOwner == null) "anonymous"
+        else {
+            check(expectedOwner == ownerKey) { "账号已变化，请刷新猜你喜欢" }
+            "account:${disk.profile!!.id}"
+        }
+    }
     /**
      * 猜你喜欢一批。[owner] 为调用方开始本轮时读到的 [ownerKey]：null 走匿名流；非空时只在
      * 仍是同一登录会话时携带该账号凭据，账号已切换或退出则报错，不会把旧会话的分页混入新账号。
@@ -580,11 +587,13 @@ class AccountRepository internal constructor(
         val key = "reserve:$id"
         favoriteJobs[key] = scope.launch(io) {
             var submitted = false
+            var acknowledged = false
             try {
                 if (id in readReservations(g, credentials)) { state { it.copy(message = "已在云端预约") }; return@launch }
                 if (!current(g)) return@launch
                 submitted = true
                 runInterruptible(io) { gateway.reserve(credentials, work) }
+                acknowledged = true
                 if (!current(g)) return@launch
                 val confirmed = id in readReservations(g, credentials)
                 if (current(g)) state { it.copy(message = if (confirmed) "已确认云端预约成功" else "云端未确认本次预约，请稍后刷新核对；不会自动重试") }
@@ -592,7 +601,7 @@ class AccountRepository internal constructor(
             catch (error: Exception) {
                 if (current(g)) {
                     if (requiresLogin(error)) invalidate(g)
-                    else state { it.copy(message = reserveFailure(error, submitted)) }
+                    else state { it.copy(message = reserveFailure(error, submitted, acknowledged)) }
                 }
             } finally {
                 synchronized(lock) {
@@ -850,10 +859,11 @@ class AccountRepository internal constructor(
     internal companion object {
         const val SHARK_REJECTED = 101144
         /** A business code in the reply is a definite refusal, not an unknown outcome (issue #7). */
-        fun reserveFailure(error: Exception, submitted: Boolean): String {
+        fun reserveFailure(error: Exception, submitted: Boolean, acknowledged: Boolean = false): String {
             val code = (error as? AccountProtocolException)?.takeIf { it.businessRefusal }?.errorCode
             return when {
                 !submitted -> "预约未提交，请检查网络后重试"
+                acknowledged -> "预约结果不确定，请稍后刷新核对；不会自动重试"
                 code == SHARK_REJECTED -> "红果风控拒绝了本次预约（错误码 $code），未写入账号；可稍后重试或在官方 App 预约"
                 code != null -> "红果拒绝了本次预约（错误码 $code），未写入账号"
                 else -> "预约结果不确定，请稍后刷新核对；不会自动重试"

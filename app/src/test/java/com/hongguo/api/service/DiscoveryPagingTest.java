@@ -136,6 +136,37 @@ public class DiscoveryPagingTest {
         assertFalse(Client.signedListsEnabled(" OFF "));
     }
 
+    @Test public void comicRoundUsesFiltersAndDoesNotSkipOrRepeatRowsBetweenPages() throws Exception {
+        Client.RankRound round = new Client.RankRound();
+        Client.RankFetch provider = filters -> {
+            List<Object> cells = new ArrayList<>();
+            int remaining = 0;
+            for (int id = 1; id <= 40; id++) {
+                if (filters.contains(String.valueOf(id))) continue;
+                remaining++;
+                if (cells.size() >= 10) continue;
+                Map<String, Object> cell = Json.obj();
+                cell.put("video_data", Json.optArr(data(true, 0, String.valueOf(id)).get("video_data")));
+                cells.add(cell);
+            }
+            if (!cells.isEmpty()) cells.add(cells.get(0)); // The provider also repeats a row inside a batch.
+            Map<String, Object> result = Json.obj();
+            result.put("cell_data", cells); result.put("has_more", remaining > 10);
+            result.put("next_offset", 0); // Upstream offsets are unusable.
+            return result;
+        };
+        Client.RankPage first = round.page(0, 18, provider);
+        Client.RankPage next = round.page(first.nextOffset, 18, provider);
+        Client.RankPage last = round.page(next.nextOffset, 18, provider);
+        List<Object> all = new ArrayList<>(first.items); all.addAll(next.items); all.addAll(last.items);
+        assertEquals(18, first.items.size()); assertEquals(18, next.items.size()); assertEquals(4, last.items.size());
+        assertFalse(last.hasMore);
+        for (int i = 0; i < 40; i++) {
+            assertEquals(String.valueOf(i + 1), Json.optObj(all.get(i)).get("series_id"));
+            assertEquals(i + 1, Json.optObj(all.get(i)).get("rank"));
+        }
+    }
+
     @Test public void emptyHttpSuccessMustNotMasqueradeAsEmptyCatalogue() {
         for (String body : Arrays.asList("", "  ", "{}", "null")) {
             try {

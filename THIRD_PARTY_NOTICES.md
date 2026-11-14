@@ -139,3 +139,7 @@ From 2026-11-11 every multi-episode playback route (signed GET `video_tab`, sign
   https://github.com/Xanerix/guoapp
 
 Local changes: the single model goes through the same `parseModel` rules (ByteVC2, fallback, undeclared plain rows); its model error is reported ahead of empty answers from the old routes; no cookie is sent with the single request, as upstream verified. Anonymous live check on 2026-11-11: 8 episodes from two series, including previously ByteVC2-only episodes, were downloaded in full, decrypted and decoded (hvc1 720P/1080P).
+
+## 漫剧榜单续页修复（2026-11-14）
+
+参考 [sunnysky123/hongguo-web `1b00f06`](https://github.com/sunnysky123/hongguo-web/commit/1b00f06)（2026-11-13，MIT）：`cell/change` 不依赖 offset，而以 `filter_ids` 排除已展示作品。本地 Java 实现保留有界请求、取消检查、唯一 ID 累积和绝对榜单序号。

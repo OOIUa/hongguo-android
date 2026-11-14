@@ -16,14 +16,14 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.27**（versionCode 38）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.28**（versionCode 38）· Android **8.0 / API 26** 及以上。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.27 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/hongguo-android-0.7.27.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/hongguo-android-0.7.27.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/hongguo-android-0.7.27.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.27 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/hongguo-android-0.7.27-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.27/SHA256SUMS-0.7.27.txt) |
+| GitHub 直连 | [下载 v0.7.28 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/hongguo-android-0.7.28.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/hongguo-android-0.7.28.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/hongguo-android-0.7.28.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.28 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/hongguo-android-0.7.28-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/SHA256SUMS-0.7.28.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -90,6 +90,8 @@ iOS 客户端独立托管在 [OOIUa/hongguo-ios](https://github.com/OOIUa/honggu
 | 界面主题 | 暖白精修、沉浸暗场、内容卡片三套主题，各有独立的首页、发现/剧场、片单、详情与我的页面布局，点选即时生效；可在系统深色模式时自动使用沉浸暗场；底栏可选经典或悬浮玻璃 |
 
 首页按热度、上新及榜单展示内容；收藏和观看历史各最多保存 **200 部**，两份列表独立管理。
+
+推荐会在本机按匿名与不同账号分别保留最近 **540 部**已推荐作品，刷新或重开应用后继续去重；超过窗口的旧作品仍可能再次出现。片单读取失败时保留原数据、暂停写入，可在本机片单页重试读取。
 
 ## 快速上手
 

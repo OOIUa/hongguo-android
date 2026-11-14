@@ -946,30 +946,21 @@ public final class Client {
         }
     }
 
-    /**
-     * 取漫剧榜单的一页。
-     *
-     * offset 为 0 时行为与从前一致（从头累积抓够 limit 条）；offset>0 时只抓
-     * 本页，不会从头重复遍历 —— 无限滚动必须走这条路径，否则每次触底都会把
-     * 前面的页重跑一遍。
-     */
+    /** cell/change ignores offset; continue with filter_ids (hongguo-web 1b00f06, MIT). */
     public static RankPage rankPage(String board, int limit, int offsetArg) throws Exception {
         int size = Math.max(1, Math.min(limit <= 0 ? 30 : limit, 100));
         int start = Math.max(0, offsetArg);
-        String cacheKey = Safeguards.cacheKey("rankp-v2", board, size, start);
-        Object cached = Safeguards.cacheGet(cacheKey);
-        if (cached instanceof Object[]) {
-            Object[] fields = (Object[]) cached;
-            if (fields.length == 3 && fields[0] instanceof List) {
-                List<Object> rows = new ArrayList<>(castList(fields[0]));
-                int next = Math.max(start, Json.optInt(fields[2], start));
-                return new RankPage(rows, Boolean.TRUE.equals(fields[1]) && !rows.isEmpty() && next > start, next);
-            }
+        String key = Safeguards.cacheKey("rank-round-v3", board);
+        RankRound round;
+        synchronized (RANK_LOCK) {
+            Object cached = Safeguards.cacheGet(key);
+            if (start == 0) round = new RankRound();
+            else if (cached instanceof RankRound) round = (RankRound) cached;
+            else throw new IOException("漫剧榜单分页已过期，请刷新");
+            Safeguards.cacheSet(key, round, 600);
         }
-        DiscoveryAccumulator page = new DiscoveryAccumulator(start, size, null, false);
         String session = UUID.randomUUID().toString();
-        for (int requests = 0; requests < 4; requests++) {
-            if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("请求已取消");
+        return round.page(start, size, filters -> {
             Map<String, Object> query = Json.obj();
             query.put("cell_id", COMIC_RANK_CELL);
             query.put("tab_type", "26");
@@ -979,17 +970,43 @@ public final class Client {
             query.put("selected_items", "comic_series_rank");
             query.put("sub_selected_items", RANK_BOARDS.getOrDefault(board, board));
             query.put("session_uuid", session);
-            if (page.cursor != 0) query.put("offset", String.valueOf(page.cursor));
+            query.put("filter_ids", String.join(",", filters));
             Map<String, Object> response = api("GET", "/reading/bookapi/bookmall/cell/change/v",
                     null, query, 2, SIGN_LIST);
-            Map<String, Object> data = Json.optObj(response.get("data"));
-            Map<String, Object> cellView = data == null ? null : Json.optObj(data.get("cell_view"));
-            if (!page.consume(rankData(cellView))) break;
+            return Json.optObj(Json.optObj(response.get("data")).get("cell_view"));
+        });
+    }
+
+    private static final Object RANK_LOCK = new Object();
+    interface RankFetch { Map<String, Object> read(List<String> filters) throws Exception; }
+
+    static final class RankRound {
+        final List<Object> rows = new ArrayList<>();
+        final Set<String> seen = new LinkedHashSet<>();
+        boolean hasMore = true;
+
+        synchronized RankPage page(int start, int size, RankFetch fetch) throws Exception {
+            if (start < 0 || start > rows.size() || start > 600) throw new IOException("漫剧榜单分页已变化，请刷新");
+            for (int attempt = 0; attempt < 4 && hasMore && rows.size() < start + size; attempt++) {
+                if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("请求已取消");
+                List<String> filters = new ArrayList<>(seen);
+                filters = new ArrayList<>(filters.subList(Math.max(0, filters.size() - 200), filters.size()));
+                Map<String, Object> cell = fetch.read(filters);
+                if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("请求已取消");
+                DiscoveryAccumulator batch = new DiscoveryAccumulator(0, 120, null, false);
+                batch.consume(rankData(cell));
+                int added = 0;
+                for (Object value : batch.result().items) {
+                    Map<String, Object> row = Json.optObj(value);
+                    if (!seen.add(Json.optStr(row.get("series_id"), ""))) continue;
+                    row.put("rank", rows.size() + 1);
+                    rows.add(row); added++;
+                }
+                hasMore = added > 0 && rows.size() < 600 && cell != null && Json.optBool(cell.get("has_more"), false);
+            }
+            int end = Math.min(rows.size(), start + size);
+            return new RankPage(new ArrayList<>(rows.subList(start, end)), end < rows.size() || hasMore, end);
         }
-        Page result = page.result();
-        for (int i = 0; i < result.items.size(); i++) Json.optObj(result.items.get(i)).put("rank", start + i + 1);
-        Safeguards.cacheSet(cacheKey, new Object[]{new ArrayList<>(result.items), result.hasMore, result.nextSkip}, 1800);
-        return new RankPage(result.items, result.hasMore, result.nextSkip);
     }
 
     /** Retain every raw ranking cell position even if its video payload is missing. */

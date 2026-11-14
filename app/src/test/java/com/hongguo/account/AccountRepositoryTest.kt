@@ -68,10 +68,13 @@ class AccountRepositoryTest {
         val reserved = mutableListOf<String>()
         var applyReserve = true
         var reserveError: Exception? = null
+        var afterReserve: (() -> Unit)? = null
+        var reservationsError: Exception? = null
         override fun reserve(credentials: AccountCredentials, work: com.hongguo.account.protocol.RelatedWork) {
             reserveError?.let { throw it }
             reserved += work.series.id
             if (applyReserve) reservationsValue = reservationsValue + CloudReservation(work.series, false, 0)
+            afterReserve?.invoke()
         }
         var profileValue = CloudProfile(uid, "测试账号")
         var profileError: Exception? = null
@@ -107,7 +110,10 @@ class AccountRepositoryTest {
             beforeFavoriteReadReturn?.invoke()
             return snapshot
         }
-        override fun reservations(credentials: AccountCredentials, online: Boolean) = reservationsValue.filter { it.online == online }
+        override fun reservations(credentials: AccountCredentials, online: Boolean): List<CloudReservation> {
+            reservationsError?.let { throw it }
+            return reservationsValue.filter { it.online == online }
+        }
         override fun setFavorite(credentials: AccountCredentials, id: String, add: Boolean) {
             beforeFavoriteWrite?.invoke(); setFavoriteCalls++; writeError?.let { throw it }
             if (applyFavorite) favoritesValue = if (add) listOf(CloudFavorite(series, 1700000000000)) else emptyList()
@@ -180,6 +186,16 @@ class AccountRepositoryTest {
         val repo = repository(signedStore(), api); runCurrent()
         repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
         assertTrue(api.reserved.isEmpty())
+    }
+
+    @Test fun refusedReadAfterAcknowledgedReservationDoesNotClaimTheWriteWasRefused() = runTest {
+        val api = Gateway()
+        val repo = repository(signedStore(), api); runCurrent()
+        api.afterReserve = { api.reservationsError = AccountProtocolException("read refused", 101144, businessRefusal = true) }
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertEquals(listOf(series.id), api.reserved)
+        assertTrue(repo.state.value.message!!.contains("不确定"))
+        assertFalse(repo.state.value.message!!.contains("未写入"))
     }
 
     @Test fun upcomingRowListedByItemIdCountsAsReserved() = runTest {

@@ -13,6 +13,7 @@ data class LibraryEntry(
 data class LibrarySnapshot(
     val favorites: List<LibraryEntry> = emptyList(),
     val history: List<LibraryEntry> = emptyList(),
+    val storageError: String? = null,
 )
 
 /** Pure state/JSON boundary; IDs remain strings throughout persistence. */
@@ -22,15 +23,21 @@ object LibraryCodec {
     private const val MAX_ID_CHARS = 128
 
     fun decode(json: String?): LibrarySnapshot {
-        if (json.isNullOrBlank() || json.length > MAX_JSON_CHARS || !safeNesting(json)) return LibrarySnapshot()
-        return try {
-            val root = Json.optObj(Json.parse(json)) ?: return LibrarySnapshot()
-            val version = root["version"]
-            if (version != null && nonNegativeLong(version, -1) != 1L) return LibrarySnapshot()
-            normalize(LibrarySnapshot(readEntries(root["favorites"]), readEntries(root["history"])))
-        } catch (_: Exception) {
-            LibrarySnapshot()
+        return try { decodeChecked(json, strictLists = false) } catch (_: Exception) { LibrarySnapshot() }
+    }
+
+    /** Storage callers must distinguish an empty library from unreadable data before allowing writes. */
+    fun decodeChecked(json: String?, strictLists: Boolean = true): LibrarySnapshot {
+        if (json == null) return LibrarySnapshot()
+        require(json.isNotBlank() && json.length <= MAX_JSON_CHARS && safeNesting(json))
+        val root = Json.optObj(Json.parse(json)) ?: error("Invalid library root")
+        val version = root["version"]
+        require(version == null || nonNegativeLong(version, -1) == 1L)
+        if (strictLists) {
+            require(root.containsKey("favorites") || root.containsKey("history"))
+            for (key in listOf("favorites", "history")) require(!root.containsKey(key) || root[key] is List<*>)
         }
+        return normalize(LibrarySnapshot(readEntries(root["favorites"]), readEntries(root["history"])))
     }
 
     fun encode(snapshot: LibrarySnapshot): String {

@@ -47,7 +47,7 @@ internal fun PlayHistoryScreen(state: HongguoUiState, model: HongguoViewModel, a
             }
         }
         if (showsAccount) AccountHistoryList(accountModel, model::openLibrary, Modifier.fillMaxWidth().weight(1f))
-        else LocalLibraryList(state.history, true, managing, model, Modifier.fillMaxWidth().weight(1f))
+        else LocalLibraryList(state.history, true, managing, model, Modifier.fillMaxWidth().weight(1f), state.libraryError)
     }
     if (confirmClear) LocalClearDialog(true, model) { confirmClear = false }
 }
@@ -60,7 +60,7 @@ internal fun LocalFavoritesScreen(state: HongguoUiState, model: HongguoViewModel
     Column(Modifier.fillMaxSize().testTag("local_favorites_screen")) {
         LocalPageHeader("本机收藏", "local_favorites_back", model::closeMyLibrary, true, state.favorites.isNotEmpty(), managing,
             { managing = !managing }, { confirmClear = true }, "favorites")
-        LocalLibraryList(state.favorites, false, managing, model, Modifier.fillMaxWidth().weight(1f))
+        LocalLibraryList(state.favorites, false, managing, model, Modifier.fillMaxWidth().weight(1f), state.libraryError)
     }
     if (confirmClear) LocalClearDialog(false, model) { confirmClear = false }
 }
