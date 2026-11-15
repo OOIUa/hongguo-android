@@ -16,14 +16,14 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.28**（versionCode 38）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.29**（versionCode 40）· Android **8.0 / API 26** 及以上。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.28 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/hongguo-android-0.7.28.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/hongguo-android-0.7.28.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/hongguo-android-0.7.28.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.28 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/hongguo-android-0.7.28-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.28/SHA256SUMS-0.7.28.txt) |
+| GitHub 直连 | [下载 v0.7.29 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.29/hongguo-android-0.7.29.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.29/hongguo-android-0.7.29.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.29/hongguo-android-0.7.29.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.29 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.29/hongguo-android-0.7.29-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.29/SHA256SUMS-0.7.29.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -205,7 +205,7 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 
 **播放提示“匿名播放设备注册失败”或“空响应”？**
 
-每次取播放信息都会向平台注册一个新的匿名播放设备，身份只保存在内存里，与个人账号无关。注册失败多为网络问题，约 10 秒后再次播放会自动重试。0.7.1 及更早版本无法通过新的上游校验，请更新到 0.7.2 或以上。
+0.7.29 起复用已成功取流的匿名身份；新版单集接口回空时最多尝试 5 次，受时间预算约束，明确拒绝时停止。身份只保存在内存，与个人账号无关。注册失败会进入约 10 秒冷却，稍后可再次尝试播放。
 
 **怎么切换界面主题？**
 

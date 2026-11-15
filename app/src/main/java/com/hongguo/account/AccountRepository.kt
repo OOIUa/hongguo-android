@@ -221,7 +221,8 @@ class AccountRepository internal constructor(
         activeLogin?.cancel(); activeLogin = null
         gateway.cancelAll()
         mutableState.value = mutableState.value.copy(busy = false, qrBytes = null, qrExpiresAt = 0, qrRemainingSeconds = 0,
-            phoneStep = PhoneStep.IDLE, phoneMasked = "", suggestWebsiteLogin = false, favoriteBusyIds = emptySet())
+            phoneStep = PhoneStep.IDLE, phoneMasked = "", suggestWebsiteLogin = false, favoriteBusyIds = emptySet(),
+            reservationBusyIds = emptySet(), reservationResult = null)
     }
 
     /** A canceled scan, verification or old player can never restore a superseded account. */
@@ -508,6 +509,15 @@ class AccountRepository internal constructor(
     fun selectSection(section: AccountSection) = state { it.copy(selectedSection = section) }
     fun consumeMessage() = state { it.copy(message = null) }
 
+    fun consumeReservationResult(result: ReservationResult) = state {
+        if (it.reservationResult === result) it.copy(reservationResult = null) else it
+    }
+
+    private fun reservationResult(g: Long, work: RelatedWork, message: String) = synchronized(lock) {
+        if (generation == g) mutableState.value = mutableState.value.copy(message = message,
+            reservationResult = ReservationResult(work.series.id, work.series.title, message))
+    }
+
     fun setSyncEnabled(enabled: Boolean) {
         val g = synchronized(lock) {
             if (mutableState.value.sessionStatus != AccountSessionStatus.LOGGED_IN) return
@@ -589,19 +599,25 @@ class AccountRepository internal constructor(
             var submitted = false
             var acknowledged = false
             try {
-                if (id in readReservations(g, credentials)) { state { it.copy(message = "已在云端预约") }; return@launch }
+                if (id in readReservations(g, credentials)) { reservationResult(g, work, "已在云端预约"); return@launch }
                 if (!current(g)) return@launch
                 submitted = true
                 runInterruptible(io) { gateway.reserve(credentials, work) }
                 acknowledged = true
                 if (!current(g)) return@launch
                 val confirmed = id in readReservations(g, credentials)
-                if (current(g)) state { it.copy(message = if (confirmed) "已确认云端预约成功" else "云端未确认本次预约，请稍后刷新核对；不会自动重试") }
+                reservationResult(g, work, if (confirmed) "已确认云端预约成功" else "云端未确认本次预约，请稍后刷新核对；不会自动重试")
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 if (current(g)) {
-                    if (requiresLogin(error)) invalidate(g)
-                    else state { it.copy(message = reserveFailure(error, submitted, acknowledged)) }
+                    if (requiresLogin(error)) synchronized(lock) {
+                        if (generation == g) {
+                            invalidate(g)
+                            reservationResult(generation, work, mutableState.value.message.orEmpty() +
+                                if (acknowledged) "；预约结果不确定，请在官方 App 核对" else "；本次预约未完成，请重新登录后核对")
+                        }
+                    }
+                    else reservationResult(g, work, reserveFailure(error, submitted, acknowledged))
                 }
             } finally {
                 synchronized(lock) {
@@ -862,8 +878,9 @@ class AccountRepository internal constructor(
         fun reserveFailure(error: Exception, submitted: Boolean, acknowledged: Boolean = false): String {
             val code = (error as? AccountProtocolException)?.takeIf { it.businessRefusal }?.errorCode
             return when {
-                !submitted -> "预约未提交，请检查网络后重试"
-                acknowledged -> "预约结果不确定，请稍后刷新核对；不会自动重试"
+                !submitted && code != null -> "读取预约列表被红果拒绝（错误码 $code），本次预约未提交；可稍后重试或在官方 App 核对"
+                !submitted -> "预约列表读取失败，本次预约未提交，请稍后重试"
+                acknowledged -> "预约请求已被接受，但回读预约列表失败${code?.let { "（错误码 $it）" }.orEmpty()}，预约结果不确定，请稍后刷新核对；不会自动重试"
                 code == SHARK_REJECTED -> "红果风控拒绝了本次预约（错误码 $code），未写入账号；可稍后重试或在官方 App 预约"
                 code != null -> "红果拒绝了本次预约（错误码 $code），未写入账号"
                 else -> "预约结果不确定，请稍后刷新核对；不会自动重试"

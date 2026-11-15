@@ -233,6 +233,7 @@ class MainActivity : ComponentActivity() {
                 }
                 // A startup update prompt waits until the theme picker has been answered, so two dialogs never stack.
                 UpdateDialogs(updateState, updateModel, this@MainActivity, deferred = state.themeOnboardingPending)
+                ReservationResultDialog(accountState.reservationResult, accountModel::consumeReservationResult)
                 }
             }
         }

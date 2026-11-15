@@ -10,6 +10,9 @@ enum class AccountSessionStatus { SIGNED_OUT, RESTORING, NEEDS_VERIFICATION, LOG
 enum class AccountSection { HISTORY, FAVORITES, LIKES, RESERVATIONS }
 enum class PhoneStep { IDLE, CODE_SENT }
 
+/** A transient, credential-free result of an explicit reservation action. */
+data class ReservationResult(val seriesId: String, val title: String, val message: String)
+
 /** Presentation state never contains a cookie, verification code or device credential. */
 data class AccountState(
     val profile: CloudProfile? = null,
@@ -43,6 +46,7 @@ data class AccountState(
     val favoriteUncertainIds: Set<String> = emptySet(),
     val favoriteBusyIds: Set<String> = emptySet(),
     val reservationBusyIds: Set<String> = emptySet(),
+    val reservationResult: ReservationResult? = null,
     val pendingProgressCount: Int = 0,
     val lastSyncAt: Long = 0,
     /** Session is stopped in memory, but the private credential file still needs explicit cleanup. */

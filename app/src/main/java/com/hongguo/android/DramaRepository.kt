@@ -198,6 +198,12 @@ fun readableFailure(error: Throwable, action: String): String {
     chain.firstNotNullOfOrNull { it as? NoNewRecommendationsException }?.let {
         return "推荐接口暂未返回新作品（最近已去重 ${it.remembered} 部），可稍后刷新，或切换其他分类继续发现。"
     }
+    chain.firstNotNullOfOrNull { it as? com.hongguo.api.service.AppSource.PlaybackRejectedException }?.let {
+        return it.message ?: "播放服务拒绝请求，请稍后重试。"
+    }
+    if (chain.any { it is com.hongguo.api.service.AppSource.EmptyPlaybackResponseException }) {
+        return "播放服务连续返回空响应，请稍后重试或选择其他集。"
+    }
     return when {
         chain.any { it is UnknownHostException } -> "网络连接不可用，请检查网络后重试。"
         chain.any { it is SocketTimeoutException } -> "连接超时，请稍后重试。"

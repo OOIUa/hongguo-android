@@ -11,6 +11,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.sp
+import com.hongguo.account.ReservationResult
+
+/** Owned by the app shell so scrolling or leaving a detail page cannot hide the result. */
+@Composable
+internal fun ReservationResultDialog(result: ReservationResult?, onDismiss: (ReservationResult) -> Unit) {
+    result?.let { notice ->
+        AlertDialog(
+            modifier = Modifier.testTag("reservation_result"),
+            onDismissRequest = { onDismiss(notice) },
+            title = { Text("预约结果") },
+            text = { Text("《${notice.title}》\n\n${notice.message}", modifier = Modifier.testTag("reservation_result_message"), fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = { onDismiss(notice) }, modifier = Modifier.testTag("reservation_result_dismiss")) { Text("知道了") }
+            },
+        )
+    }
+}
 
 /** Explicit confirmations are tied to a specific account operation, never a whole list. */
 @Composable

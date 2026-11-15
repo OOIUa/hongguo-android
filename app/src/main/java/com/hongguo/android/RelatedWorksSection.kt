@@ -38,7 +38,8 @@ internal fun RelatedWorksSection(state: HongguoUiState, model: HongguoViewModel,
                                  horizontalPadding: Int = 0) {
     if (state.related.isEmpty()) return
     val account by accountModel.state.collectAsStateWithLifecycle()
-    var confirmation by remember { mutableStateOf<RelatedWork?>(null) }
+    val owner = accountModel.ownerKey
+    var confirmation by remember(state.selectedCard?.id, owner) { mutableStateOf<RelatedWork?>(null) }
     val signedIn = account.sessionStatus == AccountSessionStatus.LOGGED_IN
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("相关作品", Modifier.padding(horizontal = horizontalPadding.dp), color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -70,7 +71,7 @@ internal fun RelatedWorksSection(state: HongguoUiState, model: HongguoViewModel,
             title = { Text("预约这部作品？") },
             text = { Text("将在红果账号中预约《${work.series.title}》" + work.releaseText.takeIf { it.isNotEmpty() }?.let { "（$it）" }.orEmpty() +
                 "，上线后可在账号的预约列表查看。") },
-            confirmButton = { TextButton(onClick = { confirmation = null; accountModel.reserve(work) },
+            confirmButton = { TextButton(onClick = { confirmation = null; accountModel.reserve(work, expectedOwner = owner) },
                 modifier = Modifier.testTag("related_reserve_confirm")) { Text("预约") } },
             dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } })
     }

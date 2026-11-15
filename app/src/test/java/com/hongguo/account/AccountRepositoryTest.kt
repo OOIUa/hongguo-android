@@ -179,6 +179,9 @@ class AccountRepositoryTest {
         assertTrue(repo.state.value.reservations.any { it.card.id == series.id })
         assertTrue(repo.state.value.reservationBusyIds.isEmpty())
         assertTrue(repo.state.value.message!!.contains("确认"))
+        assertEquals(series.id, repo.state.value.reservationResult!!.seriesId)
+        assertEquals(series.title, repo.state.value.reservationResult!!.title)
+        assertEquals(repo.state.value.message, repo.state.value.reservationResult!!.message)
     }
 
     @Test fun existingReservationIsNotWrittenAgain() = runTest {
@@ -195,6 +198,8 @@ class AccountRepositoryTest {
         repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
         assertEquals(listOf(series.id), api.reserved)
         assertTrue(repo.state.value.message!!.contains("不确定"))
+        assertTrue(repo.state.value.message!!.contains("回读"))
+        assertTrue(repo.state.value.message!!.contains("101144"))
         assertFalse(repo.state.value.message!!.contains("未写入"))
     }
 
@@ -223,10 +228,60 @@ class AccountRepositoryTest {
         repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
         assertTrue(repo.state.value.message!!.contains("风控"))
         assertTrue(repo.state.value.message!!.contains("未写入"))
+        assertEquals(repo.state.value.message, repo.state.value.reservationResult!!.message)
         assertTrue(repo.state.value.reservationBusyIds.isEmpty())
         // An HTTP status is not a business answer: the outcome stays unknown.
         assertTrue(AccountRepository.reserveFailure(AccountProtocolException("HTTP 502", 502), true).contains("不确定"))
         assertTrue(AccountRepository.reserveFailure(AccountProtocolException("x", 4, businessRefusal = true), true).contains("错误码 4"))
+    }
+
+    @Test fun refusalDuringReservationPrecheckRetainsTheCodeAndDoesNotSubmit() = runTest {
+        val api = Gateway()
+        val repo = repository(signedStore(), api); runCurrent()
+        api.reservationsError = AccountProtocolException("refused", 101144, businessRefusal = true)
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertTrue(api.reserved.isEmpty())
+        val result = repo.state.value.reservationResult!!
+        assertTrue(result.message.contains("读取预约列表"))
+        assertTrue(result.message.contains("101144"))
+        assertTrue(result.message.contains("未提交"))
+        assertFalse(result.message.contains("检查网络"))
+    }
+
+    @Test fun dismissingAnOlderReservationResultDoesNotClearTheNewerResult() = runTest {
+        val api = Gateway()
+        val repo = repository(signedStore(), api); runCurrent()
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        val previous = repo.state.value.reservationResult!!
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        val next = repo.state.value.reservationResult!!
+        repo.consumeReservationResult(previous)
+        assertSame(next, repo.state.value.reservationResult)
+        repo.consumeReservationResult(next)
+        assertNull(repo.state.value.reservationResult)
+    }
+
+    @Test fun startingAnotherLoginClearsReservationResultsAndCancelledBusyState() = runTest {
+        val repo = repository(signedStore(), Gateway()); runCurrent()
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertNotNull(repo.state.value.reservationResult)
+        repo.reserve(upcomingWork, repo.ownerKey)
+        assertTrue(repo.state.value.reservationBusyIds.isNotEmpty())
+        repo.startQrLogin(); runCurrent()
+        assertNull(repo.state.value.reservationResult)
+        assertTrue(repo.state.value.reservationBusyIds.isEmpty())
+        repo.logout()
+        assertNull(repo.state.value.reservationResult)
+    }
+
+    @Test fun expiredSessionDuringReservationAlsoHasAnImmediateResult() = runTest {
+        val api = Gateway()
+        val repo = repository(signedStore(), api); runCurrent()
+        api.reserveError = AccountProtocolException("expired", 1003, requiresLogin = true, businessRefusal = true)
+        repo.reserve(upcomingWork, repo.ownerKey); runCurrent()
+        assertEquals(AccountSessionStatus.SIGNED_OUT, repo.state.value.sessionStatus)
+        assertTrue(repo.state.value.reservationResult!!.message.contains("重新登录"))
+        assertTrue(repo.state.value.reservationBusyIds.isEmpty())
     }
 
     @Test fun reservationNeedsTheSameOwnerAndAnUpcomingWork() = runTest {

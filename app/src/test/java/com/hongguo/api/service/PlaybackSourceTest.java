@@ -58,10 +58,8 @@ public class PlaybackSourceTest {
         AppSource.setPlaybackPostForTest(null);
         // 默认让 video_tab 不可用，覆盖旧接口回退路径；需要新接口的用例自行注入。
         AppSource.setPlaybackTabForTest((vid, identity) -> null);
-        // 默认让单集接口回空，覆盖旧路径；需要单集接口的用例自行注入。
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
-            throw new AppSource.EmptyPlaybackResponseException();
-        });
+        // No single model in legacy-route fixtures; empty-response recovery has its own tests.
+        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> null);
     }
 
     @After public void restore() {
@@ -275,18 +273,18 @@ public class PlaybackSourceTest {
         assertFalse(AppSource.signPlayback("https://h/p", id, new java.util.LinkedHashMap<>(), null, 1L).headers.containsKey("Cookie"));
     }
 
-    @Test public void httpRejectionMovesToTheNextRouteAndIsReportedLast() throws Exception {
+    @Test public void httpServerFailureMovesToTheNextRouteAndIsReportedLast() throws Exception {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
         List<String> hosts = new ArrayList<>();
         AppSource.setPlaybackPostForTest((body, identity, host) -> {
             hosts.add(host);
-            throw new AppSource.PlaybackHttpException(403);
+            throw new AppSource.PlaybackHttpException(502);
         });
         try {
             AppSource.fetch("7600000000000000001", "auto");
             fail();
         } catch (AppSource.PlaybackHttpException e) {
-            assertEquals("App 接口 HTTP 403", e.getMessage());
+            assertEquals("App 接口 HTTP 502", e.getMessage());
         }
         assertEquals(Arrays.asList(AppSource.VIDEO_API_HOST, AppSource.RETRY_HOST), hosts);
     }
@@ -343,6 +341,7 @@ public class PlaybackSourceTest {
 
     @Test public void emptySingleReplyFallsBackToLegacyRoutes() throws Exception {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
+        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> { throw new AppSource.EmptyPlaybackResponseException(); });
         Map<String, Object> good = Json.obj();
         List<Object> list = Json.arr();
         list.add(item("h264", 1080, 1920, "https://v1.qznovelvod.com/legacy.mp4", VALID_SPADE));

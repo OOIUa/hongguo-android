@@ -1,3 +1,27 @@
+# 0.7.29 / versionCode 40：播放空响应恢复（2026-11-16）
+
+安卓和 iOS 同步修复。本轮版本 0.7.29 / versionCode 40，沿用既有签名；包含此前预约提示修复。实际发布状态见 GitHub Release 与 update.json。
+
+- 仅复用已成功返回可用轨道的匿名播放身份；单集接口空响应时先延迟 300ms 并换新身份，最多 5 次，然后按现有兼容路径继续。空响应清除相应旧身份，其他并发请求已经验证成功的身份不被旧失败清除或覆盖。
+- HTTP 403/429 及已识别的登录/风控业务码停止后续取流；界面直接显示拒绝或连续空响应，避免误报“检查网络”。ByteVC2 与模型错误优先级保留。
+- 注册前开始计算 20 秒请求启动预算，超过预算不再发起新尝试；每次 HTTP 请求仍有独立超时，不宣称把已发出的请求强行截断在 20 秒。取消恢复等待或旧请求时不继续注册、取流或发布成功缓存。
+- JVM 回归覆盖身份复用、空响应优先恢复、次数上限、HTTP/业务拒绝、预算、取消、并发旧失败和界面错误文案。完整 385 项 JVM 测试、0 失败、0 跳过，APK 构建和 lint 通过，见 `/tmp/hongguo-playback-android-final.log`。
+- 匿名实网使用本次编译的生产 Java 类，在 JDK 17 连续取流、完整下载解密两集，5,360,372 / 13,929,228 字节，第二集复用首集成功身份。两份解密 MP4 在 macOS AVFoundation 各解码 50 帧通过；这不是 Android 真机解码验收。
+- 日志：`/tmp/hongguo-playback-android-live.log`、`/tmp/hongguo-playback-android-decode.log`。无个人账号或云写入；未做实体 Android 手机验收。
+- 发版复核：0.7.29 / code 40 的 385 项 JVM 测试、APK 与仪器包构建、lint 通过（`/tmp/hongguo-android-0729-build.log`）。专用干净 Android 17 / API 37 模拟器上，渐进首帧与跳转、播放器进度控制、长按/滑动/前后台手势及三主题预约结果，共 24 项通过。沿原签名从 0.7.28 覆盖安装 0.7.29，测试收藏、历史与续播位置的 SharedPreferences 字节保持一致，新版 Activity 与回归运行后仍一致。日志 `/tmp/hongguo-android-0729-device-final.log`、`/tmp/hongguo-android-0729-upgrade.log`。首轮因 ADB 连接中断未完成，完整结果以最终重跑为准。
+
+# 0.7.29 同步修复：Issue #7 预约结果提示与排查
+
+验证日期：2026-11-14（Asia/Shanghai）。本轮随 0.7.29 发布；0.7.28 不包含此提示修复。
+
+- 预约结果由应用主界面统一展示，包含作品名、结果及已有业务错误码，覆盖三种主题；离开详情页仍可查看。提示只保存在内存中，切换登录或退出时清理。旧提示的关闭回调不能清除较新的结果。
+- 区分读取预约列表失败、写入被明确拒绝、写入已接受但回读失败。预约前读取被业务拒绝时不再误报“检查网络”，回读失败保留错误码；未确认时仍不显示预约成功、不自动重放写入。
+- 预约确认绑定打开确认框时的账号；登录流程取消旧请求时同时清理预约 busy 状态，避免按钮持续显示“预约中”。
+- 核对 `tsukiyo-zero/hongguoTV` 提交 `77a99f509b8a5c586bf6ef453147cf1003203970`：预约路径、item_id/item_type/op_type/subscribe_source 和 gzip 与本项目一致。没有据此改动生产签名、轮换账号设备或增加写入重试。
+- `:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 通过，377 项 JVM 测试、0 失败、0 跳过。新增 MockWebServer 测试核对真实 gzip 正文、正文摘要、注册设备与安装号、会话 Cookie、业务拒绝错误码和单次写入。
+- 专用全新 Android 17 / API 37 模拟器：`ReservationResultUiTest` 三种主题共 3 项通过，验证错误码和作品名可见、页面内容切换后提示仍在、可关闭。初次运行的文本子串断言配置错误已修正并重跑通过。构建日志 `/tmp/hongguo-issue7-build.log`，最终设备日志 `/tmp/hongguo-issue7-device-final.log`。
+- **未使用受影响账号实测预约，未证实消除 `101144`。** 同账号、同作品的官方 App 对照与后续诊断见 `docs/ACCOUNT_INTEGRATION.md`。
+
 # 0.7.28：首页推荐去重、漫剧续页与数据保护
 
 验证日期：2026-11-14（Asia/Shanghai）。versionName 0.7.28、versionCode 39。沿用历史签名；实际发布状态与安装包元数据见 GitHub Release 的 update.json 和 SHA256SUMS。

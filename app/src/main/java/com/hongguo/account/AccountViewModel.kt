@@ -29,6 +29,7 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     fun reserve(work: RelatedWork, expectedOwner: String? = ownerKey) = repository.reserve(work, expectedOwner)
     fun selectSection(section: AccountSection) = repository.selectSection(section)
     fun consumeMessage() = repository.consumeMessage()
+    fun consumeReservationResult(result: ReservationResult) = repository.consumeReservationResult(result)
     fun reportProgress(entry: LibraryEntry, durationMs: Long, force: Boolean = false, ownerKey: String? = this.ownerKey) =
         repository.reportProgress(entry, durationMs, force, ownerKey)
     fun flushProgress(ownerKey: String?) = repository.flushProgress(ownerKey)
