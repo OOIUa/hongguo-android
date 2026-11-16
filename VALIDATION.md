@@ -8,6 +8,7 @@
 - Android 37 ARM64 模拟器实网：生产 `ProgressiveMedia.open` → 新模型接口 → 范围下载/解密 → Media3 渲染，验证问题剧前两集（7703065456646556696、7703065456650767384）及另一剧样本 7674087321058167832；三集均解出真实首帧、播放推进、跳到 15 秒后超过 18 秒、暂停并恢复到超过 19 秒，无播放器错误。最终版本 APK 的重复验收 1 项、0 失败，27.4 秒。
 - 使用仅 Debug 的空 Activity 承载生产媒体组件；MainActivity 的自动化启动曾因持续绘制等待空闲超时，未计为通过。本轮未宣称完整业务 UI、真机或个人账号验收。
 - 最终 APK 的证书 SHA-256 与 `release-signing.sha256` 一致，可沿用既有安装签名。日志 `/tmp/hongguo-v5-android-release-checks.log`、`/tmp/hongguo-v5-android-release-live.log`；线上发布及更新清单以 GitHub Release 为准。
+- 发布完成：GitHub `v0.7.30`，APK 26,517,987 字节，SHA-256 `1ab5d364a798c4d42e011ed4a808dd3f9885ebaca356e326d49f3259c3f77146`。官方及两条国内加速线路的固定 latest 更新清单、完整 APK 均匿名下载并核对版本、大小和哈希通过；报告 `build/online-0.7.30-verification.json`。
 
 
 安卓和 iOS 同步修复。本轮版本 0.7.29 / versionCode 40，沿用既有签名；包含此前预约提示修复。实际发布状态见 GitHub Release 与 update.json。
