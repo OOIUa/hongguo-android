@@ -132,7 +132,7 @@ public final class AppSource {
         Exception failure = null;
         Exception modelFailure = null;
         IOException renewal = null;
-        // LiuWQ0809/hongguo-android 89169c0: recover empty single-endpoint replies first.
+        // N3urda/hongguoTV 6672b55: v5 mobile endpoint first; bounded recovery from LiuWQ0809 89169c0.
         // Retain our route order, model-error precedence, cancellation and overall request budget.
         try {
             for (int attempt = 0; attempt < SINGLE_ATTEMPTS && hasPlaybackTime(started, budgetMs); attempt++) {
@@ -177,6 +177,24 @@ public final class AppSource {
         } catch (Exception e) {
             if (Thread.currentThread().isInterrupted()) throw e;
             modelFailure = e;
+        }
+        if (useLegacySingle && hasPlaybackTime(started, budgetMs)) {
+            checkPlaybackCancellation();
+            try {
+                Stream.VideoTrack track = fetchSingle(vid, quality, identity);
+                checkPlaybackCancellation();
+                if (track != null) { PLAYBACK_IDENTITY.compareAndSet(null, identity); return track; }
+            } catch (PlaybackRejectedException error) {
+                PLAYBACK_IDENTITY.compareAndSet(identity, null); throw error;
+            } catch (InterruptedIOException error) { throw error;
+            } catch (PlaybackHttpException | IOException error) {
+                stopIfPlaybackRejected(error, identity);
+                if (Thread.currentThread().isInterrupted()) throw error;
+                failure = error;
+            } catch (Exception error) {
+                if (Thread.currentThread().isInterrupted()) throw error;
+                if (modelFailure == null) modelFailure = error;
+            }
         }
         for (PlaybackRoute route : PLAYBACK_ROUTES) {
             checkPlaybackCancellation();
@@ -299,10 +317,10 @@ public final class AppSource {
         }
     }
 
-    /** 播放接口返回空响应：疑似匿名身份被拒，fetch 会换新身份重试一次。 */
+    /** 播放接口返回空响应：原因不确定，由 fetch 在预算内有限恢复。 */
     public static final class EmptyPlaybackResponseException extends IllegalStateException {
         EmptyPlaybackResponseException() {
-            super("App 接口返回空响应，疑似播放设备身份被拒，请稍后重试");
+            super("App 接口返回空响应，原因尚未确认，请稍后重试");
         }
     }
 
@@ -318,16 +336,18 @@ public final class AppSource {
         playbackPost = post == null ? AppSource::postPlayback : post;
     }
 
-    /** 可替换的单集取流（JVM 测试注入）；生产实现见 {@link #fetchSingle}。 */
+    /** 可替换的优先取流（JVM 测试注入）；生产实现见 {@link #fetchPrimary}。 */
     interface SinglePlayback {
         Stream.VideoTrack get(String vid, String quality, PlaybackDevice.Identity identity) throws Exception;
     }
 
-    private static SinglePlayback singlePlayback = AppSource::fetchSingle;
+    private static SinglePlayback singlePlayback = AppSource::fetchPrimary;
+    private static boolean useLegacySingle = true;
 
     static void setSinglePlaybackForTest(SinglePlayback playback) {
         PLAYBACK_IDENTITY.set(null);
-        singlePlayback = playback == null ? AppSource::fetchSingle : playback;
+        singlePlayback = playback == null ? AppSource::fetchPrimary : playback;
+        useLegacySingle = playback == null;
     }
 
     /** 可替换的 video_tab 请求（JVM 测试注入）；返回 null 表示该接口不可用、应回退旧流程。 */
@@ -840,7 +860,35 @@ public final class AppSource {
         return Json.stringify(payload).getBytes(StandardCharsets.UTF_8);
     }
 
-    /** 完整签名的单集 POST；空正文按空响应处理，模型交给 {@link #parseModel}（ByteVC2 与备用片源规则不变）。 */
+    /** v5 gzip 模型 POST；精确选择本集，沿用 parseModel 的编码与加密规则。 */
+    private static Stream.VideoTrack fetchPrimary(String vid, String quality, PlaybackDevice.Identity identity) throws Exception {
+        checkPlaybackCancellation();
+        com.hongguo.api.playback.MobilePlayerV5.Request signed =
+                com.hongguo.api.playback.MobilePlayerV5.request(vid, identity.deviceId, identity.iid, identity.cdid, System.currentTimeMillis());
+        Http.Req req = new Http.Req(signed.getUrl()).method("POST").timeout(PLAYBACK_TIMEOUT_MS);
+        req.followRedirect = false;
+        for (Map.Entry<String, String> header : signed.getHeaders().entrySet()) req.header(header.getKey(), header.getValue());
+        req.body(signed.getBody());
+        Http.Resp response = Http.send(req);
+        checkPlaybackCancellation();
+        checkPlaybackRejection(response.status);
+        if (response.status != 200) throw new PlaybackHttpException(response.status);
+        if (response.body.length > 2 * 1024 * 1024) throw new IOException("播放信息过大");
+        return parseModel(vid, parseMobileResponse(vid, response.text()), quality);
+    }
+
+    static Map<String, Object> parseMobileResponse(String vid, String text) {
+        Map<String, Object> root = parsePlaybackResponse(text);
+        Object code = root.containsKey("code") ? root.get("code") : root.get("Code");
+        if (code == null || Json.optInt(code, -1) != 0) throw new IllegalStateException("播放接口暂未提供播放信息");
+        Map<String, Object> data = Json.optObj(root.get("data"));
+        Map<String, Object> nested = data == null ? null : Json.optObj(data.get("1004"));
+        Map<String, Object> entries = nested == null ? data : nested;
+        if (entries == null || !entries.containsKey(vid)) throw new IllegalStateException("当前分集未返回播放信息");
+        Map<String, Object> result = Json.obj(); result.put("code", 0L); result.put("data", entries);
+        return result;
+    }
+
     private static Stream.VideoTrack fetchSingle(String vid, String quality, PlaybackDevice.Identity identity)
             throws Exception {
         byte[] body = singleBody(vid);

@@ -149,3 +149,20 @@ Local changes: the single model goes through the same `parseModel` rules (ByteVC
 参考 [LiuWQ0809/hongguo-android `89169c0`](https://github.com/LiuWQ0809/hongguo-android/commit/89169c0ddfdc1fff3fbdf6a097df5802881375e9) 及其前置 `409a18d`、`aa38908`、`16d1495`（GPL-3.0-only）：优先对新版单集接口的空响应有限换新身份恢复、复用已成功取流的匿名身份、HTTP 403/429 停止后续请求。
 
 本地保留原有兼容路径顺序、模型错误优先级、注册失败冷却和取消语义；恢复与旧路径共用从初次注册前开始的 20 秒请求启动预算，单次播放 HTTP 请求仍受 8 秒超时约束，预算不强行截断已发出的请求。成功身份仅保存在进程内，按具体身份清除，旧请求不覆盖或清除其他请求的新身份。账号设备与推荐设备不参与此缓存；已识别的登录/风控业务拒绝亦停止恢复。
+
+Playback v5 model endpoint (2026-11-16)
+
+- N3urda/hongguoTV, commit 6672b55d5308ea1ec26d2fe0bc0b2401ef4aa0c3, GPL-3.0-only.
+  https://github.com/N3urda/hongguoTV/tree/6672b55d5308ea1ec26d2fe0bc0b2401ef4aa0c3/kotlin-tv
+- References: Signer.kt, AesV3.kt, V5Constants.kt, MobilePlayback.kt, SIGNING_V5.md,
+  signing-v5-f13.json and signing-v5-carrier.json. The earlier GPL algorithm cites drpys 22261ad.
+- Playback now prefers /novel/player/multi_video_model/player/v1 with gzip JSON and
+  Android v04.10.03 Medusa/Helios/Khronos. The exact final query and compressed body
+  are signed with the same timestamp and registered anonymous identity. device_level=1
+  requests platform-compatible renditions. Both flat and data.1004 response maps select
+  only the requested episode. No account cookie or native signing SDK is used.
+- Local adaptations retain the proven-identity cache, bounded empty-response recovery,
+  previous single/model fallback paths, refusal handling and cancellation. Existing
+  catalogue, search and account signing stays unchanged. SDK-derived synthetic digest
+  vectors and carrier vectors verify the pure-code ports; the referenced research VM
+  was not copied or included.
