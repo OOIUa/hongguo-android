@@ -5,8 +5,8 @@ plugins {
 }
 
 // 版本号集中在这里：每次改动上调 patch（0.7.31 → 0.7.32），构建产出的文件名自动带上它。
-val appVersionCode = providers.gradleProperty("appVersionCode").orElse("48").get().toInt()
-val appVersionName = providers.gradleProperty("appVersionName").orElse("0.7.37").get()
+val appVersionCode = providers.gradleProperty("appVersionCode").orElse("49").get().toInt()
+val appVersionName = providers.gradleProperty("appVersionName").orElse("0.7.38").get()
 
 android {
     namespace = "com.hongguo.android"
