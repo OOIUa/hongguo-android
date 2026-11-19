@@ -26,6 +26,8 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import com.hongguo.api.service.ProgressiveMedia
 import com.hongguo.account.AccountSessionStatus
+import com.hongguo.android.danmaku.DanmakuPrefs
+import com.hongguo.android.danmaku.DanmakuSettings
 
 private val mediaCleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -95,6 +97,8 @@ data class HongguoUiState(
     val autoPlayNext: Boolean = true,
     val preloadNext: Boolean = true,
     val playbackSpeed: Float = 1f,
+    /** 弹幕 rendering preferences; the per-episode comments themselves live in the player layer. */
+    val danmaku: DanmakuSettings = DanmakuSettings(),
     val themeStyle: AppThemeStyle = AppThemeStyle.WARM,
     val themeMode: ThemeMode? = null,
     val navBarStyle: NavBarStyle = NavBarStyle.CLASSIC,
@@ -112,6 +116,13 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         autoPlayNext = preferences.getBoolean("auto_play_next", true), preloadNext = preferences.getBoolean("preload_next", true),
         playbackSpeed = runCatching { preferences.getFloat("playback_speed", 1f) }.getOrDefault(1f)
             .takeIf { it in PlaybackSpeeds } ?: 1f,
+        danmaku = DanmakuSettings(
+            enabled = preferences.getBoolean("danmaku_enabled", true),
+            opacity = preferences.getInt("danmaku_opacity", DanmakuPrefs.OPACITY_DEFAULT),
+            font = preferences.getInt("danmaku_font", DanmakuPrefs.FONT_DEFAULT),
+            speed = preferences.getInt("danmaku_speed", DanmakuPrefs.SPEED_DEFAULT),
+            rows = preferences.getInt("danmaku_rows", DanmakuPrefs.ROWS_DEFAULT),
+        ).normalized(),
         themeStyle = AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
         themeMode = ThemeMode.stored(preferences.getString(ThemePreferences.MODE, null),
             preferences.getBoolean(ThemePreferences.DARK_FOLLOWS_SYSTEM, false)),
@@ -453,6 +464,22 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         if (speed !in PlaybackSpeeds) return
         preferences.edit { putFloat("playback_speed", speed) }
         mutableState.update { it.copy(playbackSpeed = speed) }
+    }
+
+    /** 弹幕开关; the panel's own switch and the player's chip both land here. */
+    fun setDanmakuEnabled(enabled: Boolean) = setDanmaku(state.value.danmaku.copy(enabled = enabled))
+
+    /** Stores every danmaku preference at once; values are clamped before they reach disk. */
+    fun setDanmaku(settings: DanmakuSettings) {
+        val next = settings.normalized()
+        preferences.edit {
+            putBoolean("danmaku_enabled", next.enabled)
+            putInt("danmaku_opacity", next.opacity)
+            putInt("danmaku_font", next.font)
+            putInt("danmaku_speed", next.speed)
+            putInt("danmaku_rows", next.rows)
+        }
+        mutableState.update { it.copy(danmaku = next) }
     }
 
     fun updateQuery(value: String) {

@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -117,6 +118,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hongguo.account.AccountSessionStatus
+import com.hongguo.android.danmaku.DanmakuOverlay
+import com.hongguo.android.danmaku.DanmakuSettings
 import androidx.media3.common.Player
 import android.widget.Toast
 import kotlinx.coroutines.delay
@@ -196,6 +199,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     var showFavorites by rememberSaveable(detail.id) { mutableStateOf(false) }
     // Full screen: the drama's details beside the title instead of leaving the player for its page.
     var showInfo by rememberSaveable(detail.id) { mutableStateOf(false) }
+    var showDanmaku by rememberSaveable(detail.id) { mutableStateOf(false) }
     var doubleSpeedHeld by remember(state.video?.requestId) { mutableStateOf(false) }
     var seeking by remember(state.video?.requestId) { mutableStateOf(false) }
     var seekFraction by remember(state.video?.requestId) { mutableStateOf<Float?>(null) }
@@ -237,7 +241,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         pager.settledPage == selected && synchronizing == null && it.episodeId == detail.episodes[selected].id
     }
     // A temporary drag disables the owner without discarding this request's pause/resume intent.
-    val sheetOpen = showEpisodes || showSpeed || showFavorites || showInfo
+    val sheetOpen = showEpisodes || showSpeed || showFavorites || showInfo || showDanmaku
     val temporaryDoubleSpeed = doubleSpeedHeld && activeVideo != null && !sheetOpen
     val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null,
         playbackSpeed = if (temporaryDoubleSpeed) 2f else state.playbackSpeed)
@@ -360,6 +364,16 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 if (page == selected && activeVideo != null && playback.player != null) {
                     VideoSurface(playback, Modifier.fillMaxSize())
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = pictureCover.value }.background(Color.Black))
+                    // 弹幕在画面之上、透明交互层之下：开关和设置都不影响单击、双击与横滑手势。
+                    // 位置只跟顶栏和状态栏有关，竖屏从标题下方开始，横屏贴顶部，底部信息区不受影响。
+                    if (state.danmaku.enabled && !inPip) {
+                        DanmakuOverlay(seriesId = detail.id, episodeId = detail.episodes[selected].id,
+                            durationMs = playback.durationMs, player = playback.player, settings = state.danmaku,
+                            modifier = Modifier.fillMaxWidth()
+                                .fillMaxHeight(if (landscape) .42f else .36f)
+                                .align(Alignment.TopCenter)
+                                .padding(top = if (landscape) 6.dp else 62.dp))
+                    }
                     // A tap shows or hides the controls and a double tap anywhere plays or pauses. The progress moves
                     // only by holding until 2× and then dragging sideways (no side double-tap skips, issue #3).
                     PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),
@@ -520,6 +534,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 } else Text("${playerTime(displayedPosition)} / $durationLabel",
                     modifier = Modifier.testTag("player_time"), color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
                 Spacer(Modifier.weight(1f))
+                DanmakuControl(enabled = state.danmaku.enabled, onToggle = { model.setDanmakuEnabled(!state.danmaku.enabled) },
+                    onSettings = { showDanmaku = true })
                 TextButton(onClick = { showSpeed = !showSpeed }, modifier = Modifier.testTag("player_speed")
                     .onGloballyPositioned { speedAnchor = it.boundsInRoot() }
                     .semantics { contentDescription = "播放速度，当前${playbackSpeedLabel(state.playbackSpeed)}" }) {
@@ -555,6 +571,10 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         PlayerSidePanel(visible = landscape && showInfo, onDismiss = { showInfo = false }, tag = "player_info_panel", fromStart = true) {
             DramaInfo(detail, selected, Modifier.weight(1f), onEpisodes = { showInfo = false; showEpisodes = true })
         }
+        // 弹幕设置：全屏从右侧进，竖屏用底部 sheet；改完立即生效并落盘。
+        PlayerSidePanel(visible = landscape && showDanmaku, onDismiss = { showDanmaku = false }, tag = "player_danmaku_side") {
+            DanmakuSettingsPanel(state.danmaku, model::setDanmaku, onReset = { model.setDanmaku(DanmakuSettings()) })
+        }
     }
 
     // Portrait keeps bottom sheets; full screen uses the side panels above.
@@ -577,6 +597,15 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     showEpisodes = false
                     model.playEpisode(index)
                 }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+    }
+
+    if (showDanmaku && !landscape) {
+        ModalBottomSheet(onDismissRequest = { showDanmaku = false }, containerColor = PlayerPanelColor, contentColor = Color.White) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding()) {
+                DanmakuSettingsPanel(state.danmaku, model::setDanmaku, onReset = { model.setDanmaku(DanmakuSettings()) })
                 Spacer(Modifier.height(20.dp))
             }
         }
