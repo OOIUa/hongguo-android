@@ -27,6 +27,8 @@ internal fun DanmakuOverlay(
     durationMs: Long,
     player: ExoPlayer?,
     settings: DanmakuSettings,
+    /** 用户设定的弹幕带高度（px）；视图本身会多留半行高度用于越界绘制。 */
+    bandHeightPx: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -51,10 +53,12 @@ internal fun DanmakuOverlay(
     AndroidView(
         factory = { context ->
             DanmakuView(context).also {
+                it.setBandHeight(bandHeightPx)
                 it.applyPrefs(settings.opacity, settings.font, settings.speed, settings.effect)
             }
         },
         update = { view ->
+            view.setBandHeight(bandHeightPx)
             view.applyPrefs(settings.opacity, settings.font, settings.speed, settings.effect)
             val active = player
             if (active == null) {

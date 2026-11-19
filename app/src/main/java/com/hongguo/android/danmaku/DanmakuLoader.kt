@@ -52,10 +52,11 @@ internal class DanmakuLoader(
                 } catch (failed: Exception) {
                     synchronized(this) {
                         failures++
-                        // Back off, but never give up: a first request that trips the risk control
-                        // only delayed the comments by half a minute, and a loader that had given
-                        // up stayed silent until the player was reopened.
+                        // Back off instead of retrying in a tight loop: the first request can trip
+                        // risk control and a retry a second later usually goes through. Ten consecutive
+                        // failures mean something is really wrong, so stop instead of hammering the API.
                         retryAfter = clock() + backoffMs(failures)
+                        if (failures >= MAX_FAILURES) exhausted = true
                     }
                     onFailure(failed)
                     return
@@ -89,6 +90,8 @@ internal class DanmakuLoader(
     val buffered: Int get() = synchronized(this) { comments.size }
 
     companion object {
+        /** Ten consecutive failures before the loader gives up on this episode. */
+        private const val MAX_FAILURES = 10
         /** 1 s, 4 s, then 15 s for every further consecutive failure. */
         internal fun backoffMs(failures: Int): Long = when {
             failures <= 1 -> 1_000L

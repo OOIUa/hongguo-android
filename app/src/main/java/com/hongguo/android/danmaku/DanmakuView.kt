@@ -42,6 +42,11 @@ internal class DanmakuView(context: Context, textSizeSp: Float = 18f, crossMs: L
     private var lineHeight = 0f
     private var laidOutWidth = -1
     private var laidOutHeight = -1
+    /**
+     * 用户设定的那一块高度（px）。视图本身会多给半行左右的高度用来越界绘制，
+     * 但算行数时只认这块带子，所以行距固定、最后一行可以稍微顶出去。
+     */
+    private var bandHeightPx = 0f
     // Danmaku stay independent of the system font size: 18 here means 18dp, not 18sp, so a phone
     // with a huge reading font does not get two giant comments per screen.
     private val baseTextSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, textSizeSp, resources.displayMetrics)
@@ -70,10 +75,11 @@ internal class DanmakuView(context: Context, textSizeSp: Float = 18f, crossMs: L
     }
 
     /**
-     * Applies the user's rendering preferences. A font-size change clears on-screen comments
-     * (their track geometry no longer matches); opacity and speed apply to what is already flying.
-     * The row count is never set from outside: [relayout] derives it from this view's height and
-     * the current font, so the coverage fraction chosen by the user translates into real rows.
+     * Applies the user's rendering preferences. A font-size change keeps the comments already
+     * flying: their text is measured again at the new size, each one keeps its share of the
+     * crossing, and they are re-seated into tracks. Opacity and speed apply to what is already
+     * flying. The row count is never set from outside: [relayout] derives it from the band height
+     * and the current font, so the coverage fraction chosen by the user translates into real rows.
      */
     fun applyPrefs(opacityPct: Int, font: Int, speed: Int, effect: Int) {
         val oldTextSize = paint.textSize
@@ -96,10 +102,33 @@ internal class DanmakuView(context: Context, textSizeSp: Float = 18f, crossMs: L
         currentCrossMs = (baseCrossMs * DanmakuPrefs.speedScale(speed)).toLong().coerceAtLeast(1)
         relayout()
         if (paint.textSize != oldTextSize) {
-            active.clear()
-            dirty = true
+            // 字号只是把字放大缩小，不该把正在飞的弹幕清空：按新字号重新量一遍宽度，
+            // 保持各自跨屏进度不变，再重新分配轨道，实在排不下的那几条才丢掉。
+            reseat(positionProvider().coerceAtLeast(0), remeasure = true)
         }
         invalidate()
+    }
+
+    /** 重排屏上弹幕：可选按当前字号重新量宽度，然后按从右到左的顺序重新找轨道。 */
+    private fun reseat(position: Long, remeasure: Boolean) {
+        val carried = active.toList()
+        active.clear()
+        val resumed = carried.mapNotNull { item ->
+            val progress = (position - item.anchorMs).toFloat() / currentCrossMs
+            if (progress < 0f || progress >= 1f) null
+            else item.copy(
+                width = if (remeasure) paint.measureText(item.text) else item.width,
+                anchorMs = position - (progress * currentCrossMs).toLong(),
+            )
+        }.sortedByDescending { x(it, position) }
+        for (item in resumed) {
+            val track = (0 until tracks).firstOrNull { candidate ->
+                active.none { it.track == candidate && overlaps(it, item, position) }
+            }
+            if (track != null) active.add(item.copy(track = track))
+        }
+        lastEmit = position
+        dirty = true
     }
 
     private fun relayout() {
@@ -107,13 +136,22 @@ internal class DanmakuView(context: Context, textSizeSp: Float = 18f, crossMs: L
         laidOutHeight = height
         if (width <= 0 || height <= 0 || currentCrossMs <= 0) return
         pxPerMs = width.toFloat() / currentCrossMs
-        // 行数取「带高 ÷ 行距」的四舍五入：向上取整会把不足一行的余量也撑出一整行，横屏
-        // 那种一档只有两行高的带子会被顶到三行；向下取整又太抠，横屏 1/6 只剩一行。四舍五入
-        // 正合适，再把带高平均分给这几行，行距只在字高上留一点呼吸感。
+        // 行距固定为字高的 1.08 倍，不随屏占比伸缩：行数按「带高 ÷ 行距」四舍五入得到，
+        // 于是最后一行可能多顶出去半行左右（比如 1/6 实际占到约 13.3% 再多半行），
+        // 也比把行距拉宽塞满整块带更接近用户设定的比例、字距也上下一致。
         val metrics = paint.fontMetrics
         val ink = (metrics.descent - metrics.ascent).coerceAtLeast(1f)
-        tracks = kotlin.math.round(height / (ink * ROW_PITCH)).toInt().coerceAtLeast(1)
-        lineHeight = (height.toFloat() / tracks).coerceAtLeast(ink * 1.02f)
+        lineHeight = ink * ROW_PITCH
+        val band = if (bandHeightPx > 0f) minOf(bandHeightPx, height.toFloat()) else height.toFloat()
+        tracks = kotlin.math.round(band / lineHeight).toInt().coerceAtLeast(1)
+    }
+
+    /** 告知视图“用户选的那块带子有多高”，视图自身高度可以比它多一点用于越界绘制。 */
+    fun setBandHeight(px: Float) {
+        if (bandHeightPx == px) return
+        bandHeightPx = px
+        relayout()
+        invalidate()
     }
 
     /**

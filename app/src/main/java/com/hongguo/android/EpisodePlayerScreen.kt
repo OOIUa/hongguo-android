@@ -95,6 +95,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -377,9 +378,18 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                             val bandHeight = ((maxHeight - headerPad) *
                                 DanmakuPrefs.coverageFraction(state.danmaku.coverage)).coerceAtLeast(0.dp)
                             if (bandHeight > 0.dp) {
+                                // 行距固定，最后一行可能多顶出半行，所以视图要比带子再高 0.6 行，
+                                // 否则多出来的那一行会被自身边界裁掉；多出的部分透明、不挡操作。
+                                val density = LocalDensity.current
+                                val bandPx = with(density) { bandHeight.toPx() }
+                                val slackPx = with(density) {
+                                    (18.dp * DanmakuPrefs.fontScale(state.danmaku.font)).toPx() * 0.8f
+                                }
                                 DanmakuOverlay(seriesId = detail.id, episodeId = detail.episodes[selected].id,
                                     durationMs = playback.durationMs, player = playback.player, settings = state.danmaku,
-                                    modifier = Modifier.fillMaxWidth().height(bandHeight)
+                                    bandHeightPx = bandPx,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .height(with(density) { (bandPx + slackPx).toDp() })
                                         .align(Alignment.TopCenter).offset(y = headerPad))
                             }
                         }
