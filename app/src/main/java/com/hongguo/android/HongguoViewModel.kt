@@ -118,10 +118,11 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             .takeIf { it in PlaybackSpeeds } ?: 1f,
         danmaku = DanmakuSettings(
             enabled = preferences.getBoolean("danmaku_enabled", true),
-            opacity = preferences.getInt("danmaku_opacity", DanmakuPrefs.OPACITY_DEFAULT),
+            coverage = preferences.getInt("danmaku_coverage", DanmakuPrefs.COVERAGE_DEFAULT),
             font = preferences.getInt("danmaku_font", DanmakuPrefs.FONT_DEFAULT),
+            opacity = preferences.getInt("danmaku_opacity", DanmakuPrefs.OPACITY_DEFAULT),
+            effect = preferences.getInt("danmaku_effect", DanmakuPrefs.EFFECT_DEFAULT),
             speed = preferences.getInt("danmaku_speed", DanmakuPrefs.SPEED_DEFAULT),
-            rows = preferences.getInt("danmaku_rows", DanmakuPrefs.ROWS_DEFAULT),
         ).normalized(),
         themeStyle = AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
         themeMode = ThemeMode.stored(preferences.getString(ThemePreferences.MODE, null),
@@ -474,10 +475,11 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val next = settings.normalized()
         preferences.edit {
             putBoolean("danmaku_enabled", next.enabled)
-            putInt("danmaku_opacity", next.opacity)
+            putInt("danmaku_coverage", next.coverage)
             putInt("danmaku_font", next.font)
+            putInt("danmaku_opacity", next.opacity)
+            putInt("danmaku_effect", next.effect)
             putInt("danmaku_speed", next.speed)
-            putInt("danmaku_rows", next.rows)
         }
         mutableState.update { it.copy(danmaku = next) }
     }

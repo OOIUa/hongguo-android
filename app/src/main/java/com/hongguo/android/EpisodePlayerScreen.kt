@@ -61,6 +61,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -119,7 +120,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hongguo.account.AccountSessionStatus
 import com.hongguo.android.danmaku.DanmakuOverlay
-import com.hongguo.android.danmaku.DanmakuSettings
+import com.hongguo.android.danmaku.DanmakuPrefs
 import androidx.media3.common.Player
 import android.widget.Toast
 import kotlinx.coroutines.delay
@@ -367,10 +368,15 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     // 弹幕在画面之上、透明交互层之下：开关和设置都不影响单击、双击与横滑手势。
                     // 位置只跟顶栏和状态栏有关，竖屏从标题下方开始，横屏贴顶部，底部信息区不受影响。
                     if (state.danmaku.enabled && !inPip) {
+                        // 屏占比按整块屏幕的高度算，而不是看父布局给多少：这样 1/4 就是屏幕上方四分之一，
+                        // 层里排几行再由字号和这块高度换算。
+                        val screenHeightDp = LocalConfiguration.current.screenHeightDp
+                        val danmakuHeight = (screenHeightDp.dp * DanmakuPrefs.coverageFraction(state.danmaku.coverage))
+                            .coerceAtMost(screenHeightDp.dp)
                         DanmakuOverlay(seriesId = detail.id, episodeId = detail.episodes[selected].id,
                             durationMs = playback.durationMs, player = playback.player, settings = state.danmaku,
                             modifier = Modifier.fillMaxWidth()
-                                .fillMaxHeight(if (landscape) .42f else .36f)
+                                .height(danmakuHeight)
                                 .align(Alignment.TopCenter)
                                 .padding(top = if (landscape) 6.dp else 62.dp))
                     }
@@ -571,9 +577,10 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         PlayerSidePanel(visible = landscape && showInfo, onDismiss = { showInfo = false }, tag = "player_info_panel", fromStart = true) {
             DramaInfo(detail, selected, Modifier.weight(1f), onEpisodes = { showInfo = false; showEpisodes = true })
         }
-        // 弹幕设置：全屏从右侧进，竖屏用底部 sheet；改完立即生效并落盘。
-        PlayerSidePanel(visible = landscape && showDanmaku, onDismiss = { showDanmaku = false }, tag = "player_danmaku_side") {
-            DanmakuSettingsPanel(state.danmaku, model::setDanmaku, onReset = { model.setDanmaku(DanmakuSettings()) })
+        // 弹幕设置：右侧面板不压暗画面，改参数时还能看清弹幕本身的变化。
+        PlayerSidePanel(visible = landscape && showDanmaku, onDismiss = { showDanmaku = false },
+            tag = "player_danmaku_side", dim = false) {
+            DanmakuSettingsPanel(state.danmaku, model::setDanmaku)
         }
     }
 
@@ -603,10 +610,12 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     }
 
     if (showDanmaku && !landscape) {
-        ModalBottomSheet(onDismissRequest = { showDanmaku = false }, containerColor = PlayerPanelColor, contentColor = Color.White) {
+        ModalBottomSheet(onDismissRequest = { showDanmaku = false }, containerColor = PlayerPanelColor,
+            contentColor = Color.White, scrimColor = Color.Transparent,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding()) {
-                DanmakuSettingsPanel(state.danmaku, model::setDanmaku, onReset = { model.setDanmaku(DanmakuSettings()) })
-                Spacer(Modifier.height(20.dp))
+                DanmakuSettingsPanel(state.danmaku, model::setDanmaku)
+                Spacer(Modifier.height(12.dp))
             }
         }
     }

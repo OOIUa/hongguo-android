@@ -51,18 +51,42 @@ class DanmakuEmojiTest {
 
 class DanmakuPrefsTest {
     @Test fun `settings normalize every out-of-range value`() {
-        val fixed = DanmakuSettings(enabled = false, opacity = 5, font = 9, speed = -1, rows = 99).normalized()
+        val fixed = DanmakuSettings(enabled = false, coverage = 9, opacity = 66, font = 9, speed = -1).normalized()
         assertEquals(false, fixed.enabled)
-        assertEquals(DanmakuPrefs.OPACITY_DEFAULT, fixed.opacity)
+        assertEquals(DanmakuPrefs.COVERAGE_LABELS.lastIndex, fixed.coverage)
+        assertEquals(75, fixed.opacity)
         assertEquals(DanmakuPrefs.FONT_LABELS.lastIndex, fixed.font)
         assertEquals(0, fixed.speed)
-        assertEquals(DanmakuPrefs.ROWS_DEFAULT, fixed.rows)
     }
 
     @Test fun `labels and scales follow the selected step`() {
-        assertEquals("较大", DanmakuPrefs.fontLabel(4))
-        assertEquals(1.36f, DanmakuPrefs.fontScale(4))
-        assertEquals("慢", DanmakuPrefs.speedLabel(0))
-        assertEquals(1.5f, DanmakuPrefs.speedScale(0))
+        assertEquals("特大", DanmakuPrefs.fontLabel(4))
+        assertEquals(1.55f, DanmakuPrefs.fontScale(4))
+        assertEquals("很慢", DanmakuPrefs.speedLabel(0))
+        assertEquals(1.9f, DanmakuPrefs.speedScale(0))
+        assertEquals("很快", DanmakuPrefs.speedLabel(4))
+        assertEquals(0.42f, DanmakuPrefs.speedScale(4))
+    }
+
+    @Test fun `opacity index lines up with the stored percentage`() {
+        assertEquals(0, DanmakuPrefs.opacityIndex(25))
+        assertEquals(3, DanmakuPrefs.opacityIndex(100))
+        assertEquals(2, DanmakuPrefs.opacityIndex(80))
+    }
+
+    @Test fun `text effects clamp to the three choices`() {
+        assertEquals("白字", DanmakuPrefs.effectLabel(0))
+        assertEquals("黑边", DanmakuPrefs.effectLabel(1))
+        assertEquals("阴影", DanmakuPrefs.effectLabel(9))
+        assertEquals(DanmakuPrefs.EFFECT_DEFAULT, DanmakuSettings(effect = 12).normalized().effect)
+        assertEquals(DanmakuPrefs.EFFECT_DEFAULT, DanmakuSettings().effect)
+    }
+
+    @Test fun `coverage steps map onto screen fractions`() {
+        assertEquals("1/4", DanmakuPrefs.coverageLabel(0))
+        assertEquals(0.25f, DanmakuPrefs.coverageFraction(0))
+        assertEquals(0.5f, DanmakuPrefs.coverageFraction(2))
+        assertEquals(1f, DanmakuPrefs.coverageFraction(3))
+        assertEquals(1f / 3f, DanmakuPrefs.coverageFraction(DanmakuPrefs.COVERAGE_DEFAULT))
     }
 }

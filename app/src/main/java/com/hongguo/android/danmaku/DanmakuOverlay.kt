@@ -38,11 +38,11 @@ internal fun DanmakuOverlay(
     AndroidView(
         factory = { context ->
             DanmakuView(context).also {
-                it.applyPrefs(settings.opacity, settings.font, settings.speed, settings.rows)
+                it.applyPrefs(settings.opacity, settings.font, settings.speed, settings.effect)
             }
         },
         update = { view ->
-            view.applyPrefs(settings.opacity, settings.font, settings.speed, settings.rows)
+            view.applyPrefs(settings.opacity, settings.font, settings.speed, settings.effect)
             val active = player
             if (active == null) {
                 if (boundPlayer[0] != null) {

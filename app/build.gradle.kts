@@ -4,6 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// 版本号集中在这里：每次改动上调 patch（0.7.31 → 0.7.32），构建产出的文件名自动带上它。
+val appVersionCode = providers.gradleProperty("appVersionCode").orElse("48").get().toInt()
+val appVersionName = providers.gradleProperty("appVersionName").orElse("0.7.37").get()
+
 android {
     namespace = "com.hongguo.android"
     compileSdk = 36
@@ -31,6 +35,16 @@ android {
     buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     testOptions { unitTests.isReturnDefaultValues = true }
+
+    // 产物名带版本号：HGMini-v0.7.31-debug.apk，避免多个版本在下载目录里互相覆盖。
+    @Suppress("DEPRECATION")
+    applicationVariants.all {
+        val buildTypeName = buildType.name
+        outputs.all {
+            (this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl)?.outputFileName =
+                "HGMini-v$appVersionName-$buildTypeName.apk"
+        }
+    }
 }
 
 dependencies {
