@@ -204,21 +204,30 @@ class DanmakuLoaderTest {
         assertEquals(count, requested.size)
     }
 
-    @Test fun failuresBackOffAndEventuallyGiveUpSilently() {
+    @Test fun failuresBackOffWithoutGivingUp() {
         val (loader, requested) = loader(600_000) { throw IOException("offline") }
         loader.loadUpTo(0)
         assertEquals(1, requested.size)
+        // A second call inside the backoff window does not hit the network.
         loader.loadUpTo(0)
         assertEquals(1, requested.size)
-        now += 31_000
+        now += 1_000
         loader.loadUpTo(0)
         assertEquals(2, requested.size)
-        now += 31_000
+        now += 4_000
         loader.loadUpTo(0)
         assertEquals(3, requested.size)
-        now += 31_000
+        now += 15_000
         loader.loadUpTo(0)
-        assertEquals(3, requested.size)
+        assertEquals(4, requested.size)
+        // No attempt cap: a request that keeps failing is retried every 15 s instead of going
+        // silent until the player is reopened.
+        now += 15_000
+        loader.loadUpTo(0)
+        assertEquals(5, requested.size)
+        assertEquals(1_000L, DanmakuLoader.backoffMs(1))
+        assertEquals(4_000L, DanmakuLoader.backoffMs(2))
+        assertEquals(15_000L, DanmakuLoader.backoffMs(7))
     }
 
     @Test fun betweenFiltersByOffsetRange() {

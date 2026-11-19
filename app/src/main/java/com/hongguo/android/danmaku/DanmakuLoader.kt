@@ -17,6 +17,8 @@ internal class DanmakuLoader(
     @Volatile var durationMs: Long,
     private val leadMs: Long = 60_000L,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Reports failed windows; the host logs them, tests stay silent. */
+    private val onFailure: (Throwable) -> Unit = {},
 ) {
     private val comments = ArrayList<Danmaku>()
     private val seen = HashSet<String>()
@@ -50,9 +52,12 @@ internal class DanmakuLoader(
                 } catch (failed: Exception) {
                     synchronized(this) {
                         failures++
-                        retryAfter = clock() + RETRY_BACKOFF_MS
-                        if (failures >= MAX_FAILURES) exhausted = true
+                        // Back off, but never give up: a first request that trips the risk control
+                        // only delayed the comments by half a minute, and a loader that had given
+                        // up stayed silent until the player was reopened.
+                        retryAfter = clock() + backoffMs(failures)
                     }
+                    onFailure(failed)
                     return
                 }
                 synchronized(this) {
@@ -84,7 +89,11 @@ internal class DanmakuLoader(
     val buffered: Int get() = synchronized(this) { comments.size }
 
     companion object {
-        private const val MAX_FAILURES = 3
-        private const val RETRY_BACKOFF_MS = 30_000L
+        /** 1 s, 4 s, then 15 s for every further consecutive failure. */
+        internal fun backoffMs(failures: Int): Long = when {
+            failures <= 1 -> 1_000L
+            failures == 2 -> 4_000L
+            else -> 15_000L
+        }
     }
 }

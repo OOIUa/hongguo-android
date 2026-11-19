@@ -107,11 +107,13 @@ internal class DanmakuView(context: Context, textSizeSp: Float = 18f, crossMs: L
         laidOutHeight = height
         if (width <= 0 || height <= 0 || currentCrossMs <= 0) return
         pxPerMs = width.toFloat() / currentCrossMs
-        // Pitch from the font's own ascent/descent plus a hair of breathing room, instead of a
-        // generous multiple of the text size: the rows then really do fill the coverage band.
+        // 行数取「带高 ÷ 行距」的四舍五入：向上取整会把不足一行的余量也撑出一整行，横屏
+        // 那种一档只有两行高的带子会被顶到三行；向下取整又太抠，横屏 1/6 只剩一行。四舍五入
+        // 正合适，再把带高平均分给这几行，行距只在字高上留一点呼吸感。
         val metrics = paint.fontMetrics
-        lineHeight = (metrics.descent - metrics.ascent) * 1.08f
-        tracks = (height / lineHeight).toInt().coerceAtLeast(1)
+        val ink = (metrics.descent - metrics.ascent).coerceAtLeast(1f)
+        tracks = kotlin.math.round(height / (ink * ROW_PITCH)).toInt().coerceAtLeast(1)
+        lineHeight = (height.toFloat() / tracks).coerceAtLeast(ink * 1.02f)
     }
 
     /**
@@ -240,8 +242,11 @@ internal class DanmakuView(context: Context, textSizeSp: Float = 18f, crossMs: L
         // the whole coverage band, so 1/4 really looks like a quarter of the picture in use.
         for (offset in 0 until tracks) {
             val track = (nextTrack + offset) % tracks
-            val last = active.lastOrNull { it.track == track }
-            if (last == null || x(last, position) + last.width < widthF - gapPx) {
+            // The newest comment on this track is the one furthest right, not the one added last:
+            // a rotation re-seats comments in on-screen order, so insertion order stops matching age
+            // and the leftmost comment would let a new one start too early, on top of the previous.
+            val newest = active.filter { it.track == track }.maxByOrNull { x(it, position) }
+            if (newest == null || x(newest, position) + newest.width < widthF - gapPx) {
                 active.add(Active(comment, text, textWidth, track, comment.offsetMs))
                 nextTrack = (track + 1) % tracks
                 return
@@ -269,5 +274,7 @@ internal class DanmakuView(context: Context, textSizeSp: Float = 18f, crossMs: L
     companion object {
         private const val SEEK_TOLERANCE_MS = 250L
         private const val SEEK_FORWARD_MS = 1_000L
+        /** 行距相对字高的倍数；行数用带高除以它之后四舍五入。 */
+        private const val ROW_PITCH = 1.12f
     }
 }

@@ -11,13 +11,21 @@ import kotlin.math.abs
 object DanmakuPrefs {
     /** 透明度只给四档，滑杆在播放过程中既难对准也没必要。 */
     val OPACITY_STEPS = listOf(25, 50, 75, 100)
-    const val OPACITY_DEFAULT = 100
+    const val OPACITY_DEFAULT = 75
     val OPACITY_LABELS = OPACITY_STEPS.map { "$it%" }
 
-    /** 屏占比四档：占播放区域的 1/4、1/3、1/2 或全部高度。 */
-    val COVERAGE_LABELS = listOf("1/4", "1/3", "1/2", "全屏")
+    /** 屏占比五档：占播放区域的 1/6、1/4、1/3、1/2 或全部高度。 */
+    val COVERAGE_LABELS = listOf("1/6", "1/4", "1/3", "1/2", "全屏")
     const val COVERAGE_DEFAULT = 1
-    private val COVERAGE_FRACTIONS = floatArrayOf(0.25f, 1f / 3f, 0.5f, 1f)
+    /** 最早一版存的是 0=1/4、1=1/3、2=1/2、3=全屏，旧值读进来要往后挪一格。 */
+    const val COVERAGE_LEGACY_DEFAULT = 0
+    /**
+     * 实际占屏比例比档位名小一档左右：行数用四舍五入排满整块带之后，同样比例看上去会偏
+     * 高一点，这里整体再压一压，1/4 的观感才回到四分之一的画面，1/6 则落在六分之一上下。
+     */
+    private val COVERAGE_FRACTIONS = floatArrayOf(0.133f, 0.2f, 0.25f, 0.4f, 1f)
+    /** 落盘用千分数而不是下标：档位数量以后再变，也不会把用户已经选好的比例读歪。 */
+    private val COVERAGE_PERMILLE = COVERAGE_FRACTIONS.map { (it * 1000).toInt() }
 
     /**
      * 字号五档。相对基准的倍数拉开到 0.5～1.55，最小值足够小、最大值足够醒目，
@@ -32,9 +40,9 @@ object DanmakuPrefs {
     const val SPEED_DEFAULT = 2
     private val SPEED_SCALES = floatArrayOf(1.9f, 1.45f, 1f, 0.62f, 0.42f)
 
-    /** 文字效果三档：纯白字、细黑边、黑阴影，默认沿用阴影。 */
+    /** 文字效果三档：纯白字、细黑边、黑阴影，默认用黑边。 */
     val EFFECT_LABELS = listOf("白字", "黑边", "阴影")
-    const val EFFECT_DEFAULT = 2
+    const val EFFECT_DEFAULT = 1
     const val EFFECT_WHITE = 0
     const val EFFECT_STROKE = 1
     const val EFFECT_SHADOW = 2
@@ -47,6 +55,16 @@ object DanmakuPrefs {
     fun font(value: Int) = value.coerceIn(0, FONT_LABELS.lastIndex)
     fun speed(value: Int) = value.coerceIn(0, SPEED_LABELS.lastIndex)
     fun coverage(value: Int) = value.coerceIn(0, COVERAGE_LABELS.lastIndex)
+
+    /** 旧版本存的是“不含 1/5”的档位下标，往后挪一格落到新档位上。 */
+    fun coverageFromLegacy(value: Int) = (value + 1).coerceIn(0, COVERAGE_LABELS.lastIndex)
+
+    /** 当前档位对应的落盘值（千分数）；0 表示“没有存过”，读的时候回落到旧键。 */
+    fun coveragePermille(value: Int) = COVERAGE_PERMILLE[coverage(value)]
+
+    /** 千分数吸附到最接近的一档，读盘时不必要求数值完全相等。 */
+    fun coverageFromPermille(value: Int) =
+        COVERAGE_PERMILLE.indices.minByOrNull { abs(COVERAGE_PERMILLE[it] - value) } ?: COVERAGE_DEFAULT
     fun effect(value: Int) = value.coerceIn(0, EFFECT_LABELS.lastIndex)
 
     fun coverageFraction(value: Int) = COVERAGE_FRACTIONS[coverage(value)]

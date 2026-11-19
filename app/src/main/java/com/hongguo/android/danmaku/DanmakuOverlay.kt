@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hongguo.android.danmaku
 
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -10,6 +11,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private const val TAG = "Danmaku"
 
 /**
  * Hosts one [DanmakuView] over the picture. The playback position is read straight from the
@@ -27,11 +31,20 @@ internal fun DanmakuOverlay(
 ) {
     val scope = rememberCoroutineScope()
     val loader = remember(seriesId, episodeId) {
-        DanmakuLoader(DanmakuApi.repository, seriesId, episodeId, durationMs)
+        DanmakuLoader(DanmakuApi.repository, seriesId, episodeId, durationMs,
+            onFailure = { Log.w(TAG, "window failed: ${it.javaClass.simpleName} ${it.message}") })
     }
-    // Duration arrives with the first video format; until then loadUpTo is a no-op.
-    LaunchedEffect(loader, durationMs) {
-        if (durationMs > 0) loader.durationMs = durationMs
+    // Duration arrives with the first video format; the first window can only be requested after
+    // that, so this also kicks off the load that the bind-time attempt had to skip.
+    LaunchedEffect(loader, durationMs, player) {
+        if (durationMs > 0) {
+            loader.durationMs = durationMs
+            val active = player
+            if (active != null) {
+                withContext(Dispatchers.IO) { runCatching { loader.loadUpTo(active.currentPosition) } }
+                Log.d(TAG, "loaded up to ${active.currentPosition}ms, buffered=${loader.buffered}")
+            }
+        }
     }
     // A plain holder, not Compose state: re-binding must not re-run composition.
     val boundPlayer = remember { arrayOfNulls<ExoPlayer>(1) }
@@ -55,7 +68,10 @@ internal fun DanmakuOverlay(
                     scope.launch(Dispatchers.IO) { runCatching { loader.loadUpTo(position) } }
                 })
                 val start = active.currentPosition.coerceAtLeast(0)
-                scope.launch(Dispatchers.IO) { runCatching { loader.loadUpTo(start) } }
+                scope.launch(Dispatchers.IO) {
+                    runCatching { loader.loadUpTo(start) }
+                    Log.d(TAG, "bind load at ${start}ms, buffered=${loader.buffered}")
+                }
             }
         },
         onRelease = { view ->

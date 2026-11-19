@@ -78,15 +78,27 @@ class DanmakuPrefsTest {
         assertEquals("白字", DanmakuPrefs.effectLabel(0))
         assertEquals("黑边", DanmakuPrefs.effectLabel(1))
         assertEquals("阴影", DanmakuPrefs.effectLabel(9))
-        assertEquals(DanmakuPrefs.EFFECT_DEFAULT, DanmakuSettings(effect = 12).normalized().effect)
+        assertEquals(DanmakuPrefs.EFFECT_LABELS.lastIndex, DanmakuSettings(effect = 12).normalized().effect)
         assertEquals(DanmakuPrefs.EFFECT_DEFAULT, DanmakuSettings().effect)
     }
 
     @Test fun `coverage steps map onto screen fractions`() {
-        assertEquals("1/4", DanmakuPrefs.coverageLabel(0))
-        assertEquals(0.25f, DanmakuPrefs.coverageFraction(0))
-        assertEquals(0.5f, DanmakuPrefs.coverageFraction(2))
-        assertEquals(1f, DanmakuPrefs.coverageFraction(3))
-        assertEquals(1f / 3f, DanmakuPrefs.coverageFraction(DanmakuPrefs.COVERAGE_DEFAULT))
+        assertEquals("1/6", DanmakuPrefs.coverageLabel(0))
+        assertEquals(0.133f, DanmakuPrefs.coverageFraction(0))
+        assertEquals("1/4", DanmakuPrefs.coverageLabel(1))
+        assertEquals(0.2f, DanmakuPrefs.coverageFraction(1))
+        assertEquals(0.2f, DanmakuPrefs.coverageFraction(DanmakuPrefs.COVERAGE_DEFAULT))
+        assertEquals(0.25f, DanmakuPrefs.coverageFraction(2))
+        assertEquals(0.4f, DanmakuPrefs.coverageFraction(3))
+        assertEquals(1f, DanmakuPrefs.coverageFraction(4))
+        // 旧存档是四档，读进来要把整组往后挪一格，1/4（旧 0）不能变成 1/5。
+        assertEquals(1, DanmakuPrefs.coverageFromLegacy(0))
+        assertEquals(2, DanmakuPrefs.coverageFromLegacy(1))
+        assertEquals(DanmakuPrefs.COVERAGE_LABELS.lastIndex, DanmakuPrefs.coverageFromLegacy(3))
+        // 新存档用千分数，任何一个值都能吸附回最近的一档。
+        assertEquals(0, DanmakuPrefs.coverageFromPermille(133))
+        assertEquals(1, DanmakuPrefs.coverageFromPermille(200))
+        assertEquals(2, DanmakuPrefs.coverageFromPermille(250))
+        assertEquals(DanmakuPrefs.COVERAGE_LABELS.lastIndex, DanmakuPrefs.coverageFromPermille(1000))
     }
 }

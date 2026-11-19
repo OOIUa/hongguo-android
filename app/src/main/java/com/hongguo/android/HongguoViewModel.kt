@@ -118,7 +118,12 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             .takeIf { it in PlaybackSpeeds } ?: 1f,
         danmaku = DanmakuSettings(
             enabled = preferences.getBoolean("danmaku_enabled", true),
-            coverage = preferences.getInt("danmaku_coverage", DanmakuPrefs.COVERAGE_DEFAULT),
+            // 屏占比现在按千分数落盘（200/250/333/500/1000），没存过时从旧的下标键换算。
+            coverage = preferences.getInt("danmaku_coverage_permille", 0).let { permille ->
+                if (permille > 0) DanmakuPrefs.coverageFromPermille(permille)
+                else DanmakuPrefs.coverageFromLegacy(
+                    preferences.getInt("danmaku_coverage", DanmakuPrefs.COVERAGE_LEGACY_DEFAULT))
+            },
             font = preferences.getInt("danmaku_font", DanmakuPrefs.FONT_DEFAULT),
             opacity = preferences.getInt("danmaku_opacity", DanmakuPrefs.OPACITY_DEFAULT),
             effect = preferences.getInt("danmaku_effect", DanmakuPrefs.EFFECT_DEFAULT),
@@ -475,7 +480,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val next = settings.normalized()
         preferences.edit {
             putBoolean("danmaku_enabled", next.enabled)
-            putInt("danmaku_coverage", next.coverage)
+            putInt("danmaku_coverage_permille", DanmakuPrefs.coveragePermille(next.coverage))
             putInt("danmaku_font", next.font)
             putInt("danmaku_opacity", next.opacity)
             putInt("danmaku_effect", next.effect)

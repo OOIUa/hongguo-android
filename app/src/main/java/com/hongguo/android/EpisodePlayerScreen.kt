@@ -368,17 +368,21 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     // 弹幕在画面之上、透明交互层之下：开关和设置都不影响单击、双击与横滑手势。
                     // 位置只跟顶栏和状态栏有关，竖屏从标题下方开始，横屏贴顶部，底部信息区不受影响。
                     if (state.danmaku.enabled && !inPip) {
-                        // 屏占比按整块屏幕的高度算，而不是看父布局给多少：这样 1/4 就是屏幕上方四分之一，
-                        // 层里排几行再由字号和这块高度换算。
-                        val screenHeightDp = LocalConfiguration.current.screenHeightDp
-                        val danmakuHeight = (screenHeightDp.dp * DanmakuPrefs.coverageFraction(state.danmaku.coverage))
-                            .coerceAtMost(screenHeightDp.dp)
-                        DanmakuOverlay(seriesId = detail.id, episodeId = detail.episodes[selected].id,
-                            durationMs = playback.durationMs, player = playback.player, settings = state.danmaku,
-                            modifier = Modifier.fillMaxWidth()
-                                .height(danmakuHeight)
-                                .align(Alignment.TopCenter)
-                                .padding(top = if (landscape) 6.dp else 62.dp))
+                        // 弹幕带按页面高度取占比，从顶栏下方开始铺：竖屏放横向视频时上方是黑边，
+                        // 弹幕就落在这块空区里，不会被框进画面里一条窄带；横屏无顶栏，直接贴顶。
+                        BoxWithConstraints(Modifier.fillMaxSize()) {
+                            // 播放页是满屏绘制（含状态栏区域），顶栏「第 N 集 / 共 M 集」大约占到 88dp，
+                            // 弹幕带从它下方起步：竖屏横向视频时正好落进上方黑边里，竖屏竖视频则贴着标题下方。
+                            val headerPad = if (landscape) 0.dp else 88.dp
+                            val bandHeight = ((maxHeight - headerPad) *
+                                DanmakuPrefs.coverageFraction(state.danmaku.coverage)).coerceAtLeast(0.dp)
+                            if (bandHeight > 0.dp) {
+                                DanmakuOverlay(seriesId = detail.id, episodeId = detail.episodes[selected].id,
+                                    durationMs = playback.durationMs, player = playback.player, settings = state.danmaku,
+                                    modifier = Modifier.fillMaxWidth().height(bandHeight)
+                                        .align(Alignment.TopCenter).offset(y = headerPad))
+                            }
+                        }
                     }
                     // A tap shows or hides the controls and a double tap anywhere plays or pauses. The progress moves
                     // only by holding until 2× and then dragging sideways (no side double-tap skips, issue #3).
