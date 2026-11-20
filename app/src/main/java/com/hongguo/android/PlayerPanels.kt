@@ -60,12 +60,14 @@ internal val PlayerPanelColor = Color(0xFF211E1B)
  */
 @Composable
 internal fun PlayerSidePanel(visible: Boolean, onDismiss: () -> Unit, tag: String, fromStart: Boolean = false,
-                             content: @Composable ColumnScope.() -> Unit) {
+                             dim: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     BackHandler(enabled = visible, onBack = onDismiss)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val panelWidth = maxOf(maxWidth * .5f, 340.dp).coerceAtMost(maxWidth)
+        // dim = false keeps the picture at full brightness; the transparent layer still closes on a tap.
         AnimatedVisibility(visible, enter = fadeIn(tween(200)), exit = fadeOut(tween(180))) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)).testTag("${tag}_scrim")
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (dim) .38f else 0f))
+                .testTag("${tag}_scrim")
                 .pointerInput(onDismiss) { detectTapGestures { onDismiss() } })
         }
         val offscreen: (Int) -> Int = if (fromStart) { width -> -width } else { width -> width }
