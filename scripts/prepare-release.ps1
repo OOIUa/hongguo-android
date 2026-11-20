@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复播放空响应，接入新版 v5 本机签名与 gzip 模型请求；调整设备能力以取得兼容编码，保留匿名身份复用、旧接口回退和拒绝/取消保护。'
+        notes = '修复起播和切集时的间歇性空响应。客户端会在同一会话重查当前集一次，读取播放信息时若临时断线，可在原超时预算内重连。服务器要求稍后再试时会停止本次取流。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

@@ -67,7 +67,7 @@ public final class AppSource {
     // Successful anonymous playback identities only; unrelated to recommendation and account devices.
     private static final java.util.concurrent.atomic.AtomicReference<PlaybackDevice.Identity> PLAYBACK_IDENTITY =
             new java.util.concurrent.atomic.AtomicReference<>();
-    static final int SINGLE_ATTEMPTS = 5;
+    static final int SINGLE_ATTEMPTS = 2;
 
     /** 接口地址（尾斜杠照抄原实现，签名与路由都以它为准）。 */
     private static final String VIDEO_API =
@@ -124,6 +124,7 @@ public final class AppSource {
             throw new IllegalArgumentException("分集编号无效");
         }
         long started = System.nanoTime();
+        long deadline = started + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(budgetMs);
         checkPlaybackCancellation();
         if (!hasPlaybackTime(started, budgetMs)) throw new IOException("播放取流超时，请稍后重试");
         byte[] body = Json.stringify(payload(vid)).getBytes(StandardCharsets.UTF_8);
@@ -146,7 +147,6 @@ public final class AppSource {
                     }
                     break; // No usable model; compatibility routes may still supply one.
                 } catch (EmptyPlaybackResponseException empty) {
-                    PLAYBACK_IDENTITY.compareAndSet(identity, null);
                     if (attempt == SINGLE_ATTEMPTS - 1 || !hasPlaybackTime(started, budgetMs)) throw empty;
                     try { Thread.sleep(300); }
                     catch (InterruptedException cancelled) {
@@ -155,16 +155,10 @@ public final class AppSource {
                     }
                     checkPlaybackCancellation();
                     if (!hasPlaybackTime(started, budgetMs)) throw empty;
-                    try { identity = PlaybackDevice.fresh(); }
-                    catch (IOException error) {
-                        checkPlaybackCancellation();
-                        renewal = error;
-                        throw empty;
-                    }
                 }
             }
         } catch (PlaybackRejectedException e) {
-            PLAYBACK_IDENTITY.compareAndSet(identity, null);
+            e.forgetRejectedIdentity(identity);
             throw e;
         } catch (InterruptedIOException e) {
             throw e;
@@ -185,7 +179,9 @@ public final class AppSource {
                 checkPlaybackCancellation();
                 if (track != null) { PLAYBACK_IDENTITY.compareAndSet(null, identity); return track; }
             } catch (PlaybackRejectedException error) {
-                PLAYBACK_IDENTITY.compareAndSet(identity, null); throw error;
+                error.forgetRejectedIdentity(identity); throw error;
+            } catch (EmptyPlaybackResponseException empty) {
+                // Continue with the existing compatibility readers.
             } catch (InterruptedIOException error) { throw error;
             } catch (PlaybackHttpException | IOException error) {
                 stopIfPlaybackRejected(error, identity);
@@ -212,12 +208,11 @@ public final class AppSource {
             if (!hasPlaybackTime(started, budgetMs)) break;
             Map<String, Object> j;
             try {
-                j = route.post ? playbackPost.post(body, identity, route.host) : playbackTab.get(vid, identity);
+                j = route.post ? playbackPost.post(body, identity, route.host) : playbackTab.get(vid, identity, deadline);
             } catch (PlaybackRejectedException e) {
-                PLAYBACK_IDENTITY.compareAndSet(identity, null);
+                e.forgetRejectedIdentity(identity);
                 throw e;
             } catch (EmptyPlaybackResponseException e) {
-                PLAYBACK_IDENTITY.compareAndSet(identity, null);
                 continue;
             } catch (PlaybackHttpException | IOException e) {
                 stopIfPlaybackRejected(e, identity);
@@ -233,7 +228,7 @@ public final class AppSource {
                 PLAYBACK_IDENTITY.compareAndSet(null, identity);
                 return track;
             } catch (PlaybackRejectedException e) {
-                PLAYBACK_IDENTITY.compareAndSet(identity, null);
+                e.forgetRejectedIdentity(identity);
                 throw e;
             } catch (InterruptedIOException e) {
                 throw e;
@@ -260,19 +255,35 @@ public final class AppSource {
     }
 
     public static final class PlaybackRejectedException extends IllegalStateException {
-        PlaybackRejectedException(String message) { super(message); }
+        private final boolean backoff;
+
+        PlaybackRejectedException(String message) { this(message, false); }
+        private PlaybackRejectedException(String message, boolean backoff) { super(message); this.backoff = backoff; }
+
+        private void forgetRejectedIdentity(PlaybackDevice.Identity identity) {
+            if (!backoff) PLAYBACK_IDENTITY.compareAndSet(identity, null);
+        }
     }
 
     private static void checkPlaybackRejection(int status) {
         if (status == 403 || status == 429)
-            throw new PlaybackRejectedException("播放服务拒绝请求（HTTP " + status + "）");
+            throw new PlaybackRejectedException("播放服务拒绝请求（HTTP " + status + "）", status == 429);
+    }
+
+    static void checkPlaybackResponse(Http.Resp response) {
+        checkPlaybackRejection(response.status);
+        String wait = response.header("Retry-After");
+        if (wait != null && !wait.trim().isEmpty()
+                && (response.status == 503 || (response.status == 200 && response.body.length == 0))) {
+            throw new PlaybackRejectedException("播放服务要求稍后重试（HTTP " + response.status + "）", true);
+        }
     }
 
     private static void stopIfPlaybackRejected(Exception error, PlaybackDevice.Identity identity) {
         if (error instanceof PlaybackHttpException) {
             int status = ((PlaybackHttpException) error).status;
             if (status == 403 || status == 429) {
-                PLAYBACK_IDENTITY.compareAndSet(identity, null);
+                if (status == 403) PLAYBACK_IDENTITY.compareAndSet(identity, null);
                 checkPlaybackRejection(status);
             }
         }
@@ -352,7 +363,7 @@ public final class AppSource {
 
     /** 可替换的 video_tab 请求（JVM 测试注入）；返回 null 表示该接口不可用、应回退旧流程。 */
     interface PlaybackTab {
-        Map<String, Object> get(String vid, PlaybackDevice.Identity identity) throws Exception;
+        Map<String, Object> get(String vid, PlaybackDevice.Identity identity, long deadline) throws Exception;
     }
 
     private static PlaybackTab playbackTab = AppSource::getTabModel;
@@ -869,9 +880,9 @@ public final class AppSource {
         req.followRedirect = false;
         for (Map.Entry<String, String> header : signed.getHeaders().entrySet()) req.header(header.getKey(), header.getValue());
         req.body(signed.getBody());
-        Http.Resp response = Http.send(req);
+        Http.Resp response = Http.sendPlaybackMetadata(req, Long.MAX_VALUE);
         checkPlaybackCancellation();
-        checkPlaybackRejection(response.status);
+        checkPlaybackResponse(response);
         if (response.status != 200) throw new PlaybackHttpException(response.status);
         if (response.body.length > 2 * 1024 * 1024) throw new IOException("播放信息过大");
         return parseModel(vid, parseMobileResponse(vid, response.text()), quality);
@@ -906,8 +917,8 @@ public final class AppSource {
             req.header(e.getKey(), e.getValue());
         }
         req.body(body);
-        Http.Resp res = Http.send(req);
-        checkPlaybackRejection(res.status);
+        Http.Resp res = Http.sendPlaybackMetadata(req, Long.MAX_VALUE);
+        checkPlaybackResponse(res);
         if (res.status != 200) throw new PlaybackHttpException(res.status);
         return parseModel(vid, parseSingleResponse(vid, res.text()), quality);
     }
@@ -958,21 +969,15 @@ public final class AppSource {
         return q;
     }
 
-    /** 单次签名 GET video_tab；空响应、网络、HTTP 或结构问题一律返回 null，由 fetch 换下一条路径。 */
-    private static Map<String, Object> getTabModel(String vid, PlaybackDevice.Identity identity)
+    /** 兼容 GET 在原请求和整次取流的时限内处理短暂连接故障。 */
+    private static Map<String, Object> getTabModel(String vid, PlaybackDevice.Identity identity, long deadline)
             throws Exception {
         SignedPlayback signed = signPlayback(TAB_API, identity, tabQuery(vid), null, System.currentTimeMillis());
         Http.Req req = new Http.Req(signed.url).method("GET").timeout(PLAYBACK_TIMEOUT_MS);
         req.followRedirect = false;
         for (Map.Entry<String, String> e : signed.headers.entrySet()) req.header(e.getKey(), e.getValue());
-        Http.Resp res;
-        try {
-            res = Http.send(req);
-        } catch (IOException e) {
-            if (Thread.currentThread().isInterrupted()) throw e;
-            return null;
-        }
-        checkPlaybackRejection(res.status);
+        Http.Resp res = Http.sendPlaybackMetadata(req, deadline);
+        checkPlaybackResponse(res);
         return res.status == 200 ? parseTabResponse(vid, res.text()) : null;
     }
 
@@ -1012,13 +1017,13 @@ public final class AppSource {
         req.followRedirect = false;
         for (Map.Entry<String, String> e : signed.headers.entrySet()) req.header(e.getKey(), e.getValue());
         req.body(body);
-        Http.Resp res = Http.send(req);
-        checkPlaybackRejection(res.status);
+        Http.Resp res = Http.sendPlaybackMetadata(req, Long.MAX_VALUE);
+        checkPlaybackResponse(res);
         if (res.status != 200) throw new PlaybackHttpException(res.status);
         return parsePlaybackResponse(res.text());
     }
 
-    /** 区分空响应（疑似设备身份被拒）与其他无效响应。空响应不值得用同一身份重试。 */
+    /** 区分可短暂重试的空正文、业务拒绝和格式错误。 */
     static Map<String, Object> parsePlaybackResponse(String text) {
         if (text == null || text.trim().isEmpty()) {
             throw new EmptyPlaybackResponseException();

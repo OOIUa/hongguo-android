@@ -7,6 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import com.hongguo.api.util.Http;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -23,7 +26,7 @@ public class PlaybackRecoveryTest {
             int n = registrations.incrementAndGet();
             return new PlaybackDevice.Reply(200, "{\"device_id\":\"71000000000000000" + n + "\",\"install_id\":\"72000000000000000" + n + "\"}");
         });
-        AppSource.setPlaybackTabForTest((vid, identity) -> { throw new AssertionError("Unexpected legacy request"); });
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { throw new AssertionError("Unexpected legacy request"); });
         AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AssertionError("Unexpected legacy request"); });
         AppSource.setSinglePlaybackForTest((vid, quality, identity) -> track);
     }
@@ -48,29 +51,140 @@ public class PlaybackRecoveryTest {
         assertTrue(empty.contains("空响应")); assertFalse(empty.contains("检查网络"));
     }
 
-    @Test public void emptyReplyRenewsIdentityBeforeLegacyAndCachesTheSuccessfulReplacement() throws Exception {
+    @Test public void firstPlayAndNextEpisodeEachRecoverAnEmptyReplyInTheSameSession() throws Exception {
         List<PlaybackDevice.Identity> used = new ArrayList<>();
         AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
             used.add(identity);
-            if (used.size() == 1) throw new AppSource.EmptyPlaybackResponseException();
+            if (used.size() % 2 == 1) throw new AppSource.EmptyPlaybackResponseException();
             return track;
         });
         AppSource.fetch("1", "auto"); AppSource.fetch("2", "auto");
-        assertEquals(2, registrations.get());
-        assertNotSame(used.get(0), used.get(1));
-        assertSame(used.get(1), used.get(2));
+        assertEquals(1, registrations.get());
+        assertEquals(4, used.size());
+        for (PlaybackDevice.Identity id : used) assertSame(used.get(0), id);
     }
 
-    @Test public void persistentEmptyStopsAfterFiveAttempts() throws Exception {
+    @Test public void persistentEmptyYieldsToCompatibilityAfterTwoReads() throws Exception {
         AtomicInteger singles = new AtomicInteger();
         AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
             singles.incrementAndGet(); throw new AppSource.EmptyPlaybackResponseException();
         });
-        AppSource.setPlaybackTabForTest((vid, identity) -> null);
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> null);
         AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AppSource.EmptyPlaybackResponseException(); });
         assertThrows(AppSource.EmptyPlaybackResponseException.class, () -> AppSource.fetch("1", "auto"));
-        assertEquals(5, singles.get());
-        assertEquals(6, registrations.get()); // Five single attempts, then the existing one-time legacy renewal.
+        assertEquals(2, singles.get());
+        assertEquals(2, registrations.get()); // One initial session and the existing compatibility route.
+    }
+
+
+    @Test public void realEmptyGzipThenValidGzipRecoversBothEpisodes() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            java.io.ByteArrayOutputStream compressed = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.GZIPOutputStream out = new java.util.zip.GZIPOutputStream(compressed)) {
+                out.write("ok".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            for (int episode = 1; episode <= 2; episode++) {
+                server.enqueue(new MockResponse().setHeader("Content-Encoding", "gzip").setBody(""));
+                server.enqueue(new MockResponse().setHeader("Content-Encoding", "gzip")
+                        .setBody(new okio.Buffer().write(compressed.toByteArray())));
+            }
+            server.start();
+            AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+                Http.Req req = new Http.Req(server.url("/" + vid).toString()).method("POST").body(new byte[0]);
+                Http.Resp response = Http.sendPlaybackMetadata(req, Long.MAX_VALUE);
+                AppSource.checkPlaybackResponse(response);
+                if (response.body.length == 0) throw new AppSource.EmptyPlaybackResponseException();
+                assertEquals("ok", response.text());
+                return track;
+            });
+            AppSource.fetch("1", "auto");
+            AppSource.fetch("2", "auto");
+            assertEquals(1, registrations.get());
+            for (String path : new String[]{"/1", "/1", "/2", "/2"}) {
+                okhttp3.mockwebserver.RecordedRequest request = server.takeRequest(1, TimeUnit.SECONDS);
+                assertNotNull(request);
+                assertEquals(path, request.getPath());
+                assertEquals("gzip", request.getHeader("Accept-Encoding"));
+            }
+        }
+    }
+
+    @Test public void serverBackoffStopsRecoveryAndKeepsProvenSession() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            for (int status : new int[]{200, 503, 429}) {
+                server.enqueue(new MockResponse().setResponseCode(status).setHeader("Retry-After", "30")
+                        .setHeader("Content-Encoding", "gzip").setBody(""));
+            }
+            server.start();
+            AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+                if ("1".equals(vid)) return track;
+                Http.Resp response = Http.sendPlaybackMetadata(new Http.Req(server.url("/" + vid).toString()), Long.MAX_VALUE);
+                AppSource.checkPlaybackResponse(response);
+                throw new AssertionError("Backoff treated as an empty reply");
+            });
+            for (int status : new int[]{200, 503, 429}) {
+                AppSource.fetch("1", "auto");
+                Exception rejection = assertThrows(AppSource.PlaybackRejectedException.class,
+                        () -> AppSource.fetch("2", "auto"));
+                assertTrue(rejection.getMessage().contains("HTTP " + status));
+            }
+            AppSource.fetch("1", "auto");
+            assertEquals(1, registrations.get());
+            assertEquals(3, server.getRequestCount());
+        }
+    }
+
+    @Test public void metadataGetReplaysSameRequestOnceAfterConnectionReset() throws Exception {
+        try (java.net.ServerSocket server = new java.net.ServerSocket(0, 2, java.net.InetAddress.getLoopbackAddress())) {
+            server.setSoTimeout(3000);
+            ExecutorService worker = Executors.newSingleThreadExecutor();
+            Future<List<String>> received = worker.submit(() -> {
+                List<String> requests = new ArrayList<>();
+                for (int i = 0; i < 2; i++) {
+                    try (java.net.Socket socket = server.accept()) {
+                        socket.setSoTimeout(2000);
+                        java.io.BufferedReader headers = new java.io.BufferedReader(new java.io.InputStreamReader(
+                                socket.getInputStream(), java.nio.charset.StandardCharsets.US_ASCII));
+                        String line;
+                        StringBuilder request = new StringBuilder();
+                        while ((line = headers.readLine()) != null && !line.isEmpty()) request.append(line).append('\n');
+                        requests.add(request.toString());
+                        if (i == 0) {
+                            socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nx"
+                                    .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                            socket.getOutputStream().flush();
+                            Thread.sleep(75);
+                            socket.setSoLinger(true, 0);  // reset an established response, after headers
+                        } else {
+                            socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"
+                                    .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                        }
+                    }
+                }
+                return requests;
+            });
+            try {
+                Http.Req req = new Http.Req("http://127.0.0.1:" + server.getLocalPort() + "/2")
+                        .header("X-Request-ID", "episode2").timeout(2500);
+                assertEquals("ok", Http.sendPlaybackMetadata(req, Long.MAX_VALUE).text());
+                List<String> requests = received.get(3, TimeUnit.SECONDS);
+                for (String request : requests) {
+                    assertTrue(request.startsWith("GET /2 "));
+                    assertTrue(request.toLowerCase(java.util.Locale.ROOT).contains("x-request-id: episode2"));
+                }
+            } finally { worker.shutdownNow(); }
+        }
+    }
+
+    @Test public void corruptNonemptyGzipAndExpiredBudgetNeverReplay() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setHeader("Content-Encoding", "gzip").setBody("not gzip"));
+            server.start();
+            Http.Req req = new Http.Req(server.url("/1").toString());
+            assertThrows(java.io.IOException.class, () -> Http.sendPlaybackMetadata(req, Long.MAX_VALUE));
+            assertThrows(java.net.SocketTimeoutException.class, () -> Http.sendPlaybackMetadata(req, System.nanoTime() - 1));
+            assertEquals(1, server.getRequestCount());
+        }
     }
 
     @Test public void explicitHttpAndBusinessRejectionsDoNotRetryOrFallBack() throws Exception {
@@ -122,23 +236,24 @@ public class PlaybackRecoveryTest {
         ExecutorService worker = Executors.newSingleThreadExecutor();
         CountDownLatch waiting = new CountDownLatch(1), release = new CountDownLatch(1);
         List<PlaybackDevice.Identity> used = new ArrayList<>();
-        AtomicInteger renew = new AtomicInteger();
+
         AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
             if (vid.equals("2")) {
                 waiting.countDown();
                 if (!release.await(3, TimeUnit.SECONDS)) throw new AssertionError("Timed out waiting for new identity");
                 throw new AppSource.PlaybackRejectedException("old refusal");
             }
-            if (vid.equals("3") && renew.getAndIncrement() == 0) throw new AppSource.EmptyPlaybackResponseException();
+            if (vid.equals("3")) throw new AppSource.PlaybackRejectedException("current refusal");
             used.add(identity); return track;
         });
         try {
             AppSource.fetch("1", "auto");
             Future<?> stale = worker.submit(() -> assertThrows(AppSource.PlaybackRejectedException.class, () -> AppSource.fetch("2", "auto")));
             assertTrue(waiting.await(3, TimeUnit.SECONDS));
-            AppSource.fetch("3", "auto");
-            release.countDown(); stale.get(3, TimeUnit.SECONDS);
+            assertThrows(AppSource.PlaybackRejectedException.class, () -> AppSource.fetch("3", "auto"));
             AppSource.fetch("4", "auto");
+            release.countDown(); stale.get(3, TimeUnit.SECONDS);
+            AppSource.fetch("5", "auto");
             assertEquals(2, registrations.get());
             assertNotSame(used.get(0), used.get(1));
             assertSame(used.get(1), used.get(2));

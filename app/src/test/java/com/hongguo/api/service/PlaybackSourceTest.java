@@ -57,7 +57,7 @@ public class PlaybackSourceTest {
         PlaybackDevice.resetForTest(null);
         AppSource.setPlaybackPostForTest(null);
         // 默认让 video_tab 不可用，覆盖旧接口回退路径；需要新接口的用例自行注入。
-        AppSource.setPlaybackTabForTest((vid, identity) -> null);
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> null);
         // No single model in legacy-route fixtures; empty-response recovery has its own tests.
         AppSource.setSinglePlaybackForTest((vid, quality, identity) -> null);
     }
@@ -185,7 +185,7 @@ public class PlaybackSourceTest {
             return okReply();
         });
         List<PlaybackDevice.Identity> used = new ArrayList<>();
-        AppSource.setPlaybackTabForTest((vid, identity) -> {
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> {
             used.add(identity);
             throw new IllegalStateException("reached model request");
         });
@@ -298,7 +298,7 @@ public class PlaybackSourceTest {
         List<Object> list = Json.arr();
         list.add(item("bytevc1", 1080, 1920, "https://v1.qznovelvod.com/1080.mp4", VALID_SPADE));
         model.put("video_list", list);
-        AppSource.setPlaybackTabForTest((vid, identity) -> {
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> {
             tabIdentities.add(identity.deviceId);
             return tabIdentities.size() == 1 ? null : response(vid, model);
         });
@@ -319,7 +319,7 @@ public class PlaybackSourceTest {
         goodList.add(item("bytevc1", 1080, 1920, "https://v1.qznovelvod.com/1080.mp4", VALID_SPADE));
         good.put("video_list", goodList);
         AtomicInteger tabs = new AtomicInteger();
-        AppSource.setPlaybackTabForTest((vid, identity) -> { tabs.incrementAndGet(); return response(vid, broken); });
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { tabs.incrementAndGet(); return response(vid, broken); });
         AppSource.setPlaybackPostForTest((body, identity, host) -> response("7600000000000000001", good));
         assertEquals("https://v1.qznovelvod.com/1080.mp4", AppSource.fetch("7600000000000000001", "auto").url);
         assertEquals(1, tabs.get());
@@ -333,7 +333,7 @@ public class PlaybackSourceTest {
         Stream.VideoTrack track = new Stream.VideoTrack();
         track.url = "https://v1.qznovelvod.com/single.mp4";
         AppSource.setSinglePlaybackForTest((vid, quality, identity) -> track);
-        AppSource.setPlaybackTabForTest((vid, identity) -> { legacy.incrementAndGet(); return null; });
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { legacy.incrementAndGet(); return null; });
         AppSource.setPlaybackPostForTest((body, identity, host) -> { legacy.incrementAndGet(); throw new IOException(); });
         assertSame(track, AppSource.fetch("7600000000000000001", "auto"));
         assertEquals(0, legacy.get());
@@ -346,7 +346,7 @@ public class PlaybackSourceTest {
         List<Object> list = Json.arr();
         list.add(item("h264", 1080, 1920, "https://v1.qznovelvod.com/legacy.mp4", VALID_SPADE));
         good.put("video_list", list);
-        AppSource.setPlaybackTabForTest((vid, identity) -> response(vid, good));
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> response(vid, good));
         assertEquals("https://v1.qznovelvod.com/legacy.mp4", AppSource.fetch("7600000000000000001", "auto").url);
     }
 
@@ -393,7 +393,7 @@ public class PlaybackSourceTest {
         brokenList.add(keylessEncryptedItem());
         broken.put("video_list", brokenList);
         AtomicInteger requests = new AtomicInteger();
-        AppSource.setPlaybackTabForTest((vid, identity) -> { requests.incrementAndGet(); return response(vid, broken); });
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { requests.incrementAndGet(); return response(vid, broken); });
         AppSource.setPlaybackPostForTest((body, identity, host) -> {
             requests.incrementAndGet();
             throw new AppSource.EmptyPlaybackResponseException();
@@ -531,7 +531,7 @@ public class PlaybackSourceTest {
         list.add(item("bytevc1", 1080, 1920, "https://v1.qznovelvod.com/1080.mp4", VALID_SPADE));
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
-        AppSource.setPlaybackTabForTest((vid, identity) -> response(vid, model));
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> response(vid, model));
         AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AssertionError("旧接口不应被请求"); });
         Stream.VideoTrack t = AppSource.fetch("7600000000000000001", "auto");
         assertEquals("bytevc2 被过滤", "https://v1.qznovelvod.com/1080.mp4", t.url);
@@ -541,7 +541,7 @@ public class PlaybackSourceTest {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
         AtomicInteger tabs = new AtomicInteger();
         AtomicInteger posts = new AtomicInteger();
-        AppSource.setPlaybackTabForTest((vid, identity) -> { tabs.incrementAndGet(); return null; });
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { tabs.incrementAndGet(); return null; });
         AppSource.setPlaybackPostForTest((body, identity, host) -> {
             posts.incrementAndGet();
             throw new IllegalStateException("reached old endpoint");
