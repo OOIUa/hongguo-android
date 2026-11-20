@@ -133,6 +133,22 @@ public final class AppSource {
         Exception failure = null;
         Exception modelFailure = null;
         IOException renewal = null;
+        // 2026-11-20 起：player/v1 的 v5 POST 与旧的签名 video_tab 都只回 200 + 0 字节，
+        // 唯一可用的取源路径是 video_tab 的 v5 无正文 GET（同步自 jackotom/hongguo-drama 7.7）。
+        if (hasPlaybackTime(started, budgetMs)) {
+            try {
+                Stream.VideoTrack tab = fetchTabV5(vid, quality, identity);
+                if (tab != null) {
+                    PLAYBACK_IDENTITY.compareAndSet(null, identity);
+                    return tab;
+                }
+            } catch (InterruptedIOException cancelled) {
+                throw cancelled;
+            } catch (Exception tabFailure) {
+                // 该路径不可用时按原顺序继续尝试其余接口。
+                Log.warn("video_tab v5 取源失败：" + tabFailure.getClass().getSimpleName());
+            }
+        }
         // N3urda/hongguoTV 6672b55: v5 mobile endpoint first; bounded recovery from LiuWQ0809 89169c0.
         // Retain our route order, model-error precedence, cancellation and overall request budget.
         try {
@@ -869,6 +885,32 @@ public final class AppSource {
         payload.put("content_type", 1);
         payload.put("biz_param", biz);
         return Json.stringify(payload).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * video_tab 的 v5 无正文 GET 取源：2026-11-20 起 player/v1 的 v5 POST 与旧的签名
+     * video_tab 都只回空正文，这条路径是当前唯一可用的。响应仍为
+     * {@code data.video_model_data[vid].video_model}，复用 {@link #parseTabResponse}。
+     */
+    private static Stream.VideoTrack fetchTabV5(String vid, String quality, PlaybackDevice.Identity identity)
+            throws Exception {
+        com.hongguo.api.playback.MobilePlayerV5.TabRequest signed =
+                com.hongguo.api.playback.MobilePlayerV5.requestVideoTab(
+                        vid, identity.deviceId, identity.iid, identity.cdid, System.currentTimeMillis());
+        Http.Req req = new Http.Req(signed.getUrl()).method("GET").timeout(PLAYBACK_TIMEOUT_MS);
+        req.followRedirect = false;
+        for (Map.Entry<String, String> header : signed.getHeaders().entrySet()) {
+            req.header(header.getKey(), header.getValue());
+        }
+        Http.Resp response = Http.sendPlaybackMetadata(req, Long.MAX_VALUE);
+        checkPlaybackCancellation();
+        checkPlaybackResponse(response);
+        if (response.status != 200) throw new PlaybackHttpException(response.status);
+        if (response.body.length == 0) throw new EmptyPlaybackResponseException();
+        if (response.body.length > 2 * 1024 * 1024) throw new IOException("播放信息过大");
+        Map<String, Object> model = parseTabResponse(vid, response.text());
+        if (model == null) throw new IllegalStateException("video_tab 未返回本集播放模型");
+        return parseModel(vid, model, quality);
     }
 
     /** v5 gzip 模型 POST；精确选择本集，沿用 parseModel 的编码与加密规则。 */
