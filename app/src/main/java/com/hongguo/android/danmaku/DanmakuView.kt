@@ -304,8 +304,27 @@ internal class DanmakuView(context: Context, textSizeSp: Float = 18f, crossMs: L
             val x = x(item, position)
             if (x > widthF || x + item.width < 0) continue
             val y = item.track * lineHeight + baseline
-            if (stroked) canvas.drawText(item.text, x, y, outlinePaint)
+            if (stroked) drawOutline(canvas, item.text, x, y)
             canvas.drawText(item.text, x, y, paint)
+        }
+    }
+
+    /**
+     * 黑边 pass. Emoji are color bitmaps: a stroke paint outlines glyph shapes, but Skia blits the
+     * whole bitmap regardless of the style, so stroking the same text would paint the emoji twice
+     * and make them far more opaque than the surrounding words. Only the non-emoji runs get the
+     * black edge; the emoji are left to the single fill pass.
+     */
+    private fun drawOutline(canvas: Canvas, text: String, x: Float, y: Float) {
+        var from = 0
+        for (range in DanmakuEmoji.emojiRanges(text)) {
+            if (from < range.first) canvas.drawText(text, from, range.first, x + paint.measureText(text, 0, from), y, outlinePaint)
+            from = range.last + 1
+        }
+        if (from < text.length) {
+            // The stroke pass shares the canvas with the fill pass, so each run has to start where
+            // the fill pass would put it: offset it by the width of the prefix at the current size.
+            canvas.drawText(text, from, text.length, x + paint.measureText(text, 0, from), y, outlinePaint)
         }
     }
 

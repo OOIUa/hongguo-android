@@ -47,6 +47,27 @@ class DanmakuEmojiTest {
     @Test fun `sticker placeholder inside bracketed text still drops`() {
         assertEquals("好看😄", DanmakuEmoji.display("好看\uFFFC[大笑]"))
     }
+
+    @Test fun `plain text has no emoji ranges`() {
+        assertEquals(emptyList<IntRange>(), DanmakuEmoji.emojiRanges("百万富翁了真的好看"))
+        assertEquals(emptyList<IntRange>(), DanmakuEmoji.emojiRanges(""))
+    }
+
+    @Test fun `emoji range covers the whole surrogate pair`() {
+        assertEquals(listOf(2 until 4), DanmakuEmoji.emojiRanges("哈哈😄好看"))
+        assertEquals(listOf(0 until 2, 3 until 5), DanmakuEmoji.emojiRanges("😄啊😍"))
+    }
+
+    @Test fun `zwj and variation selector clusters stay one range`() {
+        // 家庭 emoji（ZWJ 连接三段）与带变体选择符的红心，都要当成一个整体跳过描边。
+        val family = "👨‍👩‍👧"
+        assertEquals(listOf(0 until family.length), DanmakuEmoji.emojiRanges(family))
+        assertEquals(listOf(1 until 3), DanmakuEmoji.emojiRanges("好❤️"))
+    }
+
+    @Test fun `ascii digits and punctuation are not emoji`() {
+        assertEquals(emptyList<IntRange>(), DanmakuEmoji.emojiRanges("666!!"))
+    }
 }
 
 class DanmakuPrefsTest {

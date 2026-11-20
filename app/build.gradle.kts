@@ -8,7 +8,7 @@ plugins {
 // 只随自己的改动累加，不受主版本升降影响；上游升到 0.7.31 时把 appBaseVersion 改过去、
 // 序号接着往下数即可（0.7.31-dm4）。versionCode 由主版本折算再加序号，保证越装越大。
 val appBaseVersion = providers.gradleProperty("appBaseVersion").orElse("0.7.30").get()
-val appDanmakuBuild = providers.gradleProperty("appDanmakuBuild").orElse("21").get().toInt()
+val appDanmakuBuild = providers.gradleProperty("appDanmakuBuild").orElse("22").get().toInt()
 val appVersionName = providers.gradleProperty("appVersionName").orElse("$appBaseVersion-dm$appDanmakuBuild").get()
 val appVersionCode = providers.gradleProperty("appVersionCode").orElse(
     run {

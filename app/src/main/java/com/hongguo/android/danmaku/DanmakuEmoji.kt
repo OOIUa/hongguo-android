@@ -60,4 +60,43 @@ object DanmakuEmoji {
     }
 
     private const val STICKER = '\uFFFC'
+
+    /**
+     * Ranges of color-emoji clusters inside [text], as UTF-16 [start, end) pairs.
+     *
+     * 黑边 mode draws the comment twice — a stroke pass for the black edge and a fill pass on top.
+     * A stroke paint only outlines real glyphs; a color-emoji glyph is a bitmap that Skia blits
+     * whole, so drawing it in both passes composites it twice (75% ends up at about 94% and looks
+     * opaque). The view therefore skips the stroke pass over these ranges.
+     */
+    fun emojiRanges(text: String): List<IntRange> {
+        val ranges = ArrayList<IntRange>()
+        var i = 0
+        while (i < text.length) {
+            val code = text.codePointAt(i)
+            val step = Character.charCount(code)
+            if (!isEmojiBase(code)) {
+                i += step
+                continue
+            }
+            val start = i
+            i += step
+            // Pull in variation selectors, skin-tone modifiers, ZWJ sequences and keycaps so a
+            // composite emoji (👨‍👩‍👧, ❤️, 1️⃣) is treated as one cluster.
+            while (i < text.length) {
+                val next = text.codePointAt(i)
+                if (!isEmojiTail(next)) break
+                i += Character.charCount(next)
+            }
+            ranges.add(start until i)
+        }
+        return ranges
+    }
+
+    private fun isEmojiBase(code: Int): Boolean =
+        code in 0x1F000..0x1FAFF || code in 0x2600..0x27BF || code in 0x2B00..0x2BFF
+
+    private fun isEmojiTail(code: Int): Boolean =
+        code == 0xFE0F || code == 0xFE0E || code == 0x200D || code == 0x20E3 ||
+            code in 0x1F3FB..0x1F3FF || isEmojiBase(code)
 }
