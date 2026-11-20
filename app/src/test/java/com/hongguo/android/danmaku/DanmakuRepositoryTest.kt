@@ -10,6 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -68,6 +69,27 @@ class DanmakuRepositoryTest {
         val window = repo.window("123", "999", 120_000, 60_000)
         assertTrue(window.comments.isEmpty())
         assertEquals(90_000, window.nextStartMs)
+    }
+
+    @Test fun emptyReplyRotatesToAnotherHostAndRecovers() {
+        val hosts = mutableListOf<String>()
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            hosts += request.url.host
+            val buffer = okio.Buffer()
+            request.body?.writeTo(buffer)
+            val start = JSONObject(buffer.readUtf8()).getJSONObject("business_param").getLong("start_offset_time")
+            // 第一个主机回空正文（网关软拦截的固定表现），换主机后正常返回。
+            val body = if (hosts.size == 1) "" else windowJson(start, start + 30_000, listOf(Triple("x", start, "换域后")))
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(body.toResponseBody()).build()
+        }.build()
+        val repo = DanmakuRepository(http, signer = Signer(clock = { 1_792_016_000_000L }, random = { 0.0 }),
+            clock = { now }, sleep = { }, random = { 0.0 })
+        val window = repo.window("123", "999", 120_000, 0)
+        assertEquals(listOf("换域后"), window.comments.map { it.text })
+        assertEquals(2, hosts.size)
+        assertNotEquals(hosts[0], hosts[1])
     }
 
     @Test fun nonJsonRiskControlPageDegradesToEmptyWindow() {
@@ -207,24 +229,25 @@ class DanmakuLoaderTest {
     @Test fun failuresBackOffWithoutGivingUp() {
         val (loader, requested) = loader(600_000) { throw IOException("offline") }
         loader.loadUpTo(0)
-        assertEquals(1, requested.size)
+        // 一次窗口请求在失败时会轮换主机／签名形态再试一次（最多两次），然后进入退避。
+        assertEquals(2, requested.size)
         // A second call inside the backoff window does not hit the network.
         loader.loadUpTo(0)
-        assertEquals(1, requested.size)
+        assertEquals(2, requested.size)
         now += 1_000
         loader.loadUpTo(0)
-        assertEquals(2, requested.size)
+        assertEquals(4, requested.size)
         now += 4_000
         loader.loadUpTo(0)
-        assertEquals(3, requested.size)
+        assertEquals(6, requested.size)
         now += 15_000
         loader.loadUpTo(0)
-        assertEquals(4, requested.size)
+        assertEquals(8, requested.size)
         // No attempt cap: a request that keeps failing is retried every 15 s instead of going
         // silent until the player is reopened.
         now += 15_000
         loader.loadUpTo(0)
-        assertEquals(5, requested.size)
+        assertEquals(10, requested.size)
         assertEquals(1_000L, DanmakuLoader.backoffMs(1))
         assertEquals(4_000L, DanmakuLoader.backoffMs(2))
         assertEquals(15_000L, DanmakuLoader.backoffMs(7))

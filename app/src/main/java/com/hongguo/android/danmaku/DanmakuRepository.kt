@@ -6,6 +6,7 @@ package com.hongguo.android.danmaku
 
 import com.hongguo.api.playback.Signer
 import com.hongguo.api.playback.VendorConstants
+import com.hongguo.api.service.AppSource
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -19,10 +20,50 @@ import java.util.concurrent.TimeUnit
 data class Danmaku(val id: String, val offsetMs: Long, val text: String, val diggCount: Int)
 
 /**
+ * 评论接口的地址与请求体字段集中在这里。接口本身变化（路径、字段、主机）时只改这一个对象，
+ * 渲染、加载与缓存逻辑都不用动。
+ */
+internal object CommentProtocol {
+    /** 评论列表路径模板。 */
+    private const val PATH = "/novel/commentapi/comment/list/%s/v1/"
+
+    /** 历史可用主机；与播放共用同一网关，主程序换域时优先跟随它。 */
+    private const val PRIMARY_HOST = "https://api5-normal-sinfonlinea.fqnovel.com"
+    private const val FALLBACK_HOST = "https://api5-normal-hl.fqnovel.com"
+
+    const val COMMENT_SOURCE = 601
+    const val SERVER_CHANNEL = 1000
+    const val GROUP_TYPE = 30
+    const val COMMENT_TYPE = 20
+    const val SORT = 1
+    const val COUNT = 90
+    const val AID = 8662
+    const val COMPLIANCE_STATUS = 0
+
+    fun path(vid: String): String = PATH.format(vid)
+
+    /**
+     * 依次尝试的主机：历史主域在前，随后是播放当前使用的主域（`AppSource.VIDEO_API_HOST`，
+     * 上游换域时这里自动跟着变），最后是历史备用域。
+     */
+    fun hosts(): List<String> = listOf(
+        PRIMARY_HOST,
+        "https://" + AppSource.VIDEO_API_HOST,
+        FALLBACK_HOST,
+    ).distinct()
+}
+
+/** 请求签名形态：App 形态（完整签名头）与播放器形态（v5 三头）。 */
+private enum class SignatureMode { APP, PLAYER }
+
+/**
  * Pulls the platform's official time-anchored comments (弹幕) for one episode, one 30-second
  * window per request. All requests are serialized and throttled because the endpoint is
  * gateway-policed; a risk-control reply carries a server-dictated cooldown that is honored
  * before retrying. Empty or censored replies degrade to an empty window instead of failing.
+ *
+ * 主机与签名形态会在失败或空正文时自动轮换：上游只改其中一维（换域或换签名族）时，
+ * 弹幕不需要改代码就能继续工作。
  */
 internal class DanmakuRepository(
     private val http: OkHttpClient,
@@ -33,6 +74,8 @@ internal class DanmakuRepository(
      */
     private val device: Map<String, String> = VendorConstants.device,
     private val signer: Signer = Signer(device = device),
+    /** 播放器形态（v5）签名器：评论接口若被迁到 player 签名族，靠它自动接上。 */
+    private val playerSigner: Signer = Signer(device = device, mobileV5 = true),
     private val clock: () -> Long = System::currentTimeMillis,
     private val sleep: (Long) -> Unit = { Thread.sleep(it) },
     private val random: () -> Double = Math::random,
@@ -41,6 +84,10 @@ internal class DanmakuRepository(
     // Long.MIN_VALUE breaks that — the former throttles a non-existent previous request,
     // the latter overflows the subtraction and sleeps effectively forever.
     private var lastRequestAt = -1L
+
+    /** 当前使用的主机与签名形态；成功后保持不变，失败或空正文时轮换。 */
+    private var hostIndex = 0
+    private var modeIndex = 0
 
     /** Comments of one 30-second window plus the server-suggested start of the next window. */
     data class Window(val comments: List<Danmaku>, val nextStartMs: Long)
@@ -86,17 +133,17 @@ internal class DanmakuRepository(
             .put("playlet_item_duration", durationMs.coerceAtLeast(0))
             .put("need_danmaku_guide_type", JSONArray(listOf(1, 3, 4, 2)))
         return JSONObject()
-            .put("comment_source", 601)
-            .put("server_channel", 1000)
+            .put("comment_source", CommentProtocol.COMMENT_SOURCE)
+            .put("server_channel", CommentProtocol.SERVER_CHANNEL)
             .put("group_id", vid)
-            .put("group_type", 30)
-            .put("comment_type", 20)
-            .put("sort", 1)
+            .put("group_type", CommentProtocol.GROUP_TYPE)
+            .put("comment_type", CommentProtocol.COMMENT_TYPE)
+            .put("sort", CommentProtocol.SORT)
             .put("business_param", business)
-            .put("count", 90)
+            .put("count", CommentProtocol.COUNT)
             .put("cursor", cursor)
-            .put("aid", 8662)
-            .put("compliance_status", 0)
+            .put("aid", CommentProtocol.AID)
+            .put("compliance_status", CommentProtocol.COMPLIANCE_STATUS)
             .toString().toByteArray(Charsets.UTF_8)
     }
 
@@ -109,13 +156,36 @@ internal class DanmakuRepository(
         lastRequestAt = clock()
     }
 
+    /**
+     * 取一页评论。先用当前主机与签名形态；遇到空正文（网关软拦截的固定表现）或传输失败时，
+     * 轮换到下一个主机／签名形态再试一次——上游只改其中一维时无需改代码即可自愈。
+     */
     private fun post(vid: String, body: ByteArray): String {
         throttle()
-        val signed = signer.sign("$HOST/novel/commentapi/comment/list/$vid/v1/", device, body)
+        var firstFailure: IOException? = null
+        repeat(MAX_TRANSPORT_TRIES) {
+            try {
+                val text = send(vid, body)
+                if (text.isNotBlank()) return text
+            } catch (failure: IOException) {
+                if (firstFailure == null) firstFailure = failure
+            }
+            advanceTransport()
+        }
+        firstFailure?.let { throw it }
+        return ""
+    }
+
+    private fun send(vid: String, body: ByteArray): String {
+        val base = CommentProtocol.hosts()[hostIndex] + CommentProtocol.path(vid)
+        val signed = when (SignatureMode.entries[modeIndex]) {
+            SignatureMode.APP -> signer.sign(base, device, body)
+            SignatureMode.PLAYER -> playerSigner.signPlayback(base, device, body)
+        }
         val request = Request.Builder().url(signed.url)
             .header("User-Agent", VendorConstants.VIDEO_UA)
-            .header("comment-source", "601")
-            .header("server-channel", "1000")
+            .header("comment-source", CommentProtocol.COMMENT_SOURCE.toString())
+            .header("server-channel", CommentProtocol.SERVER_CHANNEL.toString())
             .apply { signed.headers.forEach { (key, value) -> header(key, value) } }
             .post((signed.body ?: body).toRequestBody(JSON_MEDIA))
             .build()
@@ -128,6 +198,15 @@ internal class DanmakuRepository(
             val bytes = payload.bytes()
             if (bytes.size > MAX_BYTES) throw IOException("弹幕响应过大")
             String(bytes, Charsets.UTF_8)
+        }
+    }
+
+    /** 主机用完再换签名形态：两个维度都轮换，任一维度变化都能自愈。 */
+    private fun advanceTransport() {
+        hostIndex++
+        if (hostIndex >= CommentProtocol.hosts().size) {
+            hostIndex = 0
+            modeIndex = (modeIndex + 1) % SignatureMode.entries.size
         }
     }
 
@@ -164,7 +243,8 @@ internal class DanmakuRepository(
 
     companion object {
         const val WINDOW_MS = 30_000L
-        const val HOST = "https://api5-normal-sinfonlinea.fqnovel.com"
+        /** 每次请求最多尝试两套主机／签名组合，避免失败时连发请求触发风控。 */
+        private const val MAX_TRANSPORT_TRIES = 2
         private const val MAX_PAGES_PER_WINDOW = 3
         private const val MAX_COOLDOWN_RETRIES = 2
         private const val THROTTLE_MS = 180L
