@@ -4,10 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// 版本号规则：主版本号跟随上游发布（0.7.30），后缀 -dmN 是本仓库自己的弹幕改动序号，
-// 只随自己的改动累加，不受主版本升降影响；上游升到 0.7.31 时把 appBaseVersion 改过去、
-// 序号接着往下数即可（0.7.31-dm4）。versionCode 由主版本折算再加序号，保证越装越大。
-val appBaseVersion = providers.gradleProperty("appBaseVersion").orElse("0.7.30").get()
+// 版本号规则：主版本号跟随上游发布（0.7.31），后缀 -dmN 是本仓库自己的弹幕改动序号，
+// 只随自己的改动累加，不受主版本升降影响；上游再升级时把 appBaseVersion 改过去、
+// 序号接着往下数即可（0.7.32-dm23）。versionCode 由主版本折算再加序号，保证越装越大。
+val appBaseVersion = providers.gradleProperty("appBaseVersion").orElse("0.7.31").get()
 val appDanmakuBuild = providers.gradleProperty("appDanmakuBuild").orElse("22").get().toInt()
 val appVersionName = providers.gradleProperty("appVersionName").orElse("$appBaseVersion-dm$appDanmakuBuild").get()
 val appVersionCode = providers.gradleProperty("appVersionCode").orElse(
@@ -28,8 +28,8 @@ android {
         applicationId = "com.hongguo.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("appVersionCode").orElse("42").get().toInt()
-        versionName = providers.gradleProperty("appVersionName").orElse("0.7.31").get()
+        versionCode = appVersionCode
+        versionName = appVersionName
         buildConfigField("String", "UPDATE_REPOSITORY", "\"OOIUa/hongguo-android\"")
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json\"")
         testInstrumentationRunner = "com.hongguo.android.HongguoTestRunner"
