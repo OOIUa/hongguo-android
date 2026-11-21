@@ -16,14 +16,14 @@
 
 ## 下载与安装
 
-当前发布版本：**v0.7.31**（versionCode 42）· Android **8.0 / API 26** 及以上。
+当前发布版本：**v0.7.32**（versionCode 43）· Android **8.0 / API 26** 及以上。
 
 | 下载方式 | 链接 |
 | --- | --- |
-| GitHub 直连 | [下载 v0.7.31 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.31/hongguo-android-0.7.31.apk) |
-| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.31/hongguo-android-0.7.31.apk) |
-| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.31/hongguo-android-0.7.31.apk) |
-| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.31 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.31/hongguo-android-0.7.31-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.31/SHA256SUMS-0.7.31.txt) |
+| GitHub 直连 | [下载 v0.7.32 APK](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.32/hongguo-android-0.7.32.apk) |
+| 加速线路 1 | [通过 gh-proxy.com 下载](https://gh-proxy.com/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.32/hongguo-android-0.7.32.apk) |
+| 加速线路 2 | [通过 ghfast.top 下载](https://ghfast.top/https://github.com/OOIUa/hongguo-android/releases/download/v0.7.32/hongguo-android-0.7.32.apk) |
+| 发布说明与源码 | [全部版本](https://github.com/OOIUa/hongguo-android/releases) · [v0.7.32 完整源码](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.32/hongguo-android-0.7.32-source.zip) · [SHA-256 校验文件](https://github.com/OOIUa/hongguo-android/releases/download/v0.7.32/SHA256SUMS-0.7.32.txt) |
 
 下载后打开 APK，按 Android 系统提示完成安装。GitHub 连接不畅时可尝试加速线路，公共代理的可用性取决于网络与服务状态。
 
@@ -205,7 +205,7 @@ scripts/prepare-release.ps1       # 发布资产生成脚本
 
 **播放提示“匿名播放设备注册失败”或“空响应”？**
 
-0.7.31 起，播放或切集时首次收到空正文，会在同一会话内重查当前集一次。若仍为空，客户端会在剩余时间内尝试已有的备用接口。服务器要求稍后重试时，本次取流会停止。
+0.7.31 起，播放或切集时首次收到空正文，会在同一会话内重查当前集一次。若仍为空，客户端会在剩余时间内尝试已有的备用接口。服务器要求稍后重试时，本次取流会停止。0.7.32 起，取源默认走 video_tab 的 v5 无正文 GET 路径，兼容接口变更后的服务端行为；若仍失败，会按原有顺序继续尝试备用接口。
 
 **怎么切换界面主题？**
 
