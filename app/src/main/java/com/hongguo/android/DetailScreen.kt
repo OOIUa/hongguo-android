@@ -3,6 +3,9 @@ package com.hongguo.android
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -11,14 +14,23 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.hongguo.account.AccountViewModel
 
 @Composable
@@ -67,6 +79,7 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
                         Text(detail.summary, color = Muted, fontSize = 14.sp, lineHeight = 23.sp)
                     }
                 }
+                if (detail.cast.isNotEmpty()) item { CastSection(detail.cast) }
                 item { RelatedWorksSection(state, model, accountModel) }
                 item {
                     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -107,6 +120,43 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
                     Spacer(Modifier.width(7.dp))
                     Text("播放第 $episode 集", fontSize = 16.sp)
                 }
+            }
+        }
+    }
+}
+
+/// 演员表:横向头像行,点演员展开其简介;上游没给数据时整个区块不出现。
+@Composable
+private fun CastSection(cast: List<CastMember>) {
+    var expandedId by remember { mutableStateOf<String?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("演员表", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            items(cast, key = { it.id }) { member ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.width(72.dp).clickable(enabled = member.intro.isNotBlank()) {
+                        expandedId = if (expandedId == member.id) null else member.id
+                    }) {
+                    Box(Modifier.size(52.dp).clip(CircleShape).background(CardSurface), contentAlignment = Alignment.Center) {
+                        if (member.avatar.isNotBlank()) {
+                            AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(member.avatar).crossfade(true).build(),
+                                contentDescription = member.name, contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape))
+                        } else {
+                            Text(member.name.take(1), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    Text(member.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (member.role.isBlank()) "演员" else "饰 ${member.role}", color = Muted, fontSize = 11.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        val selected = cast.firstOrNull { it.id == expandedId }
+        if (selected != null && selected.intro.isNotBlank()) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(selected.name, color = Orange, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(selected.intro, color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
             }
         }
     }

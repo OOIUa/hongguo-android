@@ -31,12 +31,23 @@ data class DramaCard(
 
 data class Episode(val id: String, val index: Int, val title: String)
 
+/** One entry of the detail payload's celebrities list; upstream may omit any field. */
+data class CastMember(
+    val id: String,
+    val name: String,
+    val role: String,
+    val avatar: String,
+    val intro: String,
+)
+
 data class DramaDetail(
     val id: String,
     val title: String,
     val cover: String,
     val summary: String,
     val episodes: List<Episode>,
+    /** Empty when the platform returns no cast data; the detail page hides the section then. */
+    val cast: List<CastMember> = emptyList(),
 )
 
 data class DramaPage(val items: List<DramaCard>, val hasMore: Boolean, val nextOffset: Int)
@@ -126,14 +137,30 @@ class DramaRepository {
             Episode(id, Json.optInt(item["index"], 0), Json.optStr(item["title"], ""))
         }.sortedBy { it.index }
         if (episodes.isEmpty()) throw IOException("EMPTY_EPISODES")
+        val cast = Json.optArr(meta["celebrities"]).mapNotNull { raw ->
+            val item = Json.optObj(raw) ?: return@mapNotNull null
+            val name = Json.optStr(item["nickname"], "").trim()
+            if (name.isBlank()) return@mapNotNull null
+            CastMember(
+                id = Json.optStr(item["celebrity_id"], name),
+                name = name,
+                role = Json.optStr(item["role_name"], "").trim(),
+                avatar = cleanUrl(Json.optStr(item["avatar"], "")),
+                intro = Json.optStr(item["intro"], "").replace(Regex("<[^>]+>"), "").trim(),
+            )
+        }
         DramaDetail(
             id = card.id,
             title = Json.optStr(meta["title"], card.title),
             cover = Json.optStr(meta["cover"], card.cover),
             summary = Json.optStr(meta["abstract"], card.summary),
             episodes = episodes,
+            cast = cast,
         )
     }
+
+    /** Detail payloads escape separators; covers keep working after unescaping them. */
+    private fun cleanUrl(value: String) = value.replace("\\/", "/").replace("\\u002F", "/").replace("&amp;", "&")
 
     suspend fun prepare(episode: Episode, allowFallback: Boolean = true,
                         progress: (String, Long, Long) -> Unit): PreparedVideo {

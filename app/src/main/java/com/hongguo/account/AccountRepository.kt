@@ -454,7 +454,12 @@ class AccountRepository internal constructor(
                         val rows = (progress + records).map(::historyEntry)
                         cacheChange(g) { cache ->
                             // Preserve a newer local observation and any queued update while reads are in flight.
-                            val merged = (cache.history + rows).groupBy { it.card.id }.values.map { items -> items.maxBy { it.updatedAt } }
+                            // A detail batch can miss series; known names and posters survive, placeholders do not.
+                            val merged = (cache.history + rows).groupBy { it.card.id }.values.map { items ->
+                                val newest = items.maxBy { it.updatedAt }
+                                val donor = items.firstOrNull { it !== newest && knownCard(it.card) } ?: newest
+                                newest.backfillCard(donor)
+                            }
                             cache.copy(history = normalizeHistory(merged))
                         }
                         if (current(g)) state { it.copy(historyError = null) }
@@ -465,14 +470,14 @@ class AccountRepository internal constructor(
                         synchronized(lock) {
                             // A list read started before/during a confirmed write must not restore the old shelf.
                             if (generation == g && favoriteRevision == readRevision && mutableState.value.favoriteBusyIds.isEmpty()) {
-                                cacheChange(g) { it.copy(favorites = normalizeFavorites(rows)) }
+                                cacheChange(g) { it.copy(favorites = normalizeFavorites(backfilled(rows, it.favorites))) }
                             }
                         }
                         if (current(g)) state { it.copy(favoritesError = null) }
                     }
                     AccountSection.LIKES -> {
                         val rows = runInterruptible(io) { gateway.likes(credentials) }.map(::likeEntry).take(200)
-                        cacheChange(g) { it.copy(likes = rows) }
+                        cacheChange(g) { it.copy(likes = backfilled(rows, it.likes)) }
                         if (current(g)) state { it.copy(likesError = null) }
                     }
                     AccountSection.RESERVATIONS -> {
@@ -888,6 +893,20 @@ class AccountRepository internal constructor(
         }
         fun card(series: Series, count: Int = 0) = DramaCard(series.id, series.title, series.cover,
             if (count > 0) count else Regex("[0-9]+").find(series.badge)?.value?.toIntOrNull() ?: 0, series.description)
+        /** Upstream detail batches can miss series; such list rows carry a numeric placeholder title.
+         *  Known names, posters and counts win over placeholders, so a refresh never trades real
+         *  metadata for placeholders. */
+        private val PlaceholderTitle = Regex("剧集 [0-9]+")
+        fun knownCard(card: DramaCard) = card.title.isNotBlank() && !PlaceholderTitle.matches(card.title)
+        fun LibraryEntry.backfillCard(previous: LibraryEntry): LibraryEntry = copy(card = card.copy(
+            title = if (!knownCard(card)) previous.card.title else card.title,
+            cover = if (card.cover.isBlank()) previous.card.cover else card.cover,
+            summary = if (card.summary.isBlank()) previous.card.summary else card.summary,
+            episodeCount = if (card.episodeCount <= 0) previous.card.episodeCount else card.episodeCount))
+        fun backfilled(rows: List<LibraryEntry>, previous: List<LibraryEntry>): List<LibraryEntry> {
+            val known = previous.filter { knownCard(it.card) }.associateBy { it.card.id }
+            return rows.map { row -> known[row.card.id]?.let { row.backfillCard(it) } ?: row }
+        }
         fun historyEntry(progress: CloudProgress) = LibraryEntry(card(progress.series, progress.episodeCount), progress.episodeId,
             progress.episodeIndex.coerceAtLeast(0) + 1, progress.position.coerceAtLeast(0), progress.updatedAt.coerceAtLeast(0))
         fun favoriteEntry(favorite: CloudFavorite) = LibraryEntry(card(favorite.series), updatedAt = favorite.collectedAt.coerceAtLeast(0))

@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -68,6 +69,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.FastForward
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -452,6 +454,15 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         if (dragFrom != null && dragFraction != null && playback.durationMs > 0) {
             val target = (playback.durationMs * dragFraction).toLong()
             SeekDragBadge(target, playback.durationMs, target - dragFrom, Modifier.align(Alignment.Center))
+        }
+        // Holding plays at 2× with the controls gone; the pill says so until release or a drag takes over.
+        AnimatedVisibility(temporaryDoubleSpeed, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp),
+            enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
+            Row(Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .5f))
+                .padding(horizontal = 13.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.FastForward, null, Modifier.size(16.dp), tint = Color.White)
+                Text(" 2× 临时加速中", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.TopCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {

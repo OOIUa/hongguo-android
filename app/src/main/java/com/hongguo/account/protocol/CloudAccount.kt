@@ -263,7 +263,9 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
     }
     private fun detailedSeries(row: JSONObject?,fallback: Series): Series {
         if(row==null) return fallback
-        return fallback.copy(title=row.str("book_name").ifBlank { fallback.title },cover=cleanUrl(row.str("thumb_url")).ifBlank { fallback.cover },
+        // Detail rows answer under either naming scheme; a missing field must never erase what the list row carried.
+        return fallback.copy(title=row.str("book_name").ifBlank { row.str("series_title") }.ifBlank { fallback.title },
+            cover=cleanUrl(row.str("thumb_url").ifBlank { row.str("series_cover_url") }.ifBlank { row.str("series_cover") }).ifBlank { fallback.cover },
             description=row.str("abstract").ifBlank { fallback.description },badge=episodeBadge(row).ifBlank { fallback.badge })
     }
     /** Protocol reference: charlie901208/HGTV AccountParser.profile. */
