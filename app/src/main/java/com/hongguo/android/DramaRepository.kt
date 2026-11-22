@@ -137,16 +137,18 @@ class DramaRepository {
             Episode(id, Json.optInt(item["index"], 0), Json.optStr(item["title"], ""))
         }.sortedBy { it.index }
         if (episodes.isEmpty()) throw IOException("EMPTY_EPISODES")
+        // Client normalizes celebrity rows to Chinese keys (演员/角色/头像/简介); upstream rows
+        // carry the English names, so both spellings are accepted here.
         val cast = Json.optArr(meta["celebrities"]).mapNotNull { raw ->
             val item = Json.optObj(raw) ?: return@mapNotNull null
-            val name = Json.optStr(item["nickname"], "").trim()
+            val name = Json.optStr(item["nickname"], "").ifBlank { Json.optStr(item["演员"], "") }.trim()
             if (name.isBlank()) return@mapNotNull null
             CastMember(
                 id = Json.optStr(item["celebrity_id"], name),
                 name = name,
-                role = Json.optStr(item["role_name"], "").trim(),
-                avatar = cleanUrl(Json.optStr(item["avatar"], "")),
-                intro = Json.optStr(item["intro"], "").replace(Regex("<[^>]+>"), "").trim(),
+                role = Json.optStr(item["role_name"], "").ifBlank { Json.optStr(item["角色"], "") }.trim(),
+                avatar = cleanUrl(Json.optStr(item["avatar"], "").ifBlank { Json.optStr(item["头像"], "") }),
+                intro = Json.optStr(item["intro"], "").ifBlank { Json.optStr(item["简介"], "") }.replace(Regex("<[^>]+>"), "").trim(),
             )
         }
         DramaDetail(
