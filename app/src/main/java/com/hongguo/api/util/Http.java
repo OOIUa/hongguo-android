@@ -97,6 +97,12 @@ public final class Http {
         }
     }
 
+    /** Supplemental metadata reads share the episode budget and keep their single-attempt behavior. */
+    public static Resp sendPlaybackMetadataOnce(Req req, long episodeDeadline) throws IOException {
+        long deadline = Math.min(episodeDeadline, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(req.timeoutMs));
+        return send(req, 0, true, deadline);
+    }
+
     private static Resp send(Req req, int redirects, boolean playback, long playbackDeadline) throws IOException {
         if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("请求已取消");
         int timeout = Math.max(1000, Math.min(15000, req.timeoutMs));
@@ -133,6 +139,10 @@ public final class Http {
             }
             int status = conn.getResponseCode();
             if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+                String retryAfter = conn.getHeaderField("Retry-After");
+                if (playback && retryAfter != null && !retryAfter.trim().isEmpty()) {
+                    return new Resp(status, new byte[0], conn.getHeaderFields());
+                }
                 if (!req.followRedirect) return new Resp(status, new byte[0], conn.getHeaderFields());
                 if (redirects >= 3 || !(req.method.equals("GET") || req.method.equals("HEAD")))
                     throw new IOException("不支持的服务重定向");

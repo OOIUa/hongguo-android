@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -169,6 +170,113 @@ public class ProgressiveMediaTest {
         origin.failNext.set(100);
         try { session.read(1792 * 1024, got, 0, 16); fail(); } catch (IOException expected) { }
         assertTrue(origin.failNext.get() <= 100 - ProgressiveMedia.FETCH_ATTEMPTS);
+    }
+
+    @Test public void sameRepresentationMirrorSuppliesOnlyTheMissingRangeAndStaysActive() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin primary = new Origin(media), backup = new Origin(media);
+        primary.reprDigest = backup.reprDigest = reprDigest(media);
+        session = openMirrors(primary, backup);
+        primary.status = 503;
+        try (ProgressiveMedia.Reader reader = session.newReader()) {
+            int seek = 1024 * 1024 + 41;
+            assertArrayEquals(Arrays.copyOfRange(media, seek, seek + 32), read(reader, seek, 32));
+            assertEquals(1, backup.requests.get());
+            int afterSwitch = primary.requests.get();
+            assertArrayEquals(Arrays.copyOfRange(media, 0, 8), read(reader, 0, 8));
+            assertEquals(1, backup.requests.get());
+            read(reader, 1536 * 1024, 16);
+            assertEquals(afterSwitch, primary.requests.get());
+            assertEquals(2, backup.requests.get());
+        }
+    }
+
+    @Test public void openingBeforeAnyBytesAllowsAnIndependentMirrorWithoutDigest() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin primary = new Origin(media), backup = new Origin(media);
+        primary.status = 502;
+        session = openMirrors(primary, backup);
+        assertEquals(1, primary.requests.get());
+        assertEquals(media.length, session.length());
+        assertTrue(backup.requests.get() > 1);
+    }
+
+    @Test public void rejectsDifferentOrUnverifiedRepresentationsWithoutCommittingTheirBytes() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin primary = new Origin(media), backup = new Origin(media);
+        primary.reprDigest = reprDigest(media);
+        session = openMirrors(primary, backup);
+        long original = session.downloadedBytes();
+        primary.status = 503;
+        for (String wrong : Arrays.asList(null, reprDigest(new byte[1]), "sha-256=:AAAA:")) {
+            backup.reprDigest = wrong;
+            try { session.read(1024 * 1024, new byte[16], 0, 16); fail(); }
+            catch (IOException expected) { assertTrue(expected.getMessage().contains("校验")); }
+            assertEquals(original, session.downloadedBytes());
+        }
+        backup.reprDigest = primary.reprDigest;
+        backup.total = media.length + 1L;
+        try { session.read(1024 * 1024, new byte[16], 0, 16); fail(); }
+        catch (IOException expected) { assertTrue(expected.getMessage().contains("长度")); }
+        assertEquals(original, session.downloadedBytes());
+    }
+
+    @Test public void missingDigestDenialsAndUntrustedRedirectsNeverContactTheMirror() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin primary = new Origin(media), backup = new Origin(media);
+        primary.contentDigest = backup.contentDigest = reprDigest(media);
+        session = openMirrors(primary, backup);
+        primary.status = 503;
+        try { session.read(1024 * 1024, new byte[16], 0, 16); fail(); } catch (IOException expected) { }
+        assertEquals(0, backup.requests.get());
+        session.close();
+        primary.status = 206;
+        primary.reprDigest = reprDigest(media);
+        session = openMirrors(primary, backup);
+        for (int status : new int[] {401, 403, 429, 302, 503}) {
+            primary.status = status;
+            primary.location = "https://unexpected.invalid/file.mp4";
+            if (status == 503) primary.retryAfter = "30";
+            int before = primary.requests.get();
+            try { session.read(1024 * 1024, new byte[16], 0, 16); fail(); } catch (IOException expected) { }
+            assertEquals(before + 1, primary.requests.get());
+            assertEquals(0, backup.requests.get());
+        }
+    }
+
+    @Test public void cancellingAStalledPrimaryReadDoesNotActivateTheMirror() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin primary = new Origin(media), backup = new Origin(media);
+        primary.reprDigest = backup.reprDigest = reprDigest(media);
+        session = openMirrors(primary, backup);
+        primary.gatedBlock = 1024 * 1024;
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        try (ProgressiveMedia.Reader reader = session.newReader()) {
+            Future<Boolean> result = worker.submit(() -> {
+                try { reader.read(primary.gatedBlock, new byte[16], 0, 16); return false; }
+                catch (InterruptedIOException expected) { return true; }
+            });
+            assertTrue(primary.entered.await(2, TimeUnit.SECONDS));
+            reader.close();
+            assertTrue(result.get(2, TimeUnit.SECONDS));
+            assertEquals(0, backup.requests.get());
+        } finally { worker.shutdownNow(); }
+    }
+
+    private static String reprDigest(byte[] bytes) throws Exception {
+        byte[] hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+        return "sha-256=:" + Base64.getEncoder().encodeToString(hash) + ":";
+    }
+
+    private ProgressiveMedia.Session openMirrors(Origin primary, Origin backup) throws Exception {
+        Stream.VideoTrack track = new Stream.VideoTrack();
+        track.url = "https://main.qznovelvod.com/fixture";
+        track.backupUrls.add("https://backup.fqnovelvod.com/fixture");
+        return ProgressiveMedia.openTrack(track, root, null, uri -> {
+            if (uri.getHost().equals("main.qznovelvod.com")) return primary.open(uri);
+            if (uri.getHost().equals("backup.fqnovelvod.com")) return backup.open(uri);
+            throw new AssertionError("unexpected origin");
+        });
     }
 
     @Test public void corruptBlockIsRefetchedAndAbandonedCacheIsNeverReused() throws Exception {
@@ -337,6 +445,7 @@ public class ProgressiveMediaTest {
         volatile boolean wrongRange, truncated;
         volatile String etag = "\"fixture-v1\"";
         volatile String lastIfRange;
+        volatile String reprDigest, contentDigest, location, retryAfter;
         volatile long total = -1;
         final AtomicInteger failNext = new AtomicInteger();
         Origin(byte[] bytes) { this.bytes = bytes; }
@@ -357,6 +466,10 @@ public class ProgressiveMediaTest {
                 public String getHeaderField(String name) {
                     if ("Content-Range".equals(name)) return "bytes " + (wrongRange ? start + 1 : start) + "-" + end + "/" + (total > 0 ? total : bytes.length);
                     if ("ETag".equals(name)) return etag;
+                    if ("Repr-Digest".equals(name)) return reprDigest;
+                    if ("Content-Digest".equals(name)) return contentDigest;
+                    if ("Retry-After".equals(name)) return retryAfter;
+                    if ("Location".equals(name)) return location;
                     return null;
                 }
                 public long getContentLengthLong() { return end - start + 1; }

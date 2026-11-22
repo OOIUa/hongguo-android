@@ -59,7 +59,7 @@ public class PlaybackSourceTest {
         // 默认让 video_tab 不可用，覆盖旧接口回退路径；需要新接口的用例自行注入。
         AppSource.setPlaybackTabForTest((vid, identity, deadline) -> null);
         // No single model in legacy-route fixtures; empty-response recovery has its own tests.
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> null);
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> null);
     }
 
     @After public void restore() {
@@ -276,7 +276,7 @@ public class PlaybackSourceTest {
     @Test public void httpServerFailureMovesToTheNextRouteAndIsReportedLast() throws Exception {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
         List<String> hosts = new ArrayList<>();
-        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
             hosts.add(host);
             throw new AppSource.PlaybackHttpException(502);
         });
@@ -302,7 +302,7 @@ public class PlaybackSourceTest {
             tabIdentities.add(identity.deviceId);
             return tabIdentities.size() == 1 ? null : response(vid, model);
         });
-        AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> { throw new AppSource.EmptyPlaybackResponseException(); });
         assertEquals("https://v1.qznovelvod.com/1080.mp4", AppSource.fetch("7600000000000000001", "auto").url);
         assertEquals(Arrays.asList(DEVICE_ID, "7432109876543219999"), tabIdentities);
     }
@@ -320,7 +320,7 @@ public class PlaybackSourceTest {
         good.put("video_list", goodList);
         AtomicInteger tabs = new AtomicInteger();
         AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { tabs.incrementAndGet(); return response(vid, broken); });
-        AppSource.setPlaybackPostForTest((body, identity, host) -> response("7600000000000000001", good));
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> response("7600000000000000001", good));
         assertEquals("https://v1.qznovelvod.com/1080.mp4", AppSource.fetch("7600000000000000001", "auto").url);
         assertEquals(1, tabs.get());
     }
@@ -332,16 +332,16 @@ public class PlaybackSourceTest {
         AtomicInteger legacy = new AtomicInteger();
         Stream.VideoTrack track = new Stream.VideoTrack();
         track.url = "https://v1.qznovelvod.com/single.mp4";
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> track);
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> track);
         AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { legacy.incrementAndGet(); return null; });
-        AppSource.setPlaybackPostForTest((body, identity, host) -> { legacy.incrementAndGet(); throw new IOException(); });
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> { legacy.incrementAndGet(); throw new IOException(); });
         assertSame(track, AppSource.fetch("7600000000000000001", "auto"));
         assertEquals(0, legacy.get());
     }
 
     @Test public void emptySingleReplyFallsBackToLegacyRoutes() throws Exception {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> { throw new AppSource.EmptyPlaybackResponseException(); });
         Map<String, Object> good = Json.obj();
         List<Object> list = Json.arr();
         list.add(item("h264", 1080, 1920, "https://v1.qznovelvod.com/legacy.mp4", VALID_SPADE));
@@ -352,10 +352,10 @@ public class PlaybackSourceTest {
 
     @Test public void singleModelErrorIsReportedWhenLegacyRoutesAreEmpty() throws Exception {
         PlaybackDevice.resetForTest((url, headers, body) -> okReply());
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
             throw new IllegalStateException("本集仅提供 ByteVC2");
         });
-        AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> { throw new AppSource.EmptyPlaybackResponseException(); });
         try {
             AppSource.fetch("7600000000000000001", "auto");
             fail();
@@ -372,7 +372,7 @@ public class PlaybackSourceTest {
         list.put("video_1", item("h264", 720, 1280, "https://v1.qznovelvod.com/test.mp4", VALID_SPADE));
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
-        assertEquals("https://v1.qznovelvod.com/test.mp4", AppSource.parseModel(vid, response(vid, model), "auto").url);
+        assertEquals("https://v1.qznovelvod.com/test.mp4", AppSource.parseModel(vid, response(vid, model), "auto", Long.MAX_VALUE).url);
     }
 
     @Test public void singleUrlIsSortedAndUsesSingleVersion() {
@@ -394,7 +394,7 @@ public class PlaybackSourceTest {
         broken.put("video_list", brokenList);
         AtomicInteger requests = new AtomicInteger();
         AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { requests.incrementAndGet(); return response(vid, broken); });
-        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
             requests.incrementAndGet();
             throw new AppSource.EmptyPlaybackResponseException();
         });
@@ -431,7 +431,7 @@ public class PlaybackSourceTest {
         List<PlaybackDevice.Identity> used = new ArrayList<>();
         List<String> bodies = new ArrayList<>();
         List<String> hosts = new ArrayList<>();
-        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
             used.add(identity);
             hosts.add(host);
             bodies.add(new String(body, StandardCharsets.UTF_8));
@@ -459,7 +459,7 @@ public class PlaybackSourceTest {
             return okReply();
         });
         AtomicInteger posts = new AtomicInteger();
-        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
             posts.incrementAndGet();
             throw new AppSource.EmptyPlaybackResponseException();
         });
@@ -480,7 +480,7 @@ public class PlaybackSourceTest {
             return okReply();
         });
         AtomicInteger posts = new AtomicInteger();
-        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
             posts.incrementAndGet();
             throw new AppSource.EmptyPlaybackResponseException();
         });
@@ -532,7 +532,7 @@ public class PlaybackSourceTest {
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
         AppSource.setPlaybackTabForTest((vid, identity, deadline) -> response(vid, model));
-        AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AssertionError("旧接口不应被请求"); });
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> { throw new AssertionError("旧接口不应被请求"); });
         Stream.VideoTrack t = AppSource.fetch("7600000000000000001", "auto");
         assertEquals("bytevc2 被过滤", "https://v1.qznovelvod.com/1080.mp4", t.url);
     }
@@ -542,7 +542,7 @@ public class PlaybackSourceTest {
         AtomicInteger tabs = new AtomicInteger();
         AtomicInteger posts = new AtomicInteger();
         AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { tabs.incrementAndGet(); return null; });
-        AppSource.setPlaybackPostForTest((body, identity, host) -> {
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
             posts.incrementAndGet();
             throw new IllegalStateException("reached old endpoint");
         });
@@ -567,7 +567,7 @@ public class PlaybackSourceTest {
         // 若误走 fallback，会请求这个不受信任地址并抛出异常
         model.put("fallback_api", "https://evil.invalid/fallback");
 
-        Stream.VideoTrack t = AppSource.parseModel("7600000000000000001", response("7600000000000000001", model), "auto");
+        Stream.VideoTrack t = AppSource.parseModel("7600000000000000001", response("7600000000000000001", model), "auto", Long.MAX_VALUE);
         assertEquals("自动模式 H.264 优先", "https://v1.qznovelvod.com/avc.mp4", t.url);
         assertTrue(t.encrypt);
         assertEquals(VALID_SPADE, t.spadeA);
@@ -581,7 +581,7 @@ public class PlaybackSourceTest {
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
         Stream.VideoTrack t = AppSource.parseModel("7600000000000000002",
-                responseRaw("7600000000000000002", Json.stringify(model)), "1080p");
+                responseRaw("7600000000000000002", Json.stringify(model)), "1080p", Long.MAX_VALUE);
         assertEquals("https://v1.qznovelvod.com/1080.mp4", t.url);
     }
 
@@ -614,10 +614,24 @@ public class PlaybackSourceTest {
 
     @Test public void inlineWithoutEncryptionInfoUsesVerifiedFallback() throws Exception {
         String vid = "7600000000000000011";
-        AppSource.setPlaybackFallbackForTest(url -> fallbackReply("v0abc", 60.2, 1080));
-        Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto");
+        AppSource.setPlaybackFallbackForTest((url, deadline) -> fallbackReply("v0abc", 60.2, 1080));
+        Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto", Long.MAX_VALUE);
         assertEquals("https://v1.qznovelvod.com/keyed.mp4", t.url);
         assertTrue(t.encrypt);
+    }
+
+    @Test public void supplementalModelRefusalStopsAllFurtherReads() {
+        String vid = "7600000000000000011";
+        long episodeDeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+        AtomicInteger reads = new AtomicInteger();
+        AppSource.setPlaybackFallbackForTest((url, deadline) -> {
+            assertEquals(episodeDeadline, deadline);
+            reads.incrementAndGet();
+            return Json.parseObject("{\"video_info\":{\"Code\":101144}}");
+        });
+        assertThrows(AppSource.PlaybackRejectedException.class,
+                () -> AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto", episodeDeadline));
+        assertEquals(1, reads.get());
     }
 
     @Test public void fallbackMustMatchIdentityDurationAndQuality() {
@@ -627,10 +641,10 @@ public class PlaybackSourceTest {
         replies.put("时长不同", fallbackReply("v0abc", 30.0, 1080));
         replies.put("清晰度更低", fallbackReply("v0abc", 60.0, 720));
         replies.forEach((name, reply) -> {
-            AppSource.setPlaybackFallbackForTest(url -> reply);
+            AppSource.setPlaybackFallbackForTest((url, deadline) -> reply);
             try {
                 // 对不上的备用片源不得使用；内联档位未声明加密，改按明文（由媒体索引再校验）。
-                Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto");
+                Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, incompleteInlineModel()), "auto", Long.MAX_VALUE);
                 assertEquals(name, "https://v1.qznovelvod.com/nokey.mp4", t.url);
                 assertFalse(name, t.encrypt);
             } catch (Exception other) {
@@ -645,9 +659,9 @@ public class PlaybackSourceTest {
         Map<String, Object> info = Json.obj();
         info.put("encrypt", true);
         ((Map<String, Object>) ((List<Object>) model.get("video_list")).get(0)).put("encrypt_info", info);
-        AppSource.setPlaybackFallbackForTest(url -> { throw new AssertionError("不应请求备用接口"); });
+        AppSource.setPlaybackFallbackForTest((url, deadline) -> { throw new AssertionError("不应请求备用接口"); });
         try {
-            AppSource.parseModel(vid, response(vid, model), "auto");
+            AppSource.parseModel(vid, response(vid, model), "auto", Long.MAX_VALUE);
             fail();
         } catch (IllegalStateException expected) {
             assertFalse(expected.getMessage().contains("备用"));
@@ -661,7 +675,7 @@ public class PlaybackSourceTest {
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
         try {
-            AppSource.parseModel(vid, response(vid, model), "auto");
+            AppSource.parseModel(vid, response(vid, model), "auto", Long.MAX_VALUE);
             fail();
         } catch (IllegalStateException expected) {
             assertTrue(expected.getMessage().contains("ByteVC2"));
@@ -693,11 +707,11 @@ public class PlaybackSourceTest {
         String vid = "7600000000000000015";
         List<String> urls = new ArrayList<>();
         // 2026-11-10 实测：codec_type=1 给出 h265（issue #3，第六季第 58 集）。
-        AppSource.setPlaybackFallbackForTest(url -> {
+        AppSource.setPlaybackFallbackForTest((url, deadline) -> {
             urls.add(url);
             return codecReply(url.endsWith("&codec_type=1") ? "h265" : "bvc2", "v0vc2", 60.0);
         });
-        Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto");
+        Stream.VideoTrack t = AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto", Long.MAX_VALUE);
         assertEquals("https://v1.qznovelvod.com/h265.mp4", t.url);
         assertEquals(2, urls.size());
         assertEquals("https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=3", urls.get(0));
@@ -706,29 +720,29 @@ public class PlaybackSourceTest {
 
         // codec_type=1 仍是 ByteVC2 时，再试旧的 force_codec=h264。
         urls.clear();
-        AppSource.setPlaybackFallbackForTest(url -> {
+        AppSource.setPlaybackFallbackForTest((url, deadline) -> {
             urls.add(url);
             return codecReply(url.contains("force_codec") ? "hevc" : "bytevc2", "v0vc2", 60.0);
         });
         assertEquals("https://v1.qznovelvod.com/hevc.mp4",
-                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto").url);
+                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto", Long.MAX_VALUE).url);
         assertEquals(3, urls.size());
         assertEquals("https://vod.snssdk.com/video/fallback?sig=a%2Bb&codec_type=0&force_codec=h264", urls.get(2));
 
         // 第一个兼容请求失败（网络或格式）也继续试下一个。
-        AppSource.setPlaybackFallbackForTest(url -> {
+        AppSource.setPlaybackFallbackForTest((url, deadline) -> {
             if (url.endsWith("&codec_type=1")) throw new java.io.IOException("reset");
             return codecReply(url.contains("force_codec") ? "h264" : "bytevc2", "v0vc2", 60.0);
         });
         assertEquals("https://v1.qznovelvod.com/h264.mp4",
-                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto").url);
+                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto", Long.MAX_VALUE).url);
 
         Map<String, Object> bare = Json.obj();
         bare.put("fallback_api", "https://vod.snssdk.com/video/fallback");
-        AppSource.setPlaybackFallbackForTest(url ->
+        AppSource.setPlaybackFallbackForTest((url, deadline) ->
                 codecReply(url.endsWith("?codec_type=1") ? "h265" : "bytevc2", "v0vc2", 60.0));
         assertEquals("https://v1.qznovelvod.com/h265.mp4",
-                AppSource.parseModel(vid, response(vid, bare), "auto").url);
+                AppSource.parseModel(vid, response(vid, bare), "auto", Long.MAX_VALUE).url);
     }
 
     @Test public void byteVc2CompatibilityAnswerMustStillBeCompatibleAndSameVideo() throws Exception {
@@ -738,18 +752,18 @@ public class PlaybackSourceTest {
         replies.put("其他视频", codecReply("hevc", "v0other", 60.0));
         replies.put("时长不同", codecReply("hevc", "v0vc2", 30.0));
         for (Map.Entry<String, Map<String, Object>> e : replies.entrySet()) {
-            AppSource.setPlaybackFallbackForTest(url ->
+            AppSource.setPlaybackFallbackForTest((url, deadline) ->
                     url.endsWith("&codec_type=3") ? codecReply("bytevc2", "v0vc2", 60.0) : e.getValue());
             try {
-                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto");
+                AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto", Long.MAX_VALUE);
                 fail(e.getKey());
             } catch (IllegalStateException expected) {
                 assertFalse(e.getKey(), expected.getMessage().contains("qznovelvod"));
             }
         }
-        AppSource.setPlaybackFallbackForTest(url -> codecReply("bytevc2", "v0vc2", 60.0));
+        AppSource.setPlaybackFallbackForTest((url, deadline) -> codecReply("bytevc2", "v0vc2", 60.0));
         try {
-            AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto");
+            AppSource.parseModel(vid, response(vid, byteVc2InlineModel()), "auto", Long.MAX_VALUE);
             fail();
         } catch (IllegalStateException expected) {
             assertTrue(expected.getMessage().contains("ByteVC2"));
@@ -762,7 +776,7 @@ public class PlaybackSourceTest {
         list.add(item("bytevc1", 720, 1280, "https://v1.qznovelvod.com/plain.mp4", null));
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
-        Stream.VideoTrack t = AppSource.parseModel("7600000000000000003", response("7600000000000000003", model), "auto");
+        Stream.VideoTrack t = AppSource.parseModel("7600000000000000003", response("7600000000000000003", model), "auto", Long.MAX_VALUE);
         assertEquals("https://v1.qznovelvod.com/plain.mp4", t.url);
         assertFalse(t.encrypt);
         assertEquals("", t.spadeA);
@@ -774,13 +788,32 @@ public class PlaybackSourceTest {
         assertFalse(Stream.hasProtection("\0\0\0\0moovtrakstsdhvc1mp4a".getBytes(StandardCharsets.ISO_8859_1)));
     }
 
+    @Test public void onlyTheSelectedExplicitlyClearRepresentationProvidesMirrors() throws Exception {
+        String vid = "7600000000000000003", backup = "https://v2.fqnovelvod.com/high.mp4";
+        Map<String, Object> selected = item("h264", 1080, 1920, "https://v1.qznovelvod.com/high.mp4", null);
+        selected.put("encrypt_info", java.util.Collections.singletonMap("encrypt", false));
+        selected.put("backup_url", backup);
+        selected.put("backup_url_list", java.util.Arrays.asList(backup, "https://unexpected.invalid/video",
+                "https://v2.fqnovelvod.com/high.mp4#fragment"));
+        Map<String, Object> lower = item("h264", 720, 1280, "https://v1.qznovelvod.com/low.mp4", null);
+        lower.put("backup_url", "https://v2.fqnovelvod.com/low.mp4");
+        Map<String, Object> model = Json.obj();
+        model.put("video_list", java.util.Arrays.asList(selected, lower));
+        Stream.VideoTrack track = AppSource.parseModel(vid, response(vid, model), "1080p", Long.MAX_VALUE);
+        assertEquals(selected.get("main_url"), track.url);
+        assertEquals(java.util.Collections.singletonList(backup), track.backupUrls);
+        selected.remove("encrypt_info");
+        track = AppSource.parseModel(vid, response(vid, model), "1080p", Long.MAX_VALUE);
+        assertTrue(track.backupUrls.isEmpty());
+    }
+
     @Test public void inlineEncryptedItemWithoutSpadeIsNotPlayedAsPlaintext() throws Exception {
         List<Object> list = Json.arr();
         list.add(keylessEncryptedItem());
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
         try {
-            AppSource.parseModel("7600000000000000003", response("7600000000000000003", model), "auto");
+            AppSource.parseModel("7600000000000000003", response("7600000000000000003", model), "auto", Long.MAX_VALUE);
             fail("缺少解密信息的内联片源不得当作明文播放");
         } catch (IllegalStateException expected) {
             assertFalse(expected.getMessage().contains("nokey"));
@@ -791,7 +824,7 @@ public class PlaybackSourceTest {
         info.put("encrypt", false);
         plain.put("encrypt_info", info);
         list.set(0, plain);
-        Stream.VideoTrack t = AppSource.parseModel("7600000000000000003", response("7600000000000000003", model), "auto");
+        Stream.VideoTrack t = AppSource.parseModel("7600000000000000003", response("7600000000000000003", model), "auto", Long.MAX_VALUE);
         assertEquals("https://v1.qznovelvod.com/plain.mp4", t.url);
         assertFalse(t.encrypt);
     }
@@ -802,7 +835,7 @@ public class PlaybackSourceTest {
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
         try {
-            AppSource.parseModel("7600000000000000004", response("7600000000000000004", model), "auto");
+            AppSource.parseModel("7600000000000000004", response("7600000000000000004", model), "auto", Long.MAX_VALUE);
             fail();
         } catch (IllegalStateException expected) {
             assertFalse(expected.getMessage().contains("evil"));
@@ -815,7 +848,7 @@ public class PlaybackSourceTest {
         Map<String, Object> model = Json.obj();
         model.put("video_list", list);
         try {
-            AppSource.parseModel("7600000000000000005", response("7600000000000000999", model), "auto");
+            AppSource.parseModel("7600000000000000005", response("7600000000000000999", model), "auto", Long.MAX_VALUE);
             fail();
         } catch (IllegalStateException expected) {
             assertEquals("App 接口未返回所选分集", expected.getMessage());

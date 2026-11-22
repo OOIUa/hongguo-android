@@ -14,11 +14,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ActivityTestRule
-import com.hongguo.android.MainActivity
+import com.hongguo.android.PlaybackProbeActivity
+import com.hongguo.android.createVideoPlayer
 import com.hongguo.android.PreparedVideo
 import com.hongguo.android.ProgressiveVideoDataSource
 import com.hongguo.android.videoSourceHandleFor
@@ -41,7 +43,7 @@ import java.util.concurrent.atomic.AtomicReference
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class ProgressivePlaybackTest {
-    @get:Rule val activity = ActivityTestRule(MainActivity::class.java)
+    @get:Rule val activity = ActivityTestRule(PlaybackProbeActivity::class.java)
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
     @Test fun firstFramePrecedesFullDownloadAndSeekFetchesMissingMedia() {
@@ -64,7 +66,7 @@ class ProgressivePlaybackTest {
                 surface = SurfaceView(activity.activity)
                 (activity.activity.window.decorView as ViewGroup).addView(surface, FrameLayout.LayoutParams(320, 240))
                 surfaceAdded = true
-                player = ExoPlayer.Builder(activity.activity).build()
+                player = createVideoPlayer(activity.activity, DefaultLoadControl.Builder().build())
                 playerCreated = true
                 player.setVideoSurfaceView(surface)
                 player.addListener(object : Player.Listener {

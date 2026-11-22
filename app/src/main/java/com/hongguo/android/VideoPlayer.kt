@@ -1,5 +1,6 @@
 package com.hongguo.android
 
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -21,11 +22,20 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.hongguo.api.service.Stream
 import kotlinx.coroutines.delay
+
+/** Keep the selected track when the device's first advertised decoder fails to initialize. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+internal fun createVideoPlayer(context: Context, loadControl: DefaultLoadControl): ExoPlayer {
+    val app = context.applicationContext
+    val renderers = DefaultRenderersFactory(app).setEnableDecoderFallback(true)
+    return ExoPlayer.Builder(app, renderers).setLoadControl(loadControl).build()
+}
 
 internal data class VideoPlaybackUi(
     val player: ExoPlayer? = null,
@@ -123,7 +133,7 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
                     .setBufferDurationsMs(5_000, 20_000, 500, 1_000)
                     .setTargetBufferBytes(8 * 1024 * 1024)
                     .setPrioritizeTimeOverSizeThresholds(true).build()
-                val active = ExoPlayer.Builder(context.applicationContext).setLoadControl(loadControl).build()
+                val active = createVideoPlayer(context, loadControl)
                 created = active
                 active.addListener(object : Player.Listener {
                     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {

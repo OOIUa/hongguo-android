@@ -56,6 +56,8 @@ public final class Stream {
     /** Contract consumed by the original AppSource. */
     public static final class VideoTrack {
         public String url;
+        /** Direct HTTPS mirrors declared for this same clear representation. */
+        public final List<String> backupUrls = new ArrayList<>();
         public String spadeA;
         public boolean encrypt;
         public String definition = "?";

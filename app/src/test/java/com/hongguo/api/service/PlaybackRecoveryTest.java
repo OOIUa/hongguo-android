@@ -3,6 +3,7 @@ package com.hongguo.api.service;
 import com.hongguo.api.util.Config;
 import java.io.File;
 import java.io.InterruptedIOException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -27,8 +28,8 @@ public class PlaybackRecoveryTest {
             return new PlaybackDevice.Reply(200, "{\"device_id\":\"71000000000000000" + n + "\",\"install_id\":\"72000000000000000" + n + "\"}");
         });
         AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { throw new AssertionError("Unexpected legacy request"); });
-        AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AssertionError("Unexpected legacy request"); });
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> track);
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> { throw new AssertionError("Unexpected legacy request"); });
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> track);
     }
 
     @After public void cleanup() {
@@ -53,7 +54,7 @@ public class PlaybackRecoveryTest {
 
     @Test public void firstPlayAndNextEpisodeEachRecoverAnEmptyReplyInTheSameSession() throws Exception {
         List<PlaybackDevice.Identity> used = new ArrayList<>();
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
             used.add(identity);
             if (used.size() % 2 == 1) throw new AppSource.EmptyPlaybackResponseException();
             return track;
@@ -66,11 +67,11 @@ public class PlaybackRecoveryTest {
 
     @Test public void persistentEmptyYieldsToCompatibilityAfterTwoReads() throws Exception {
         AtomicInteger singles = new AtomicInteger();
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
             singles.incrementAndGet(); throw new AppSource.EmptyPlaybackResponseException();
         });
         AppSource.setPlaybackTabForTest((vid, identity, deadline) -> null);
-        AppSource.setPlaybackPostForTest((body, identity, host) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> { throw new AppSource.EmptyPlaybackResponseException(); });
         assertThrows(AppSource.EmptyPlaybackResponseException.class, () -> AppSource.fetch("1", "auto"));
         assertEquals(2, singles.get());
         assertEquals(2, registrations.get()); // One initial session and the existing compatibility route.
@@ -89,9 +90,9 @@ public class PlaybackRecoveryTest {
                         .setBody(new okio.Buffer().write(compressed.toByteArray())));
             }
             server.start();
-            AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+            AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
                 Http.Req req = new Http.Req(server.url("/" + vid).toString()).method("POST").body(new byte[0]);
-                Http.Resp response = Http.sendPlaybackMetadata(req, Long.MAX_VALUE);
+                Http.Resp response = Http.sendPlaybackMetadata(req, deadline);
                 AppSource.checkPlaybackResponse(response);
                 if (response.body.length == 0) throw new AppSource.EmptyPlaybackResponseException();
                 assertEquals("ok", response.text());
@@ -116,9 +117,9 @@ public class PlaybackRecoveryTest {
                         .setHeader("Content-Encoding", "gzip").setBody(""));
             }
             server.start();
-            AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+            AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
                 if ("1".equals(vid)) return track;
-                Http.Resp response = Http.sendPlaybackMetadata(new Http.Req(server.url("/" + vid).toString()), Long.MAX_VALUE);
+                Http.Resp response = Http.sendPlaybackMetadata(new Http.Req(server.url("/" + vid).toString()), deadline);
                 AppSource.checkPlaybackResponse(response);
                 throw new AssertionError("Backoff treated as an empty reply");
             });
@@ -187,16 +188,63 @@ public class PlaybackRecoveryTest {
         }
     }
 
+    @Test public void timeoutsKeepTheOriginalDeadlineAndInterruptionStopsTheNextRequest() throws Exception {
+        List<Long> deadlines = new ArrayList<>();
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
+            deadlines.add(deadline);
+            throw new SocketTimeoutException("read timed out");
+        });
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> {
+            deadlines.add(deadline);
+            throw new SocketTimeoutException("connect timed out");
+        });
+        InterruptedIOException cancelled = new InterruptedIOException("cancelled");
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
+            deadlines.add(deadline);
+            throw cancelled;
+        });
+        long latestDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        assertSame(cancelled, assertThrows(InterruptedIOException.class, () -> AppSource.fetch("1", "auto", 1000)));
+        assertEquals(3, deadlines.size());
+        assertTrue(deadlines.get(0) <= latestDeadline);
+        for (long deadline : deadlines) assertEquals(deadlines.get(0).longValue(), deadline);
+        assertEquals(1, registrations.get());
+    }
+
+    @Test public void metadataReadHonorsRemainingEpisodeTime() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setHeadersDelay(800, TimeUnit.MILLISECONDS).setBody("ok"));
+            server.start();
+            Http.Req req = new Http.Req(server.url("/metadata").toString()).timeout(8000);
+            assertThrows(SocketTimeoutException.class, () -> Http.sendPlaybackMetadataOnce(req,
+                    System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(150)));
+            assertEquals(1, server.getRequestCount());
+        }
+    }
+
+    @Test public void supplementalRedirectWithRetryAfterStopsBeforeFollowingLocation() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Retry-After", "30")
+                    .setHeader("Location", "/later"));
+            server.enqueue(new MockResponse().setBody("unexpected redirect"));
+            server.start();
+            Http.Resp response = Http.sendPlaybackMetadataOnce(new Http.Req(server.url("/metadata").toString()),
+                    System.nanoTime() + TimeUnit.SECONDS.toNanos(3));
+            assertThrows(AppSource.PlaybackRejectedException.class, () -> AppSource.checkPlaybackResponse(response));
+            assertEquals(1, server.getRequestCount());
+        }
+    }
+
     @Test public void explicitHttpAndBusinessRejectionsDoNotRetryOrFallBack() throws Exception {
-        for (int status : new int[]{403, 429}) {
+        for (int status : new int[]{401, 403, 429}) {
             AtomicInteger singles = new AtomicInteger();
-            AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+            AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
                 singles.incrementAndGet(); throw new AppSource.PlaybackHttpException(status);
             });
             assertThrows(AppSource.PlaybackRejectedException.class, () -> AppSource.fetch("1", "auto"));
             assertEquals(1, singles.get());
         }
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
             AppSource.parseSingleResponse(vid, "{\"code\":101144,\"data\":null}"); return track;
         });
         assertThrows(AppSource.PlaybackRejectedException.class, () -> AppSource.fetch("1", "auto"));
@@ -206,7 +254,7 @@ public class PlaybackRecoveryTest {
         assertThrows(java.io.IOException.class, () -> AppSource.fetch("1", "auto", 0));
         assertEquals(0, registrations.get());
         AtomicInteger singles = new AtomicInteger();
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
             singles.incrementAndGet(); Thread.sleep(250); throw new AppSource.EmptyPlaybackResponseException();
         });
         assertThrows(AppSource.EmptyPlaybackResponseException.class, () -> AppSource.fetch("1", "auto", 200));
@@ -216,7 +264,7 @@ public class PlaybackRecoveryTest {
     @Test public void cancellationDuringRecoveryDoesNotRegisterAgain() throws Exception {
         ExecutorService worker = Executors.newSingleThreadExecutor();
         CountDownLatch empty = new CountDownLatch(1), stopped = new CountDownLatch(1);
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
             empty.countDown(); throw new AppSource.EmptyPlaybackResponseException();
         });
         try {
@@ -237,7 +285,7 @@ public class PlaybackRecoveryTest {
         CountDownLatch waiting = new CountDownLatch(1), release = new CountDownLatch(1);
         List<PlaybackDevice.Identity> used = new ArrayList<>();
 
-        AppSource.setSinglePlaybackForTest((vid, quality, identity) -> {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
             if (vid.equals("2")) {
                 waiting.countDown();
                 if (!release.await(3, TimeUnit.SECONDS)) throw new AssertionError("Timed out waiting for new identity");

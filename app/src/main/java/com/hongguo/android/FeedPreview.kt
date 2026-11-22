@@ -84,7 +84,7 @@ internal fun rememberFeedPreview(card: DramaCard?, enabled: Boolean, model: Hong
                     .setBufferDurationsMs(3_000, 15_000, 500, 1_000)
                     .setTargetBufferBytes(6 * 1024 * 1024)
                     .setPrioritizeTimeOverSizeThresholds(true).build()
-                val created = ExoPlayer.Builder(context.applicationContext).setLoadControl(loadControl).build()
+                val created = createVideoPlayer(context, loadControl)
                 active = created
                 created.addListener(object : Player.Listener {
                     override fun onRenderedFirstFrame() { if (active === created) rendered = true }
