@@ -1,3 +1,14 @@
+# 0.7.32 / versionCode 43（2026-11-21）
+
+本版新增官方弹幕（时间轴评论、渲染层与弹幕设置），并将取源默认路径切换为 video_tab 的 v5 无正文 GET，修复 2026-11-20 起取源接口变更导致的播放地址获取失败。两项改动分别同步自 jackotom/hongguo-drama 7.7 与 tsukiyo-zero/hongguoTV、jycao2/hongguoTV（均 GPL-3.0-only），`THIRD_PARTY_NOTICES.md` 已更新。
+
+- 432 项 JVM 测试通过，0 失败，0 跳过，其中包含本轮新增的弹幕仓库与 emoji 字形套件；`:app:assembleDebug`、`:app:testDebugUnitTest`、`:app:lintDebug` 全部通过。
+- 正式候选 APK 为 26,495,621 字节，SHA-256 为 `2348c62b1de20ef72fb3044a3ec8fc23f16e3c62d7d59b28753d87072c097fbe`。`aapt` 核对包名 `com.hongguo.android`、versionCode 43、versionName 0.7.32、minSdk 26；`apksigner` 证书 SHA-256 与 `release-signing.sha256` 一致。
+- Android API 37 模拟器（4 核 / 4 GB）从同签名 0.7.31（42）覆盖安装 0.7.32（43），应用正常启动，已有偏好与数据沿用；进入播放器后取源成功，第 1 集播放推进至 00:47 / 01:40（倍速 1.5×），弹幕开关与设置面板（屏幕占比、字体大小、不透明度、文字效果、移动速度）均可打开调整；弹幕设置面板打开期间连续换集无崩溃。此前的合并验证构建曾在同一环境自动连播 18 集，全部取源成功。
+- 官方弹幕的评论内容在该模拟器会话中未出现：弹幕层与设置已启用并随播放重绑，推测为该剧评论数据稀疏或评论接口对模拟器设备身份的网控冷却；弹幕仓库逻辑以 JVM 套件覆盖，未在真实账号数据面验收评论内容。
+- 未连接实体手机；本轮未做个人账号登录与云同步验收。
+- GitHub Latest 已发布 `v0.7.32`。通过 GitHub 直连、gh-proxy.com 和 ghfast.top 分别匿名下载稳定更新清单与完整 APK，三条线路的版本、大小与 SHA-256 均与发布资产相符（清单 `e437a6c50d2b5a11ea7c4e2a6befdc8bb125fff766d768a42f1189bd5d7e939d`，APK 26,495,621 字节、`2348c62b1de20ef72fb3044a3ec8fc23f16e3c62d7d59b28753d87072c097fbe`，清单 apkUrl 指向 v0.7.32 附件）。
+
 # 0.7.31 / versionCode 42（2026-11-20）
 
 首次播放和切集若遇到间歇性 HTTP 200 空正文，会在同一会话重查一次。针对读取播放信息的 GET 请求，单次请求和整集请求的剩余时间共同限制断线重试。客户端收到明确的退避要求后停止本次请求。

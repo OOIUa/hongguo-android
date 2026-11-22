@@ -515,6 +515,37 @@ internal class Signer(
         error("无法生成请求签名")
     }
 
+    /**
+     * v5 无正文 GET 签名（video_tab 用）。
+     *
+     * 2026-11-20 起 player/v1 的 v5 POST 与旧 Argus/Ladon 形态一律回 200 + 0 字节；
+     * video_tab 同属 player 签名族，需带 x-khronos / x-helios / x-medusa 三个头、
+     * 不发 Content-Type / Content-Encoding / x-ss-stub，且正文摘要按 **空 body 的 MD5**
+     * 计算（不是 16 个零字节）。实现对齐 jackotom/hongguo-drama 7.7 的 signPlaybackV5
+     * 无正文分支（GPL-3.0）。
+     */
+    fun signPlaybackGet(
+        base: String,
+        values: Map<String, String>,
+        now: Long = clock(),
+    ): Request {
+        val ts = (now / 1000).toInt()
+        val empty = ByteArray(0)
+        for (offset in 0..1023) {
+            val ticket = now + offset
+            val query = encode(values + ("_rticket" to ticket.toString()))
+            if (branch(query, empty, ts) != 0) continue
+            val url = "$base?$query"
+            val headers = linkedMapOf(
+                "x-khronos" to ts.toString(),
+                "x-helios" to helios(ts),
+                "x-medusa" to medusa(url, empty, ts, values),
+            )
+            return Request(url, headers, null)
+        }
+        error("无法生成播放签名")
+    }
+
     /** Playback uses the registered profile, no legacy ts query parameter, and branch 0.
      * Keep the existing branch-0 signing algorithm for deterministic compatibility.
      */

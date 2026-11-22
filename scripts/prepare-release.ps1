@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '修复起播和切集时的间歇性空响应。客户端会在同一会话重查当前集一次，读取播放信息时若临时断线，可在原超时预算内重连。服务器要求稍后再试时会停止本次取流。'
+        notes = '新增官方弹幕：看剧时可显示平台时间轴评论，弹幕设置支持屏幕占比、字体大小、不透明度、文字效果和移动速度。修复取源接口变更后无法获取剧集播放地址的问题。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)

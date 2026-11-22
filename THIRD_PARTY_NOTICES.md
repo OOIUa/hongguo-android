@@ -166,3 +166,13 @@ Playback v5 model endpoint (2026-11-16)
   catalogue, search and account signing stays unchanged. SDK-derived synthetic digest
   vectors and carrier vectors verify the pure-code ports; the referenced research VM
   was not copied or included.
+
+## 官方弹幕（0.7.31 起）
+
+`app/src/main/java/com/hongguo/android/danmaku/`（DanmakuRepository、DanmakuLoader、DanmakuView、DanmakuPrefs、DanmakuEmoji）以及播放页的弹幕开关与参数面板，是以下 GPL-3.0-only 原生 Kotlin 实现的移植：
+
+- jycao2/hongguoTV，commit `09019a35691fcbf054217eb7fcf039c7a8dc25e7`（2026-11-16）— `kotlin-tv` 中的 DanmakuRepository.kt、DanmakuLoader.kt、DanmakuView.kt、DanmakuPrefs.kt、DanmakuEmoji.kt，以及其 NOTICE.md 记载的上游来源。
+  https://github.com/jycao2/hongguoTV
+- 本项目与本上游同为 GPL-3.0-only，移植后不再附加额外限制；原作者的著作权与来源注释保留在各文件头部。
+
+改动：请求仍走同一条评论列表接口，但签名与匿名安装 ID 改用本应用自己的 `api.playback.Signer` 和 `VendorConstants`，与播放请求同源；参数由原来的滑杆与行数档位改为「开关 + 屏幕占比 / 字体大小 / 不透明度 / 文字效果 / 移动速度」候选按钮，屏占比按整屏高度定高、行数由字号和屏高换算；转屏时屏幕上已有的弹幕按已滚比例重新锚定续播；弹幕字号以 dp 为基准，不随系统字号设置放大；新增自绘的弹幕开关与设置图标。未复制对方的 APK、应用图标或任何美术素材。
