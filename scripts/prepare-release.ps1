@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '新增官方弹幕：看剧时可显示平台时间轴评论，弹幕设置支持屏幕占比、字体大小、不透明度、文字效果和移动速度。修复取源接口变更后无法获取剧集播放地址的问题。'
+        notes = '新增详情页演员表：展示演员头像、姓名与饰演角色，点按演员可查看简介。优化长按 2× 加速播放：画面顶部显示提示，松手自动恢复原速。修复账号片单里剧集名称与海报缺失、显示占位条目的问题；观看进度与时间仍取最新记录。'
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)
