@@ -920,7 +920,7 @@ public final class AppSource {
         if (response.body.length > 2 * 1024 * 1024) throw new IOException("播放信息过大");
         Map<String, Object> model = parseTabResponse(vid, response.text());
         if (model == null) throw new IllegalStateException("video_tab 未返回本集播放模型");
-        return parseModel(vid, model, quality);
+        return parseModel(vid, model, quality, Long.MAX_VALUE);
     }
 
     /** v5 gzip 模型 POST；精确选择本集，沿用 parseModel 的编码与加密规则。 */
