@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,84 +68,154 @@ internal fun SearchScreen(state: HongguoUiState, model: HongguoViewModel, trendi
     val submit = { keyboard?.hide(); focus.clearFocus(); model.search() }
     val close = { keyboard?.hide(); focus.clearFocus(); model.closeSearch() }
     BackHandler(enabled = LocalPageActive.current, onBack = close)
+    val open: (DramaCard) -> Unit = { keyboard?.hide(); focus.clearFocus(); model.openDrama(it) }
+    val list = rememberLazyListState()
+    LoadAheadEffect(FeedState(items = state.results, loading = state.searching, loadingMore = state.loadingMore,
+        hasMore = state.hasMore, error = state.searchError), { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+        { list.layoutInfo.totalItemsCount }, state.selectedCard == null, model::loadMore)
+    if (isWideLayout()) {
+        // 横屏：左列搜索框 + 联想词 / 大家都在看，右列结果；两列顶部留白都随内容滚走。
+        WarmTwoPane(
+            left = {
+                WarmTopInset()
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = close, modifier = Modifier.testTag("search_back")) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Ink)
+                        }
+                        Text("搜索", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SearchField(state, model, submit, Modifier.weight(1f))
+                        SearchSubmit(state, submit)
+                    }
+                    if (state.suggestions.isNotEmpty() && !state.searching) {
+                        SuggestionRows(state.suggestions, Modifier.fillMaxWidth()) {
+                            keyboard?.hide(); focus.clearFocus(); model.pickSuggestion(it)
+                        }
+                    }
+                    if (!state.searching && state.searchedQuery.isBlank() && trending.isNotEmpty()) {
+                        TrendingList(trending, open)
+                    }
+                }
+            },
+            right = {
+                LazyColumn(Modifier.fillMaxSize().testTag("search_results"), state = list,
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = LocalWarmTopInset.current + 4.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (state.searching || state.searchedQuery.isNotEmpty()) item { SearchStatus(state, model) }
+                    searchResultItems(state, model, emptyList(), open)
+                }
+            },
+        )
+        return
+    }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).testTag("search_screen")) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(onClick = close, modifier = Modifier.testTag("search_back")) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Ink)
             }
-            OutlinedTextField(value = state.query, onValueChange = model::updateQuery,
-                modifier = Modifier.weight(1f).testTag("search_input"),
-                placeholder = { Text("搜索剧名或关键词", fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                textStyle = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, color = Ink),
-                trailingIcon = if (state.query.isNotEmpty()) {
-                    { IconButton(onClick = { model.updateQuery("") }, modifier = Modifier.testTag("search_clear")) {
-                        Icon(Icons.Outlined.Close, "清空搜索词", tint = Muted)
-                    } }
-                } else null,
-                colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Cream, unfocusedContainerColor = Cream,
-                    unfocusedBorderColor = Color.Transparent, focusedBorderColor = Orange),
-                singleLine = true, shape = RoundedCornerShape(16.dp),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { submit() }))
-            Button(onClick = submit, enabled = state.query.isNotBlank(), shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                modifier = Modifier.heightIn(min = 48.dp).testTag("search_button")) { Text("搜索", fontSize = 14.sp) }
+            SearchField(state, model, submit, Modifier.weight(1f))
+            SearchSubmit(state, submit)
         }
         if (state.suggestions.isNotEmpty() && !state.searching) {
-            Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).testTag("search_suggestions")) {
-                state.suggestions.forEach { suggestion ->
-                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) {
-                        keyboard?.hide(); focus.clearFocus(); model.pickSuggestion(suggestion)
-                    }.heightIn(min = 44.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Icon(Icons.Outlined.Search, null, tint = Muted, modifier = Modifier.size(20.dp))
-                        Text(suggestion, color = Ink, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
+            SuggestionRows(state.suggestions, Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                keyboard?.hide(); focus.clearFocus(); model.pickSuggestion(it)
             }
         }
-        if (state.searching) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Text("正在寻找相关短剧…", Modifier.padding(start = 12.dp).weight(1f), color = Muted, fontSize = 14.sp)
-                TextButton(onClick = model::cancelSearch, modifier = Modifier.testTag("search_cancel")) { Text("取消", fontSize = 14.sp) }
-            }
-        } else if (state.searchedQuery.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("“${state.searchedQuery}”的结果", fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 26.sp,
-                    modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, color = Ink)
-                Text("${state.results.size} 部", color = Muted, fontSize = 13.sp)
-            }
-        }
-        val list = rememberLazyListState()
-        LoadAheadEffect(FeedState(items = state.results, loading = state.searching, loadingMore = state.loadingMore,
-            hasMore = state.hasMore, error = state.searchError), { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
-            { list.layoutInfo.totalItemsCount }, state.selectedCard == null, model::loadMore)
+        SearchStatus(state, model)
         LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("search_results"), state = list,
             contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (state.results.isEmpty() && !state.searching && state.searchError == null &&
-                state.searchedQuery.isBlank() && trending.isNotEmpty()) {
-                item { TrendingList(trending) { card -> keyboard?.hide(); focus.clearFocus(); model.openDrama(card) } }
-            } else if (state.results.isEmpty() && !state.searching && state.searchError == null) {
-                item {
-                    EmptyPrompt(if (state.searchedQuery.isBlank()) "搜索你想看的短剧" else "没有找到相关剧集",
-                        if (state.searchedQuery.isBlank()) "输入剧名或关键词，查看完整选集。" else "试试缩短关键词，或换个剧名再搜索。")
-                }
-            }
-            itemsIndexed(state.results, key = { _, item -> item.id }) { index, card ->
-                DramaResult(card, index) { keyboard?.hide(); focus.clearFocus(); model.openDrama(card) }
-            }
-            state.searchError?.let { error ->
-                item { FailurePanel(error, onRetry = if (state.results.isEmpty()) model::search else model::loadMore) }
-            }
-            if (state.hasMore && state.searchError == null) item { LoadAheadFooter("search_load_more") }
-            if (state.results.isNotEmpty() && !state.hasMore && !state.loadingMore) {
-                item { Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 16.dp), color = Muted,
-                    fontSize = 12.sp, textAlign = TextAlign.Center) }
+            searchResultItems(state, model, trending, open)
+        }
+    }
+}
+
+@Composable
+private fun SearchField(state: HongguoUiState, model: HongguoViewModel, submit: () -> Unit, modifier: Modifier) {
+    OutlinedTextField(value = state.query, onValueChange = model::updateQuery,
+        modifier = modifier.testTag("search_input"),
+        placeholder = { Text("搜索剧名或关键词", fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        textStyle = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, color = Ink),
+        trailingIcon = if (state.query.isNotEmpty()) {
+            { IconButton(onClick = { model.updateQuery("") }, modifier = Modifier.testTag("search_clear")) {
+                Icon(Icons.Outlined.Close, "清空搜索词", tint = Muted)
+            } }
+        } else null,
+        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Cream, unfocusedContainerColor = Cream,
+            unfocusedBorderColor = Color.Transparent, focusedBorderColor = Orange),
+        singleLine = true, shape = RoundedCornerShape(16.dp),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { submit() }))
+}
+
+@Composable
+private fun SearchSubmit(state: HongguoUiState, submit: () -> Unit) {
+    Button(onClick = submit, enabled = state.query.isNotBlank(), shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        modifier = Modifier.heightIn(min = 48.dp).testTag("search_button")) { Text("搜索", fontSize = 14.sp) }
+}
+
+@Composable
+private fun SuggestionRows(suggestions: List<String>, modifier: Modifier, onPick: (String) -> Unit) {
+    Column(modifier.testTag("search_suggestions")) {
+        suggestions.forEach { suggestion ->
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onPick(suggestion) }
+                .heightIn(min = 44.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Outlined.Search, null, tint = Muted, modifier = Modifier.size(20.dp))
+                Text(suggestion, color = Ink, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+    }
+}
+
+/** The searching row and the "……的结果" row, shared by both orientations. */
+@Composable
+private fun SearchStatus(state: HongguoUiState, model: HongguoViewModel, modifier: Modifier = Modifier) {
+    if (state.searching) {
+        Row(modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Text("正在寻找相关短剧…", Modifier.padding(start = 12.dp).weight(1f), color = Muted, fontSize = 14.sp)
+            TextButton(onClick = model::cancelSearch, modifier = Modifier.testTag("search_cancel")) { Text("取消", fontSize = 14.sp) }
+        }
+    } else if (state.searchedQuery.isNotEmpty()) {
+        Row(modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("“${state.searchedQuery}”的结果", fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 26.sp,
+                modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, color = Ink)
+            Text("${state.results.size} 部", color = Muted, fontSize = 13.sp)
+        }
+    }
+}
+
+private fun LazyListScope.searchResultItems(
+    state: HongguoUiState,
+    model: HongguoViewModel,
+    trending: List<DramaCard>,
+    onOpen: (DramaCard) -> Unit,
+) {
+    if (state.results.isEmpty() && !state.searching && state.searchError == null &&
+        state.searchedQuery.isBlank() && trending.isNotEmpty()) {
+        item { TrendingList(trending, onOpen) }
+    } else if (state.results.isEmpty() && !state.searching && state.searchError == null) {
+        item {
+            EmptyPrompt(if (state.searchedQuery.isBlank()) "搜索你想看的短剧" else "没有找到相关剧集",
+                if (state.searchedQuery.isBlank()) "输入剧名或关键词，查看完整选集。" else "试试缩短关键词，或换个剧名再搜索。")
+        }
+    }
+    itemsIndexed(state.results, key = { _, item -> item.id }) { index, card ->
+        DramaResult(card, index, onClick = { onOpen(card) })
+    }
+    state.searchError?.let { error ->
+        item { FailurePanel(error, onRetry = if (state.results.isEmpty()) model::search else model::loadMore) }
+    }
+    if (state.hasMore && state.searchError == null) item { LoadAheadFooter("search_load_more") }
+    if (state.results.isNotEmpty() && !state.hasMore && !state.loadingMore) {
+        item { Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 16.dp), color = Muted,
+            fontSize = 12.sp, textAlign = TextAlign.Center) }
     }
 }
 

@@ -36,6 +36,36 @@ internal fun PlayHistoryScreen(state: HongguoUiState, model: HongguoViewModel, a
     val showsAccount = signedIn && !state.playHistoryLocal
     var managing by rememberSaveable(showsAccount) { mutableStateOf(false) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
+    if (isWideLayout()) {
+        WarmTwoPane(
+            left = {
+                WarmTopInset()
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                    LocalPageHeader("播放历史", "play_history_back", model::closeMyLibrary, !showsAccount, state.history.isNotEmpty(), managing,
+                        { managing = !managing }, { confirmClear = true }, "history")
+                }
+                if (signedIn) Column(Modifier.padding(horizontal = 20.dp)) {
+                    TabRow(selectedTabIndex = if (showsAccount) 0 else 1, containerColor = Canvas, contentColor = AccentInk) {
+                        listOf(false to "红果账号", true to "本机").forEach { (local, label) ->
+                            Tab(selected = state.playHistoryLocal == local, onClick = { model.selectPlayHistorySource(local) },
+                                modifier = Modifier.testTag(if (local) "play_history_local" else "play_history_account_tab"),
+                                selectedContentColor = AccentInk, unselectedContentColor = Muted, text = { Text(label, fontSize = 15.sp) })
+                        }
+                    }
+                }
+            },
+            right = {
+                if (showsAccount) Column(Modifier.fillMaxSize()) {
+                    AccountHistoryList(accountModel, model::openLibrary, Modifier.fillMaxSize(), LocalWarmTopInset.current)
+                }
+                else Column(Modifier.fillMaxSize()) {
+                    LocalLibraryList(state.history, true, managing, model, Modifier.fillMaxSize(), state.libraryError, LocalWarmTopInset.current)
+                }
+            },
+        )
+        if (confirmClear) LocalClearDialog(true, model) { confirmClear = false }
+        return
+    }
     Column(Modifier.fillMaxSize().testTag("play_history_screen")) {
         LocalPageHeader("播放历史", "play_history_back", model::closeMyLibrary, !showsAccount, state.history.isNotEmpty(), managing,
             { managing = !managing }, { confirmClear = true }, "history")
@@ -57,6 +87,24 @@ internal fun PlayHistoryScreen(state: HongguoUiState, model: HongguoViewModel, a
 internal fun LocalFavoritesScreen(state: HongguoUiState, model: HongguoViewModel) {
     var managing by rememberSaveable { mutableStateOf(false) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
+    if (isWideLayout()) {
+        WarmTwoPane(
+            left = {
+                WarmTopInset()
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                    LocalPageHeader("本机收藏", "local_favorites_back", model::closeMyLibrary, true, state.favorites.isNotEmpty(), managing,
+                        { managing = !managing }, { confirmClear = true }, "favorites")
+                }
+            },
+            right = {
+                Column(Modifier.fillMaxSize()) {
+                    LocalLibraryList(state.favorites, false, managing, model, Modifier.fillMaxSize(), state.libraryError, LocalWarmTopInset.current)
+                }
+            },
+        )
+        if (confirmClear) LocalClearDialog(false, model) { confirmClear = false }
+        return
+    }
     Column(Modifier.fillMaxSize().testTag("local_favorites_screen")) {
         LocalPageHeader("本机收藏", "local_favorites_back", model::closeMyLibrary, true, state.favorites.isNotEmpty(), managing,
             { managing = !managing }, { confirmClear = true }, "favorites")

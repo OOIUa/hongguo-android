@@ -70,7 +70,8 @@ class MainActivity : ComponentActivity() {
             val feedDark = layout == AppThemeStyle.IMMERSIVE && state.tab == AppTab.HOME && state.selectedCard == null
             // A detail page's picture sits behind the status bar, so its icons stay light until the picture scrolls away.
             var detailPictureUnderBar by remember(state.selectedCard?.id) { mutableStateOf(true) }
-            val statusBarOverPicture = state.selectedCard != null && layout != AppThemeStyle.WARM && detailPictureUnderBar
+            // 横屏时左侧导航栏占住了状态栏下面那一条，图标落在栏上而不是头图上，跟随主题颜色更清楚。
+            val statusBarOverPicture = state.selectedCard != null && layout != AppThemeStyle.WARM && detailPictureUnderBar && !isWideLayout()
             // The player owns the system bars while open; the theme re-applies them when it closes.
             HongguoTheme(layout, dark = dark, windowDark = dark || feedDark, statusBarOverPicture = statusBarOverPicture, applyToWindow = !state.playerOpen) {
                 CompositionLocalProvider(LocalDetailPictureUnderBar provides { detailPictureUnderBar = it }) {
@@ -111,10 +112,17 @@ class MainActivity : ComponentActivity() {
                     val floatingNav = showNav && state.navBarStyle == NavBarStyle.GLASS
                     val backdrop = rememberGlassBackdrop()
                     val navClearance = if (floatingNav) floatingNavClearance() else 0.dp
-                    Scaffold(containerColor = Canvas,
+                    val wide = isWideLayout()
+                    // 横屏把底部 Tab 栏竖到左侧，内容区占满剩下的宽度。
+                    Row(Modifier.fillMaxSize()) {
+                    if (wide && showNav && !floatingNav) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
+                        AppNavigationRail(state.tab, model::selectTab, layout)
+                    }
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+Scaffold(containerColor = Canvas,
                         snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")
                             .padding(bottom = if (floatingNav) 76.dp else 0.dp)) }, bottomBar = {
-                        if (showNav && !floatingNav) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
+                        if (showNav && !floatingNav && !wide) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
                             AppNavigation(state.tab, model::selectTab, style = layout)
                         }
                     }) { insets ->
@@ -140,7 +148,7 @@ class MainActivity : ComponentActivity() {
                         pageStates.SaveableStateProvider(key) {
                         Box(Modifier.fillMaxSize()) {
                         Column(Modifier.fillMaxSize().background(Canvas)
-                            .padding(top = if (drawsUnderStatusBar(key, layout)) 0.dp else topInset)) {
+                            .padding(top = if (drawsUnderStatusBar(key, layout) || isWideLayout()) 0.dp else topInset)) {
                             // Each page draws its own state: a leaving detail page keeps its drama, never the next one.
                             val detailState = when {
                                 !key.startsWith("detail_") -> null
@@ -162,7 +170,6 @@ class MainActivity : ComponentActivity() {
                                     AppThemeStyle.IMMERSIVE -> HongguoTheme(layout, dark = true, applyToWindow = false) { ImmersiveHome(state, model) }
                                     AppThemeStyle.CARDS -> CardsHome(state, model)
                                     AppThemeStyle.WARM -> {
-                                        BrandHeader()
                                         HomeScreen(state, model)
                                     }
                                 }
@@ -216,6 +223,9 @@ class MainActivity : ComponentActivity() {
                         }
                         }
                     }
+                    }
+                    }
+
                 }
                 }
                 if (state.themeOnboardingPending) {
@@ -256,7 +266,7 @@ private fun ComponentActivity.storedThemePalette(): HongguoPalette {
 }
 
 @Composable
-private fun BrandHeader() {
+internal fun BrandHeader() {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         // Minimal red-fruit brand mark, shared with the launcher icon (res/drawable/ic_logo.xml, vector).

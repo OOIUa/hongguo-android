@@ -12,7 +12,9 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.provider.Settings
 import android.util.Rational
+import android.view.Surface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Row
@@ -79,6 +81,23 @@ internal fun pictureInPictureRatio(width: Int, height: Int): Pair<Int, Int> {
 internal fun Activity.requestPlayerFullScreen(fullScreen: Boolean) {
     requestedOrientation = if (fullScreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
 }
+
+/**
+ * Whether back in a landscape player should first return to portrait playback instead of leaving the player.
+ *
+ * That only makes sense when the system rotation lock keeps the phone in portrait: the landscape player can then
+ * only be there because 全屏观看 turned it, and the page behind is portrait. With auto-rotate on, or a rotation lock
+ * that holds the phone sideways, the landscape player faces a landscape page, so back leaves the player directly.
+ */
+internal fun backReturnsToPortrait(context: Context): Boolean {
+    val resolver = context.contentResolver
+    val autoRotate = Settings.System.getInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1) == 1
+    val userRotation = Settings.System.getInt(resolver, Settings.System.USER_ROTATION, Surface.ROTATION_0)
+    return backReturnsToPortrait(autoRotate, userRotation)
+}
+
+internal fun backReturnsToPortrait(autoRotate: Boolean, userRotation: Int): Boolean =
+    !autoRotate && (userRotation == Surface.ROTATION_0 || userRotation == Surface.ROTATION_180)
 
 @Composable
 internal fun FullScreenWatchButton(onClick: () -> Unit, modifier: Modifier = Modifier) {

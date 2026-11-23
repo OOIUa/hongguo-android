@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -119,148 +120,167 @@ internal fun AccountScreen(
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().testTag("account_screen"),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { accountModel.cancelLogin(); onBack() }, modifier = Modifier.testTag("account_back")) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回我的", tint = Ink)
-                }
-                Text("我的账号", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+    /** 账号页内容：竖屏时标题行与账号身份都在列表里，横屏时这两块让给左栏。 */
+    @Composable
+    fun AccountList(headerInLeft: Boolean, profileInLeft: Boolean) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().testTag("account_screen"),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp + LocalWarmTopInset.current),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (!headerInLeft) item {
+                AccountPageHeader { accountModel.cancelLogin(); onBack() }
             }
-        }
-        if (state.message != null || state.loginDiagnostic != null) {
-            item {
-                Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        state.message?.let { message ->
-                            Text(message, color = Ink, fontSize = 14.sp, lineHeight = 22.sp,
-                                modifier = Modifier.testTag("account_message"))
-                        }
-                        state.loginDiagnostic?.let { diagnostic ->
-                            TextButton(onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                if (clipboard != null) {
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("红果登录诊断", diagnostic))
-                                    diagnosticCopied = true
-                                }
-                            }, modifier = Modifier.testTag("account_copy_diagnostic")) { Text("复制诊断信息") }
-                            if (diagnosticCopied) Text("诊断信息已复制", color = Muted, fontSize = 12.sp,
-                                modifier = Modifier.testTag("account_diagnostic_copied"))
-                        }
-                        if (state.message != null) TextButton(onClick = accountModel::consumeMessage) { Text("知道了") }
-                    }
-                }
-            }
-        }
-        webError?.let { error ->
-            item { AccountNotice(error, "关闭", { webError = null }, tag = "account_web_error") }
-        }
-        if (state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
-            item { AccountProfileHeader(state, accountModel, onLogout = { logoutRequested = true }) }
-            cloudLibraryItems(state, accountModel, onOpenLibrary, { removeTarget = it })
-        } else if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) {
-            item {
-                Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp).testTag("account_website_only"),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        state.websiteProfile?.takeIf { it.nickname != null || it.avatarUrl != null }?.let { website ->
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                AccountAvatar(website.avatarUrl, 40.dp)
-                                Text(website.nickname ?: "红果用户", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("account_website_name"))
+            if (state.message != null || state.loginDiagnostic != null) {
+                item {
+                    Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                            state.message?.let { message ->
+                                Text(message, color = Ink, fontSize = 14.sp, lineHeight = 22.sp,
+                                    modifier = Modifier.testTag("account_message"))
                             }
+                            state.loginDiagnostic?.let { diagnostic ->
+                                TextButton(onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    if (clipboard != null) {
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("红果登录诊断", diagnostic))
+                                        diagnosticCopied = true
+                                    }
+                                }, modifier = Modifier.testTag("account_copy_diagnostic")) { Text("复制诊断信息") }
+                                if (diagnosticCopied) Text("诊断信息已复制", color = Muted, fontSize = 12.sp,
+                                    modifier = Modifier.testTag("account_diagnostic_copied"))
+                            }
+                            if (state.message != null) TextButton(onClick = accountModel::consumeMessage) { Text("知道了") }
                         }
-                        Text("官网已登录，云片单待连接", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        Text("官网登录已加密保存在本机。可直接重试，无需重新获取验证码。",
-                            color = Muted, fontSize = 14.sp, lineHeight = 22.sp)
-                        Text("连接账号后，才能查看云片单和开启进度同步。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
-                        Button(onClick = accountModel::retryWebsiteAccount, enabled = !state.busy,
-                            modifier = Modifier.fillMaxWidth().testTag("account_retry_website")) {
-                            Text(if (state.busy) "正在连接账号…" else "重试连接账号")
-                        }
-                        if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        TextButton(onClick = { logoutRequested = true }, enabled = !state.busy,
-                            modifier = Modifier.testTag("account_website_logout")) { Text("退出已保存的官网登录") }
                     }
                 }
             }
-            item {
-                Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        AccountAdvancedImport(state, accountModel)
+            webError?.let { error ->
+                item { AccountNotice(error, "关闭", { webError = null }, tag = "account_web_error") }
+            }
+            if (state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
+                if (!profileInLeft) item { AccountProfileHeader(state, accountModel, onLogout = { logoutRequested = true }) }
+                cloudLibraryItems(state, accountModel, onOpenLibrary, { removeTarget = it })
+            } else if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) {
+                item {
+                    Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp).testTag("account_website_only"),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            state.websiteProfile?.takeIf { it.nickname != null || it.avatarUrl != null }?.let { website ->
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    AccountAvatar(website.avatarUrl, 40.dp)
+                                    Text(website.nickname ?: "红果用户", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("account_website_name"))
+                                }
+                            }
+                            Text("官网已登录，云片单待连接", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            Text("官网登录已加密保存在本机。可直接重试，无需重新获取验证码。",
+                                color = Muted, fontSize = 14.sp, lineHeight = 22.sp)
+                            Text("连接账号后，才能查看云片单和开启进度同步。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
+                            Button(onClick = accountModel::retryWebsiteAccount, enabled = !state.busy,
+                                modifier = Modifier.fillMaxWidth().testTag("account_retry_website")) {
+                                Text(if (state.busy) "正在连接账号…" else "重试连接账号")
+                            }
+                            if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            TextButton(onClick = { logoutRequested = true }, enabled = !state.busy,
+                                modifier = Modifier.testTag("account_website_logout")) { Text("退出已保存的官网登录") }
+                        }
                     }
                 }
-            }
-        } else {
-            item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(56.dp))
-                    Text(when (state.sessionStatus) {
-                        AccountSessionStatus.NEEDS_VERIFICATION -> "账号需要重新验证"
-                        AccountSessionStatus.RESTORING -> "正在确认已保存账号"
-                        else -> "登录红果账号"
-                    }, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("查看账号收藏、历史与预约，本机记录单独保留", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
-                }
-            }
-            if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION || localResetRequired) {
                 item {
                     Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(if (localResetRequired) "恢复本机账号登录" else "已保存的账号等待验证",
-                                color = Ink, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                            state.profile?.let { profile ->
-                                Text("${profile.nickname.ifBlank { "红果用户" }} · 账号 ${profile.id}", color = Muted, fontSize = 12.sp,
-                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            }
-                            if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION) {
-                                Text("恢复网络后可重新验证；也可以退出已保存的账号后重新登录。", color = Muted,
-                                    fontSize = 12.sp, lineHeight = 20.sp)
-                                OutlinedButton(onClick = accountModel::refresh, enabled = !state.busy,
-                                    modifier = Modifier.fillMaxWidth().testTag("account_verify_saved")) { Text("重新验证已保存账号") }
-                            } else {
-                                Text("本机登录资料未能读取。清除已保存的登录态后可重新登录，本机收藏和观看记录继续保留。",
-                                    color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
-                            }
-                            TextButton(onClick = { logoutRequested = true }, enabled = !state.busy,
-                                modifier = Modifier.testTag("account_clear_saved")) {
-                                Text(if (localResetRequired) "清除本机保存的登录态" else "退出已保存账号")
-                            }
+                            AccountAdvancedImport(state, accountModel)
                         }
-                    }
-                }
-            }
-            if (state.sessionStatus == AccountSessionStatus.RESTORING) {
-                item {
-                    Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                        Text("正在确认账号…", color = Muted)
                     }
                 }
             } else {
                 item {
-                    AccountLoginMethods(state, accountModel, webOpen) {
-                        accountModel.cancelLogin()
-                        webError = null
-                        webOpen = true
-                        try {
-                            webLogin.launch(Intent(context, OfficialLoginActivity::class.java))
-                        } catch (_: RuntimeException) {
-                            webOpen = false
-                            webError = "无法打开官网登录页面，请重试或使用其他登录方式"
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(56.dp))
+                        Text(when (state.sessionStatus) {
+                            AccountSessionStatus.NEEDS_VERIFICATION -> "账号需要重新验证"
+                            AccountSessionStatus.RESTORING -> "正在确认已保存账号"
+                            else -> "登录红果账号"
+                        }, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("查看账号收藏、历史与预约，本机记录单独保留", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
+                    }
+                }
+                if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION || localResetRequired) {
+                    item {
+                        Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(if (localResetRequired) "恢复本机账号登录" else "已保存的账号等待验证",
+                                    color = Ink, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                                state.profile?.let { profile ->
+                                    Text("${profile.nickname.ifBlank { "红果用户" }} · 账号 ${profile.id}", color = Muted, fontSize = 12.sp,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                }
+                                if (state.sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION) {
+                                    Text("恢复网络后可重新验证；也可以退出已保存的账号后重新登录。", color = Muted,
+                                        fontSize = 12.sp, lineHeight = 20.sp)
+                                    OutlinedButton(onClick = accountModel::refresh, enabled = !state.busy,
+                                        modifier = Modifier.fillMaxWidth().testTag("account_verify_saved")) { Text("重新验证已保存账号") }
+                                } else {
+                                    Text("本机登录资料未能读取。清除已保存的登录态后可重新登录，本机收藏和观看记录继续保留。",
+                                        color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
+                                }
+                                TextButton(onClick = { logoutRequested = true }, enabled = !state.busy,
+                                    modifier = Modifier.testTag("account_clear_saved")) {
+                                    Text(if (localResetRequired) "清除本机保存的登录态" else "退出已保存账号")
+                                }
+                            }
+                        }
+                    }
+                }
+                if (state.sessionStatus == AccountSessionStatus.RESTORING) {
+                    item {
+                        Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                            Text("正在确认账号…", color = Muted)
+                        }
+                    }
+                } else {
+                    item {
+                        AccountLoginMethods(state, accountModel, webOpen) {
+                            accountModel.cancelLogin()
+                            webError = null
+                            webOpen = true
+                            try {
+                                webLogin.launch(Intent(context, OfficialLoginActivity::class.java))
+                            } catch (_: RuntimeException) {
+                                webOpen = false
+                                webError = "无法打开官网登录页面，请重试或使用其他登录方式"
+                            }
                         }
                     }
                 }
             }
+            item { Spacer(Modifier.height(20.dp)) }
         }
-        item { Spacer(Modifier.height(20.dp)) }
     }
+
+    // 横屏：标题行与账号身份（头像、昵称、统计）进左栏，账号片单留在右栏；竖屏仍是原来的一整列。
+    if (isWideLayout()) {
+        WarmTwoPane(
+            left = {
+                WarmTopInset()
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                    AccountPageHeader(Modifier.padding(start = 8.dp)) { accountModel.cancelLogin(); onBack() }
+                    if (state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
+                        Spacer(Modifier.height(12.dp))
+                        AccountProfileHeader(state, accountModel, onLogout = { logoutRequested = true })
+                    }
+                }
+            },
+            right = { AccountList(headerInLeft = true, profileInLeft = true) },
+        )
+    } else {
+        AccountList(headerInLeft = false, profileInLeft = false)
+    }
+
     AccountConfirmationDialogs(
         logoutRequested, { logoutRequested = false },
         {
@@ -274,6 +294,16 @@ internal fun AccountScreen(
             else state.profile?.let { "${it.nickname.ifBlank { "红果用户" }}（账号 ${it.id}）" },
         localReset = localResetRequired,
     )
+}
+
+@Composable
+private fun AccountPageHeader(modifier: Modifier = Modifier, onBack: () -> Unit) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack, modifier = Modifier.testTag("account_back")) {
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回我的", tint = Ink)
+        }
+        Text("我的账号", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+    }
 }
 
 @Composable

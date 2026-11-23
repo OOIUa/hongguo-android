@@ -6,12 +6,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Bookmark
-import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -28,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -39,98 +42,169 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
     val card = state.selectedCard ?: return
     val detail = state.detail
     val favorite = state.favorites.any { it.card.id == card.id }
+    if (isWideLayout()) {
+        // 横屏：标题、收藏、简介在左，相关作品与选集在右。
+        WarmTwoPane(
+            left = {
+                WarmTopInset()
+                DetailTopBar(model::closeDetail)
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                    DetailInfo(state, card, detail, favorite, model, accountModel)
+                    if (detail != null && detail.cast.isNotEmpty()) {
+                        Spacer(Modifier.height(16.dp))
+                        // 演员表和简介一样留在左栏，右栏只放选集。
+                        CastSection(detail.cast)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    // 相关作品是横向列表，放在可滚动的左列里才不会撑破右栏。
+                    RelatedWorksSection(state, model, accountModel)
+                }
+            },
+            right = {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                    EpisodeGrid(state, model, detail, columns = 5,
+                        header = { DetailPlayButton(state, model, detail, horizontalPadding = 0.dp); Spacer(Modifier.height(12.dp)) })
+                }
+            },
+        )
+        return
+    }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 2.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = model::closeDetail, modifier = Modifier.testTag("detail_back")) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-            }
-            Text("剧集详情", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-        }
+        DetailTopBar(model::closeDetail)
         LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("episode_list"),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Cover(detail?.cover ?: card.cover, card.title, Modifier.width(96.dp).height(132.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(detail?.title ?: card.title, fontSize = 20.sp, lineHeight = 29.sp,
-                            fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        Text(detail?.let { "共 ${it.episodes.size} 集" }
-                            ?: if (card.episodeCount > 0) "共 ${card.episodeCount} 集" else "正在读取剧集信息",
-                            fontSize = 13.sp, color = Muted)
-                    }
-                }
-            }
-            item {
-                FavoritePair(card, favorite, { model.toggleFavorite(card) }, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
-            }
-            if (state.loadingDetail) item {
-                Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    Text("正在获取完整选集…", Modifier.padding(start = 12.dp), color = Muted, fontSize = 14.sp)
-                }
-            }
-            if (state.detailError != null) item { FailurePanel(state.detailError, model::retryDetails) }
-            if (detail != null) {
-                if (detail.summary.isNotBlank()) item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("故事简介", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text(detail.summary, color = Muted, fontSize = 14.sp, lineHeight = 23.sp)
-                    }
-                }
-                if (detail.cast.isNotEmpty()) item { CastSection(detail.cast) }
-                item { RelatedWorksSection(state, model, accountModel) }
-                item {
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("选集", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text(if (state.autoPlayNext) "自动连播已开启" else "自动连播已关闭", color = Muted, fontSize = 12.sp)
-                    }
-                }
-                items((detail.episodes.size + 4) / 5, key = { "episodes_$it" }) { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        repeat(5) { column ->
-                            val index = row * 5 + column
-                            val episode = detail.episodes.getOrNull(index)
-                            if (episode == null) Spacer(Modifier.weight(1f))
-                            else {
-                                val selected = state.episodePosition == index
-                                Surface(onClick = { model.playEpisode(index) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                                    .testTag("episode_$index"), shape = RoundedCornerShape(12.dp),
-                                    color = if (selected) Orange else CardSurface) {
-                                    Box(Modifier.padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
-                                        Text("${episode.index}", fontSize = 15.sp,
-                                            color = if (selected) OnOrange else Ink,
-                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-                                    }
-                                }
-                            }
-                        }
+            item { DetailInfo(state, card, detail, favorite, model, accountModel) }
+            if (detail != null && detail.cast.isNotEmpty()) item { CastSection(detail.cast) }
+            item { RelatedWorksSection(state, model, accountModel) }
+            if (detail != null) item { EpisodeGridHeader(state) }
+            if (detail != null) items((detail.episodes.size + 4) / 5, key = { "episodes_$it" }) { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    repeat(5) { column ->
+                        val index = row * 5 + column
+                        val episode = detail.episodes.getOrNull(index)
+                        if (episode == null) Spacer(Modifier.weight(1f))
+                        else EpisodeButton(state, model, detail, index, Modifier.weight(1f))
                     }
                 }
             }
             item { Spacer(Modifier.height(8.dp)) }
         }
-        if (detail != null && detail.episodes.isNotEmpty()) {
-            Surface(color = Canvas) {
-                val episode = detail.episodes.getOrNull(state.episodePosition)?.index ?: detail.episodes.first().index
-                Button(onClick = model::openPlayer, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)
-                    .heightIn(min = 50.dp).testTag("open_player"), shape = RoundedCornerShape(14.dp)) {
-                    Icon(Icons.Outlined.PlayArrow, contentDescription = null, Modifier.size(22.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text("播放第 $episode 集", fontSize = 16.sp)
-                }
+        DetailPlayButton(state, model, detail)
+    }
+}
+
+@Composable
+private fun DetailTopBar(onBack: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 2.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack, modifier = Modifier.testTag("detail_back")) {
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+        }
+        Text("剧集详情", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** 截断点之前：海报标题、收藏、加载状态、故事简介。 */
+@Composable
+private fun DetailInfo(
+    state: HongguoUiState, card: DramaCard, detail: DramaDetail?,
+    favorite: Boolean, model: HongguoViewModel, accountModel: AccountViewModel,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Cover(detail?.cover ?: card.cover, card.title, Modifier.width(96.dp).height(132.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(detail?.title ?: card.title, fontSize = 20.sp, lineHeight = 29.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(detail?.let { "共 ${it.episodes.size} 集" }
+                    ?: if (card.episodeCount > 0) "共 ${card.episodeCount} 集" else "正在读取剧集信息",
+                    fontSize = 13.sp, color = Muted)
+            }
+        }
+        FavoritePair(card, favorite, { model.toggleFavorite(card) }, accountModel, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
+        if (state.loadingDetail) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                Text("正在获取完整选集…", Modifier.padding(start = 12.dp), color = Muted, fontSize = 14.sp)
+            }
+        }
+        state.detailError?.let { FailurePanel(it, model::retryDetails) }
+        if (detail != null && detail.summary.isNotBlank()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("故事简介", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(detail.summary, color = Muted, fontSize = 14.sp, lineHeight = 23.sp)
             }
         }
     }
 }
 
-/// 演员表:横向头像行,点演员展开其简介;上游没给数据时整个区块不出现。
 @Composable
-private fun CastSection(cast: List<CastMember>) {
+private fun EpisodeGridHeader(state: HongguoUiState) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("选集", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(if (state.autoPlayNext) "自动连播已开启" else "自动连播已关闭", color = Muted, fontSize = 12.sp)
+    }
+}
+
+/** 横屏右栏的选集：留白、标题、播放按钮与剧集网格在同一个滚动区里，不会出现断层。 */
+@Composable
+private fun EpisodeGrid(
+    state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail?, columns: Int,
+    header: (@Composable () -> Unit)? = null,
+) {
+    if (detail == null) return
+    LazyVerticalGrid(columns = GridCells.Fixed(columns),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item(span = { GridItemSpan(maxLineSpan) }) { WarmTopInset() }
+        item(span = { GridItemSpan(maxLineSpan) }) { EpisodeGridHeader(state) }
+        header?.let { head -> item(span = { GridItemSpan(maxLineSpan) }) { head() } }
+        itemsIndexed(detail.episodes) { index, _ ->
+            EpisodeButton(state, model, detail, index, Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun EpisodeButton(
+    state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail, index: Int, modifier: Modifier,
+) {
+    val episode = detail.episodes.getOrNull(index) ?: return
+    val selected = state.episodePosition == index
+    Surface(onClick = { model.playEpisode(index) }, modifier = modifier.heightIn(min = 48.dp)
+        .testTag("episode_$index"), shape = RoundedCornerShape(12.dp),
+        color = if (selected) Orange else CardSurface) {
+        Box(Modifier.padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
+            Text("${episode.index}", fontSize = 15.sp,
+                color = if (selected) OnOrange else Ink,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+        }
+    }
+}
+
+@Composable
+private fun DetailPlayButton(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail?, horizontalPadding: Dp = 20.dp) {
+    if (detail == null || detail.episodes.isEmpty()) return
+    Surface(color = Canvas) {
+        val episode = detail.episodes.getOrNull(state.episodePosition)?.index ?: detail.episodes.first().index
+        Button(onClick = model::openPlayer, modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 12.dp)
+            .heightIn(min = 50.dp).testTag("open_player"), shape = RoundedCornerShape(14.dp)) {
+            Icon(Icons.Outlined.PlayArrow, contentDescription = null, Modifier.size(22.dp))
+            Spacer(Modifier.width(7.dp))
+            Text("播放第 $episode 集", fontSize = 16.sp)
+        }
+    }
+}
+
+/// 演员表:横向头像行,点演员展开其简介;上游没给数据时整个区块不出现。
+/// 三个主题的详情页共用这一个实现（暖白/内容卡片/沉浸暗场），颜色全走主题 palette。
+@Composable
+internal fun CastSection(cast: List<CastMember>, modifier: Modifier = Modifier) {
     var expandedId by remember { mutableStateOf<String?>(null) }
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("演员表", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(cast, key = { it.id }) { member ->
