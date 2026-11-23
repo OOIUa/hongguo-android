@@ -12,6 +12,8 @@ Android 同步 iOS 0.1.32 的官网访客播放回退。463 项 JVM 测试全部
 
 《分家住破屋，我赶山带妻女吃肉》第 31 集返回官网访客不可用。最终安装包的这四项设备测试均通过。
 
+GitHub Latest 已发布 `v0.7.34`。通过 GitHub 直连、gh-proxy.com 和 ghfast.top 匿名下载应用内更新清单和完整 APK，三条线路均与发布文件逐字节一致。gh-proxy.com 首次检查仍返回 0.7.33 的清单，缓存刷新后复验通过。GitHub 上的对应源码 ZIP 和 SHA-256 校验文件也已核对。
+
 # 0.7.32 / versionCode 43（2026-11-21）
 
 本版新增官方弹幕（时间轴评论、渲染层与弹幕设置），并将取源默认路径切换为 video_tab 的 v5 无正文 GET，修复 2026-11-20 起取源接口变更导致的播放地址获取失败。两项改动分别同步自 jackotom/hongguo-drama 7.7 与 tsukiyo-zero/hongguoTV、jycao2/hongguoTV（均 GPL-3.0-only），`THIRD_PARTY_NOTICES.md` 已更新。
