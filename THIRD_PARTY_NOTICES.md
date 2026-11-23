@@ -176,3 +176,7 @@ Playback v5 model endpoint (2026-11-16)
 - 本项目与本上游同为 GPL-3.0-only，移植后不再附加额外限制；原作者的著作权与来源注释保留在各文件头部。
 
 改动：请求仍走同一条评论列表接口，但签名与匿名安装 ID 改用本应用自己的 `api.playback.Signer` 和 `VendorConstants`，与播放请求同源；参数由原来的滑杆与行数档位改为「开关 + 屏幕占比 / 字体大小 / 不透明度 / 文字效果 / 移动速度」候选按钮，屏占比按整屏高度定高、行数由字号和屏高换算；转屏时屏幕上已有的弹幕按已滚比例重新锚定续播；弹幕字号以 dp 为基准，不随系统字号设置放大；新增自绘的弹幕开关与设置图标。未复制对方的 APK、应用图标或任何美术素材。
+
+## 官网访客播放器
+
+官网访客分集校验和片源解析移植自 OOIUa/hongguo-ios 的 `PublicEpisodeSource.swift`（GPL-3.0-only），其公开片源流程参考 jackotom/hongguo-drama v8.0 的 `src/native/hongguo.js`（GPL-3.0）。Android 实现沿用分集开放范围和媒体域名检查，通过独立的匿名 HTTP 客户端读取网页数据。[iOS 源码](https://github.com/OOIUa/hongguo-ios/blob/665868b5275b7d7c02767a32f30a5670a5e71efa/Sources/Networking/PublicEpisodeSource.swift) · [桌面端源码](https://github.com/jackotom/hongguo-drama/blob/8d14d07b3aaf99ecbe6b3ecb8ba2d0308261845d/src/native/hongguo.js)

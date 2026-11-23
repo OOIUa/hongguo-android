@@ -6,7 +6,6 @@ import com.hongguo.api.core.Spade;
 import com.hongguo.api.util.Crypto;
 import com.hongguo.api.util.Http;
 import com.hongguo.api.util.Json;
-import com.hongguo.api.util.Log;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -118,151 +117,190 @@ public final class AppSource {
      * @return 可播放轨道；任何一步失败都抛异常，由调用方决定是否回落老路
      */
     public static Stream.VideoTrack fetch(String vid, String quality) throws Exception {
-        return fetch(vid, quality, PLAYBACK_BUDGET_MS);
+        return fetch(vid, quality, null);
+    }
+
+    public static Stream.VideoTrack fetch(String vid, String quality, String seriesId) throws Exception {
+        return fetch(vid, quality, seriesId, PLAYBACK_BUDGET_MS);
     }
 
     static Stream.VideoTrack fetch(String vid, String quality, long budgetMs) throws Exception {
-        if (vid == null || !vid.matches("\\d{1,30}")) {
-            throw new IllegalArgumentException("分集编号无效");
-        }
-        long started = System.nanoTime();
-        long deadline = started + TimeUnit.MILLISECONDS.toNanos(budgetMs);
+        return fetch(vid, quality, null, budgetMs);
+    }
+
+    static Stream.VideoTrack fetch(String vid, String quality, String seriesId, long budgetMs) throws Exception {
+        if (vid == null || !vid.matches("\\d{1,30}")) throw new IllegalArgumentException("分集编号无效");
+        PublicPlayback guest = seriesId != null && seriesId.matches("\\d{1,30}") ? publicPlayback : null;
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMs);
         checkPlaybackCancellation();
-        if (!hasPlaybackTime(started, budgetMs)) throw new IOException("播放取流超时，请稍后重试");
+        if (System.nanoTime() >= deadline) throw new SocketTimeoutException("播放取流超时，请稍后重试");
+        PlaybackAttempts attempts = new PlaybackAttempts(guest != null, deadline, budgetMs);
         byte[] body = Json.stringify(payload(vid)).getBytes(StandardCharsets.UTF_8);
         PlaybackDevice.Identity identity = PLAYBACK_IDENTITY.get();
         if (identity == null) identity = PlaybackDevice.fresh();
-        Exception failure = null;
-        Exception modelFailure = null;
-        IOException renewal = null;
-        // 2026-11-20 起：player/v1 的 v5 POST 与旧的签名 video_tab 都只回 200 + 0 字节，
-        // 唯一可用的取源路径是 video_tab 的 v5 无正文 GET（同步自 jackotom/hongguo-drama 7.7）。
-        if (hasPlaybackTime(started, budgetMs)) {
-            try {
-                Stream.VideoTrack tab = fetchTabV5(vid, quality, identity);
-                if (tab != null) {
-                    PLAYBACK_IDENTITY.compareAndSet(null, identity);
-                    return tab;
-                }
-            } catch (InterruptedIOException cancelled) {
-                throw cancelled;
-            } catch (Exception tabFailure) {
-                // 该路径不可用时按原顺序继续尝试其余接口。
-                Log.warn("video_tab v5 取源失败：" + tabFailure.getClass().getSimpleName());
-            }
-        }
-        // N3urda/hongguoTV 6672b55: v5 mobile endpoint first; bounded recovery from LiuWQ0809 89169c0.
-        // Retain our route order, model-error precedence, cancellation and overall request budget.
-        try {
-            for (int attempt = 0; attempt < SINGLE_ATTEMPTS && hasPlaybackTime(started, budgetMs); attempt++) {
+
+        SinglePlayback[] readers = {firstTab, singlePlayback, legacySingle};
+        for (int index = 0; index < readers.length; index++) {
+            SinglePlayback reader = readers[index];
+            if (reader == null) continue;
+            int limit = index == 1 ? SINGLE_ATTEMPTS : 1;
+            for (int attempt = 1; attempt <= limit; attempt++) {
                 checkPlaybackCancellation();
+                long nativeDeadline = attempts.nativeDeadline();
+                if (System.nanoTime() >= nativeDeadline) break;
                 try {
-                    Stream.VideoTrack track = singlePlayback.get(vid, quality, identity, deadline);
+                    Stream.VideoTrack track = reader.get(vid, quality, identity, nativeDeadline);
                     checkPlaybackCancellation();
-                    if (track != null) {
-                        PLAYBACK_IDENTITY.compareAndSet(null, identity);
-                        return track;
+                    if (track != null) return nativeResult(track, identity, deadline);
+                    attempts.invalidModel = true;
+                    break;
+                } catch (Exception error) {
+                    if (index == 0 && guest == null && error instanceof SocketTimeoutException) {
+                        throw error;
                     }
-                    break; // No usable model; compatibility routes may still supply one.
-                } catch (EmptyPlaybackResponseException empty) {
-                    if (attempt == SINGLE_ATTEMPTS - 1 || !hasPlaybackTime(started, budgetMs)) throw empty;
-                    long remaining = deadline - System.nanoTime();
+                    attempts.record(error, identity);
+                    if (!(error instanceof EmptyPlaybackResponseException) || attempt == limit) break;
+                    long remaining = attempts.nativeDeadline() - System.nanoTime();
+                    if (remaining <= 0) break;
                     try {
                         TimeUnit.NANOSECONDS.sleep(Math.min(TimeUnit.MILLISECONDS.toNanos(300), remaining));
                     } catch (InterruptedException cancelled) {
                         Thread.currentThread().interrupt();
                         throw new InterruptedIOException("播放请求已取消");
                     }
-                    checkPlaybackCancellation();
-                    if (!hasPlaybackTime(started, budgetMs)) throw empty;
                 }
             }
-        } catch (PlaybackRejectedException e) {
-            e.forgetRejectedIdentity(identity);
-            throw e;
-        } catch (EmptyPlaybackResponseException e) {
-            // Only the finite single-endpoint recovery has been exhausted; then try compatibility routes.
-        } catch (PlaybackHttpException | IOException e) {
-            stopIfPlaybackTerminal(e, identity);
-            failure = e;
-        } catch (Exception e) {
-            if (Thread.currentThread().isInterrupted()) throw e;
-            modelFailure = e;
         }
-        if (useLegacySingle && hasPlaybackTime(started, budgetMs)) {
-            checkPlaybackCancellation();
-            try {
-                Stream.VideoTrack track = fetchSingle(vid, quality, identity, deadline);
-                checkPlaybackCancellation();
-                if (track != null) { PLAYBACK_IDENTITY.compareAndSet(null, identity); return track; }
-            } catch (PlaybackRejectedException error) {
-                error.forgetRejectedIdentity(identity); throw error;
-            } catch (EmptyPlaybackResponseException empty) {
-                // Continue with the existing compatibility readers.
-            } catch (PlaybackHttpException | IOException error) {
-                stopIfPlaybackTerminal(error, identity);
-                failure = error;
-            } catch (Exception error) {
-                if (Thread.currentThread().isInterrupted()) throw error;
-                if (modelFailure == null) modelFailure = error;
-            }
-        }
+
         for (PlaybackRoute route : PLAYBACK_ROUTES) {
             checkPlaybackCancellation();
-            if (!hasPlaybackTime(started, budgetMs)) break;
+            long nativeDeadline = attempts.nativeDeadline();
+            if (System.nanoTime() >= nativeDeadline) break;
             if (route.renewsIdentity) {
+                // Skip only this renewal-dependent route. The remaining routes use the current identity and cutoff.
+                if (attempts.canUseGuest()) {
+                    continue;
+                }
                 try {
                     identity = PlaybackDevice.fresh();
-                } catch (IOException e) {
-                    // 换身份失败（冷却或离线）时仍用原身份试完剩余路径。
-                    if (Thread.currentThread().isInterrupted()) throw e;
-                    renewal = e;
+                } catch (IOException error) {
+                    stopIfPlaybackTerminal(error, identity);
+                    attempts.renewal = error;
                 }
             }
             checkPlaybackCancellation();
-            if (!hasPlaybackTime(started, budgetMs)) break;
-            Map<String, Object> j;
+            if (System.nanoTime() >= nativeDeadline) break;
+            Map<String, Object> model;
             try {
-                j = route.post ? playbackPost.post(body, identity, route.host, deadline) : playbackTab.get(vid, identity, deadline);
-            } catch (PlaybackRejectedException e) {
-                e.forgetRejectedIdentity(identity);
-                throw e;
-            } catch (EmptyPlaybackResponseException e) {
-                continue;
-            } catch (PlaybackHttpException | IOException e) {
-                stopIfPlaybackTerminal(e, identity);
-                failure = e;
+                model = route.post ? playbackPost.post(body, identity, route.host, nativeDeadline)
+                        : playbackTab.get(vid, identity, nativeDeadline);
+            } catch (PlaybackRejectedException | EmptyPlaybackResponseException | PlaybackHttpException | IOException error) {
+                attempts.record(error, identity);
                 continue;
             }
-            if (j == null) continue;
+            if (model == null) {
+                attempts.invalidModel = true;
+                continue;
+            }
             try {
-                checkPlaybackCancellation();
-                Stream.VideoTrack track = parseModel(vid, j, quality, deadline);
-                checkPlaybackCancellation();
-                PLAYBACK_IDENTITY.compareAndSet(null, identity);
-                return track;
-            } catch (PlaybackRejectedException e) {
-                e.forgetRejectedIdentity(identity);
-                throw e;
-            } catch (InterruptedIOException e) {
-                stopIfPlaybackTerminal(e, identity);
-                failure = e;
-            } catch (Exception e) {
-                if (Thread.currentThread().isInterrupted()) throw e;
-                if (modelFailure == null) modelFailure = e;
-                else modelFailure.addSuppressed(e);
+                Stream.VideoTrack track = resolveReceivedModel(vid, model, quality, nativeDeadline);
+                return nativeResult(track, identity, deadline);
+            } catch (Exception error) {
+                attempts.record(error, identity);
             }
         }
-        // 模型错误比 HTTP/空响应更能说明本集的情况（如仅有 ByteVC2），优先报告。
-        if (modelFailure != null) throw modelFailure;
-        if (failure != null) throw failure;
-        EmptyPlaybackResponseException empty = new EmptyPlaybackResponseException();
-        if (renewal != null) empty.addSuppressed(renewal);
-        throw empty;
+        checkPlaybackCancellation();
+        if (attempts.canUseGuest()) {
+            if (System.nanoTime() >= deadline) throw new SocketTimeoutException("播放取流超时");
+            Stream.VideoTrack track = guest.get(seriesId, vid, deadline);
+            checkPlaybackCancellation();
+            if (System.nanoTime() >= deadline) throw new SocketTimeoutException("播放取流超时");
+            return track;
+        }
+        throw attempts.failure();
     }
 
-    private static boolean hasPlaybackTime(long started, long budgetMs) {
-        return budgetMs > 0 && (System.nanoTime() - started) / 1_000_000L < budgetMs;
+    private static Stream.VideoTrack nativeResult(Stream.VideoTrack track, PlaybackDevice.Identity identity,
+            long deadline) throws IOException {
+        checkPlaybackCancellation();
+        if (System.nanoTime() >= deadline) throw new SocketTimeoutException("播放取流超时");
+        PLAYBACK_IDENTITY.compareAndSet(null, identity);
+        return track;
+    }
+
+    private static final class PlaybackAttempts {
+        final boolean hasGuest;
+        final long deadline;
+        final long compatibilityDeadline;
+        boolean empty;
+        boolean invalidModel;
+        Exception modelError;
+        Exception hardError;
+        Exception transientError;
+        IOException renewal;
+
+        PlaybackAttempts(boolean hasGuest, long deadline, long budgetMs) {
+            this.hasGuest = hasGuest;
+            this.deadline = deadline;
+            compatibilityDeadline = deadline - TimeUnit.MILLISECONDS.toNanos(Math.min(6_000, budgetMs / 3));
+        }
+
+        boolean canUseGuest() {
+            return hasGuest && empty && !invalidModel && modelError == null && hardError == null && renewal == null;
+        }
+
+        long nativeDeadline() {
+            return canUseGuest() ? compatibilityDeadline : deadline;
+        }
+
+        void record(Exception error, PlaybackDevice.Identity identity) throws Exception {
+            boolean receivedModel = error instanceof ReceivedModelFailure;
+            if (receivedModel) error = ((ReceivedModelFailure) error).error;
+            stopIfPlaybackTerminal(error, identity);
+            if (receivedModel || !(error instanceof EmptyPlaybackResponseException
+                    || error instanceof IOException || error instanceof PlaybackHttpException)) {
+                if (modelError == null) modelError = error;
+                else if (error != modelError) modelError.addSuppressed(error);
+            } else if (error instanceof EmptyPlaybackResponseException) {
+                empty = true;
+            } else if (isTransientPlaybackError(error)) {
+                transientError = error;
+            } else if (hardError == null) {
+                hardError = error;
+            }
+        }
+
+        Exception failure() {
+            if (modelError != null) return modelError;
+            if (hardError != null) return hardError;
+            if (hasGuest && invalidModel) return new IllegalStateException("App 接口未返回本集播放模型");
+            if (transientError != null) return transientError;
+            EmptyPlaybackResponseException error = new EmptyPlaybackResponseException();
+            if (renewal != null) error.addSuppressed(renewal);
+            return error;
+        }
+    }
+
+    private static boolean isTransientPlaybackError(Exception error) {
+        if (error instanceof SocketTimeoutException || error instanceof java.net.ConnectException) return true;
+        if (!(error instanceof java.net.SocketException)) return false;
+        String message = error.getMessage();
+        return "网络连接中断".equals(message) || "Connection reset".equalsIgnoreCase(message)
+                || "Connection reset by peer".equalsIgnoreCase(message) || "Broken pipe".equalsIgnoreCase(message);
+    }
+
+    private static final class ReceivedModelFailure extends Exception {
+        final Exception error;
+        ReceivedModelFailure(Exception error) { super(error); this.error = error; }
+    }
+
+    private static Stream.VideoTrack resolveReceivedModel(String vid, Map<String, Object> model, String quality,
+            long deadline) throws ReceivedModelFailure {
+        try {
+            return parseModel(vid, model, quality, deadline);
+        } catch (Exception error) {
+            throw new ReceivedModelFailure(error);
+        }
     }
 
     private static void checkPlaybackCancellation() throws InterruptedIOException {
@@ -295,6 +333,18 @@ public final class AppSource {
 
     private static void stopIfPlaybackTerminal(Exception error, PlaybackDevice.Identity identity) throws InterruptedIOException {
         checkPlaybackCancellation();
+        if (error instanceof PlaybackRejectedException) {
+            PlaybackRejectedException rejected = (PlaybackRejectedException) error;
+            rejected.forgetRejectedIdentity(identity);
+            throw rejected;
+        }
+        if (error instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedIOException("播放请求已取消");
+        }
+        if (error instanceof java.util.concurrent.CancellationException) {
+            throw (java.util.concurrent.CancellationException) error;
+        }
         if (error instanceof InterruptedIOException && !(error instanceof SocketTimeoutException)) {
             throw (InterruptedIOException) error;
         }
@@ -369,12 +419,25 @@ public final class AppSource {
     }
 
     private static SinglePlayback singlePlayback = AppSource::fetchPrimary;
-    private static boolean useLegacySingle = true;
+    interface PublicPlayback {
+        Stream.VideoTrack get(String seriesId, String vid, long deadlineNanos) throws Exception;
+    }
+
+    private static SinglePlayback firstTab = AppSource::fetchTabV5;
+    private static SinglePlayback legacySingle = AppSource::fetchSingle;
+    private static PublicPlayback publicPlayback = PublicEpisodeSource::fetch;
 
     static void setSinglePlaybackForTest(SinglePlayback playback) {
         PLAYBACK_IDENTITY.set(null);
         singlePlayback = playback == null ? AppSource::fetchPrimary : playback;
-        useLegacySingle = playback == null;
+        setAdditionalPlaybackForTest(playback == null ? AppSource::fetchTabV5 : null,
+                playback == null ? AppSource::fetchSingle : null, playback == null ? PublicEpisodeSource::fetch : null);
+    }
+
+    static void setAdditionalPlaybackForTest(SinglePlayback tab, SinglePlayback legacy, PublicPlayback guest) {
+        firstTab = tab;
+        legacySingle = legacy;
+        publicPlayback = guest;
     }
 
     /** 可替换的 video_tab 请求（JVM 测试注入）；返回 null 表示该接口不可用、应回退旧流程。 */
@@ -431,7 +494,9 @@ public final class AppSource {
         } catch (ByteVc2Only onlyByteVc2) {
             // 内联全是 ByteVC2：备用接口及其兼容请求仍可能给出 HEVC。
             String fallback = parseFallback(model.get("fallback_api"));
-            if (fallback == null || fallback.isEmpty()) throw onlyByteVc2;
+            if (fallback == null || fallback.isEmpty()) {
+                throw onlyByteVc2;
+            }
             Map<String, Object> info = readFallback(fallback, deadline);
             confirmSameVideo(model, info);
             return fallbackTrack(info, fallback, quality, deadline);
@@ -683,7 +748,9 @@ public final class AppSource {
             }
             if (selected != null) return selected;
         }
-        if (incomplete) throw new IncompleteEncryption(ok.get(0).shortSide);
+        if (incomplete) {
+            throw new IncompleteEncryption(ok.get(0).shortSide);
+        }
         throw new IllegalStateException("本集片源地址或密钥无法解析");
     }
 
@@ -844,7 +911,9 @@ public final class AppSource {
                 headers.put("Content-Type", "application/json; charset=utf-8");
                 headers.put("x-ss-stub", Crypto.md5HexUpper(body));
             }
-            if (cookie != null && !cookie.isEmpty()) headers.put("Cookie", cookie);
+            if (cookie != null && !cookie.isEmpty()) {
+                headers.put("Cookie", cookie);
+            }
             return new SignedPlayback(url, headers);
         }
         throw new IllegalStateException("无法生成播放签名");
@@ -898,11 +967,10 @@ public final class AppSource {
     }
 
     /**
-     * video_tab 的 v5 无正文 GET 取源：2026-11-20 起 player/v1 的 v5 POST 与旧的签名
-     * video_tab 都只回空正文，这条路径是当前唯一可用的。响应仍为
+     * 优先使用 video_tab 的 v5 无正文 GET。响应格式为
      * {@code data.video_model_data[vid].video_model}，复用 {@link #parseTabResponse}。
      */
-    private static Stream.VideoTrack fetchTabV5(String vid, String quality, PlaybackDevice.Identity identity)
+    private static Stream.VideoTrack fetchTabV5(String vid, String quality, PlaybackDevice.Identity identity, long deadline)
             throws Exception {
         com.hongguo.api.playback.MobilePlayerV5.TabRequest signed =
                 com.hongguo.api.playback.MobilePlayerV5.requestVideoTab(
@@ -912,7 +980,7 @@ public final class AppSource {
         for (Map.Entry<String, String> header : signed.getHeaders().entrySet()) {
             req.header(header.getKey(), header.getValue());
         }
-        Http.Resp response = Http.sendPlaybackMetadata(req, Long.MAX_VALUE);
+        Http.Resp response = Http.sendPlaybackMetadata(req, deadline);
         checkPlaybackCancellation();
         checkPlaybackResponse(response);
         if (response.status != 200) throw new PlaybackHttpException(response.status);
@@ -920,7 +988,7 @@ public final class AppSource {
         if (response.body.length > 2 * 1024 * 1024) throw new IOException("播放信息过大");
         Map<String, Object> model = parseTabResponse(vid, response.text());
         if (model == null) throw new IllegalStateException("video_tab 未返回本集播放模型");
-        return parseModel(vid, model, quality, Long.MAX_VALUE);
+        return resolveReceivedModel(vid, model, quality, deadline);
     }
 
     /** v5 gzip 模型 POST；精确选择本集，沿用 parseModel 的编码与加密规则。 */
@@ -937,7 +1005,7 @@ public final class AppSource {
         checkPlaybackResponse(response);
         if (response.status != 200) throw new PlaybackHttpException(response.status);
         if (response.body.length > 2 * 1024 * 1024) throw new IOException("播放信息过大");
-        return parseModel(vid, parseMobileResponse(vid, response.text()), quality, deadline);
+        return resolveReceivedModel(vid, parseMobileResponse(vid, response.text()), quality, deadline);
     }
 
     static Map<String, Object> parseMobileResponse(String vid, String text) {
@@ -972,7 +1040,7 @@ public final class AppSource {
         Http.Resp res = Http.sendPlaybackMetadata(req, deadline);
         checkPlaybackResponse(res);
         if (res.status != 200) throw new PlaybackHttpException(res.status);
-        return parseModel(vid, parseSingleResponse(vid, res.text()), quality, deadline);
+        return resolveReceivedModel(vid, parseSingleResponse(vid, res.text()), quality, deadline);
     }
 
     /** 单集接口把模型放在 {@code data.video_model}（对象、JSON 字符串或 Base64）；整理成 parseModel 的形态。 */
@@ -1030,7 +1098,9 @@ public final class AppSource {
         for (Map.Entry<String, String> e : signed.headers.entrySet()) req.header(e.getKey(), e.getValue());
         Http.Resp res = Http.sendPlaybackMetadata(req, deadline);
         checkPlaybackResponse(res);
-        return res.status == 200 ? parseTabResponse(vid, res.text()) : null;
+        if (res.status != 200) throw new PlaybackHttpException(res.status);
+        if (res.body.length == 0) throw new EmptyPlaybackResponseException();
+        return parseTabResponse(vid, res.text());
     }
 
     /**
@@ -1077,9 +1147,8 @@ public final class AppSource {
 
     /** 区分可短暂重试的空正文、业务拒绝和格式错误。 */
     static Map<String, Object> parsePlaybackResponse(String text) {
-        if (text == null || text.trim().isEmpty()) {
-            throw new EmptyPlaybackResponseException();
-        }
+        if ("".equals(text)) throw new EmptyPlaybackResponseException();
+        if (text == null || text.trim().isEmpty()) throw new IllegalStateException("空响应格式无效，正文仅含空白或缺失");
         Map<String, Object> j;
         try { j = Json.parseObject(text); }
         catch (Exception ignored) { throw new IllegalStateException("播放信息格式无效"); }

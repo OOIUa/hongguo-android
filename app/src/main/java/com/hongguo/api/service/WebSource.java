@@ -19,10 +19,8 @@ import java.util.regex.Pattern;
  * - /search/{keyword}      内嵌 _ROUTER_DATA.searchList（搜索结果）
  * - /player/{series_id}    内嵌 vid_list（完整分集 vid 列表）与 series_name
  *
- * 播放直链历史上也在 /player/{sid}/{vid} 页内（main_url，明文 MP4），
- * 但官网改版后 SSR 已不再输出该字段，仅剩 360p 预览 contentUrl
- * （付费集下载即 404），故播放取址不再走官网，统一由 AppSource 负责
- * （见 Stream.videoTrack）。官网数据现仅用于搜索与分集列表。
+ * 分集页内的 SEO 视频可能只有预览。PublicEpisodeSource 独立检查访客权限，
+ * 并从官网播放器取得完整分集的候选媒体地址。
  *
  * 移植参考：jackotom/hongguo-drama src/native/hongguo.js（GPL-3.0）。
  */
@@ -30,7 +28,7 @@ public final class WebSource {
 
     private WebSource() {}
 
-    private static final String SITE_ORIGIN = "https://hongguoduanju.com";
+    static final String SITE_ORIGIN = "https://hongguoduanju.com";
     private static final String WEB_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";

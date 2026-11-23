@@ -72,7 +72,10 @@ public final class ProgressiveMedia {
         if (vid == null || !vid.matches("[0-9]{1,30}")) throw new IllegalArgumentException("分集编号无效");
         checkOpening(progress);
         emit(progress, "resolving", 0, -1);
-        Stream.VideoTrack track = Stream.videoTrack(vid, quality);
+        return open(Stream.videoTrack(vid, quality), progress);
+    }
+
+    public static Session open(Stream.VideoTrack track, Stream.Progress progress) throws Exception {
         checkOpening(progress);
         String root = Config.str("runtime.data_dir", null);
         if (root == null || root.trim().isEmpty()) throw new IOException("媒体存储尚未初始化");
@@ -91,6 +94,7 @@ public final class ProgressiveMedia {
         checkOpening(progress);
         List<URI> sources = new ArrayList<>();
         sources.add(checkedUri(track.url));
+        if (track.publicDurationSeconds != null) trustedMediaUri(sources.get(0), false);
         if (!track.encrypt && !track.backupUrls.isEmpty()) {
             trustedMediaUri(sources.get(0), false);
             for (String url : track.backupUrls) {
@@ -198,6 +202,7 @@ public final class ProgressiveMedia {
                 failure.initCause(ex);
                 throw failure;
             }
+            Stream.checkPublicDuration(track.publicDurationSeconds, index.analysis.movieDurationSeconds);
             clearMoov = index.clearMoov;
             if (track.encrypt) {
                 String resolvedKey = keyResolver.resolve(track.spadeA);
@@ -405,6 +410,8 @@ public final class ProgressiveMedia {
                     connection.setRequestProperty("Range", "bytes=" + from + "-" + (from + count - 1));
                     int code = connection.getResponseCode();
                     reader.check();
+                    if (connection.getHeaderField("Retry-After") != null)
+                        throw new TerminalFailure("媒体服务要求稍后重试");
                     if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
                         String location = connection.getHeaderField("Location");
                         if (location == null || redirect == 5) throw new TerminalFailure("媒体重定向异常");
@@ -412,8 +419,6 @@ public final class ProgressiveMedia {
                         catch (IllegalArgumentException failure) { throw new TerminalFailure("媒体重定向异常"); }
                         continue;
                     }
-                    if (code >= 400 && connection.getHeaderField("Retry-After") != null)
-                        throw new TerminalFailure("媒体服务要求稍后重试");
                     if (code == 500 || code == 502 || code == 503 || code == 504) throw new CdnUnavailable();
                     if (code >= 400) throw new TerminalFailure("媒体请求失败（HTTP " + code + "）");
                     if (code != 206) throw unsupported();
@@ -582,7 +587,7 @@ public final class ProgressiveMedia {
         }
         return matched;
     }
-    private static URI trustedMediaUri(URI uri, boolean redirect) throws IOException {
+    static URI trustedMediaUri(URI uri, boolean redirect) throws IOException {
         if (uri.getFragment() == null) {
             try { AppSource.checkedUrl(uri.toString(), AppSource.VOD_DOMAINS); return uri; }
             catch (Exception invalid) {

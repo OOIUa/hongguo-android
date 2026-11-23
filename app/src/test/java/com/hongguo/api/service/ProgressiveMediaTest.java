@@ -3,6 +3,7 @@ package com.hongguo.api.service;
 import com.hongguo.api.core.Mp4;
 import com.hongguo.api.core.Mp4Progressive;
 import com.hongguo.api.util.Crypto;
+import com.hongguo.api.util.Config;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -14,6 +15,7 @@ import java.io.InterruptedIOException;
 import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,6 +64,44 @@ public class ProgressiveMediaTest {
         assertEquals("repeated seek reuses the committed block", initialRequests + 1, origin.requests.get());
         reader.close();
         assertNoPlayableOrPartFiles();
+    }
+
+    @Test public void checksGuestDurationBeforeOpeningAndBeforeReusingGuestCache() throws Exception {
+        byte[] media = clear(fixture(false));
+        put32(media, typeAt(media, "mvhd") + 20, 30 * 90000);
+        Stream.VideoTrack track = new Stream.VideoTrack();
+        track.url = "https://main.qznovelvod.com/fixture";
+        track.publicDurationSeconds = 31.0;
+        session = ProgressiveMedia.openTrack(track, root, null, new Origin(media));
+        session.close();
+        track.publicDurationSeconds = 32.0;
+        IOException mismatch = assertThrows(IOException.class,
+                () -> ProgressiveMedia.openTrack(track, root, null, new Origin(media)));
+        assertFalse(mismatch instanceof ProgressiveMedia.UnsupportedException);
+
+        Config.initialize("{}", root.toString(), "1000000000000000");
+        Path directory = Files.createDirectories(root.resolve("stream-cache"));
+        Path guest = Files.write(directory.resolve("123_best.guest.play.mp4"), media);
+        assertNull(Stream.cachedPath("123", "best"));
+        assertEquals(guest.toString(), Stream.cachedPath("123", "best", 30.0));
+        assertNull(Stream.cachedPath("123", "best", 32.0));
+        Stream.checkPublicDuration(0.0, 11.01);
+        assertThrows(IOException.class, () -> Stream.checkPublicDuration(0.0, 11));
+    }
+
+    @Test public void readsMovieDurationFromBothHeaderVersionsAndRejectsUnknownDuration() {
+        for (int version : new int[]{0, 1}) {
+            int length = version == 0 ? 36 : 48;
+            ByteBuffer moov = ByteBuffer.allocate(length);
+            moov.putInt(length).putInt(0x6d6f6f76).putInt(length - 8).putInt(0x6d766864);
+            moov.put(16, (byte)version);
+            moov.position(version == 0 ? 28 : 36);
+            moov.putInt(1000);
+            if (version == 0) moov.putInt(40500); else moov.putLong(40500);
+            assertEquals(40.5, Mp4.analyzeEncryptedTracks(moov.array()).movieDurationSeconds, 0);
+            if (version == 0) moov.putInt(32, -1); else moov.putLong(40, -1);
+            assertTrue(Double.isNaN(Mp4.analyzeEncryptedTracks(moov.array()).movieDurationSeconds));
+        }
     }
 
     @Test public void decryptsOnlyWholeSamplesAndSlicesArbitrarySeeksWithUnchangedOffsets() throws Exception {

@@ -38,6 +38,11 @@ public final class Http {
 
     private Http() {}
 
+    interface TransportFixture {
+        Resp send(Req request) throws IOException;
+    }
+    static volatile TransportFixture transportForTest;
+
     /** 响应结果。 */
     public static final class Resp {
         public final int status;
@@ -113,6 +118,8 @@ public final class Http {
             if (remaining <= 0) throw new SocketTimeoutException("播放取流超时");
             timeout = (int) Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remaining));
         }
+        TransportFixture fixture = transportForTest;
+        if (fixture != null) return fixture.send(req);
         HttpURLConnection conn;
         try { conn = open(req.url, req.followRedirect); }
         catch (Exception ignored) { throw new IOException("网络请求地址无效"); }
@@ -138,11 +145,11 @@ public final class Http {
                 }
             }
             int status = conn.getResponseCode();
+            String retryAfter = conn.getHeaderField("Retry-After");
+            if (playback && retryAfter != null && !retryAfter.trim().isEmpty()) {
+                return new Resp(status, new byte[0], conn.getHeaderFields());
+            }
             if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
-                String retryAfter = conn.getHeaderField("Retry-After");
-                if (playback && retryAfter != null && !retryAfter.trim().isEmpty()) {
-                    return new Resp(status, new byte[0], conn.getHeaderFields());
-                }
                 if (!req.followRedirect) return new Resp(status, new byte[0], conn.getHeaderFields());
                 if (redirects >= 3 || !(req.method.equals("GET") || req.method.equals("HEAD")))
                     throw new IOException("不支持的服务重定向");

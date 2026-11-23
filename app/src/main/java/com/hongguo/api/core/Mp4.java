@@ -209,6 +209,7 @@ public final class Mp4 {
     public static final class Analysis {
         public final List<Track> tracks = new ArrayList<>();
         public long timescale = 90000;
+        public double movieDurationSeconds = Double.NaN;
     }
 
     // ==================== 大小端读取 ====================
@@ -334,6 +335,19 @@ public final class Mp4 {
         int version = u8(v, p);
         if (version == 1) return u32(v, p + 20);
         return u32(v, p + 12);
+    }
+
+    private static double movieDurationSeconds(ByteView view, Box moov) {
+        List<Box> headers = moov.childrenOf("mvhd");
+        if (headers.size() != 1) return Double.NaN;
+        Box header = headers.get(0);
+        long start = header.payloadStart();
+        int version = u8(view, start);
+        if (version > 1 || header.end() - start < (version == 1 ? 32 : 20)) return Double.NaN;
+        long scale = u32(view, start + (version == 1 ? 20 : 12));
+        long ticks = version == 1 ? u64(view, start + 24) : u32(view, start + 16);
+        if (scale == 0 || ticks <= 0 || (version == 0 && ticks == 0xffffffffL)) return Double.NaN;
+        return (double) ticks / scale;
     }
 
     /** tenc 信息。 */
@@ -548,6 +562,7 @@ public final class Mp4 {
 
         Analysis out = new Analysis();
         out.timescale = readTimescale(v, moov);
+        out.movieDurationSeconds = movieDurationSeconds(v, moov);
 
         for (Box trak : moov.childrenOf("trak")) {
             Box mdia = trak.child("mdia");

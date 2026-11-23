@@ -575,7 +575,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     internal suspend fun previewFirstEpisode(card: DramaCard): Pair<DramaDetail, PreparedVideo> {
         val detail = repository.details(card)
         val first = detail.episodes.first()
-        return detail to repository.prepare(first, allowFallback = false) { _, _, _ -> }
+        return detail to repository.prepare(first, detail.id, allowFallback = false) { _, _, _ -> }
     }
 
     /** Continues a feed preview in the full player at [positionMs] of [episode] instead of restarting it. */
@@ -667,7 +667,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         releaseVideo(current.video)
         mediaJob = viewModelScope.launch {
             try {
-                val prepared = warmed ?: repository.prepare(episode) { stage, done, total ->
+                val prepared = warmed ?: repository.prepare(episode, detail.id) { stage, done, total ->
                     if (version == mediaVersion) mutableState.update {
                         it.copy(preparationStage = stage, preparationDone = done, preparationTotal = total)
                     }
@@ -757,7 +757,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val current = state.value
         if (!playerForeground || !bufferReadyForPrefetch || !current.playerOpen || !current.preloadNext || !current.firstFrameRendered || current.playbackError != null) return
         val requestId = current.video?.requestId ?: return
-        val episode = current.detail?.episodes?.getOrNull(current.episodePosition + 1) ?: return
+        val detail = current.detail ?: return
+        val episode = detail.episodes.getOrNull(current.episodePosition + 1) ?: return
         if (warmSlot?.episodeId == episode.id) return
         if (prefetchAttemptedFor == requestId) return
         prefetchAttemptedFor = requestId
@@ -767,7 +768,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         prefetchJob = viewModelScope.launch {
             var ready = false
             try {
-                val prepared = repository.prepare(episode, allowFallback = false) { _, _, _ -> }
+                val prepared = repository.prepare(episode, detail.id, allowFallback = false) { _, _, _ -> }
                 slot.video = prepared
                 if (warmSlot !== slot || !playerForeground) return@launch
                 repository.warmNext(prepared) { reader ->

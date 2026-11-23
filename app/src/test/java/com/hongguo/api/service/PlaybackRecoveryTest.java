@@ -34,7 +34,8 @@ public class PlaybackRecoveryTest {
 
     @After public void cleanup() {
         AppSource.setSinglePlaybackForTest(null); AppSource.setPlaybackTabForTest(null);
-        AppSource.setPlaybackPostForTest(null); PlaybackDevice.resetForTest(null);
+        AppSource.setPlaybackPostForTest(null); AppSource.setPlaybackFallbackForTest(null);
+        PlaybackDevice.resetForTest(null);
     }
 
     @Test public void successfulIdentityIsReusedForAnotherEpisode() throws Exception {
@@ -78,6 +79,198 @@ public class PlaybackRecoveryTest {
     }
 
 
+    private void emptyCompatibilityRoutes() {
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+    }
+
+    private final AppSource.SinglePlayback emptyReader = (vid, quality, identity, deadline) -> {
+        throw new AppSource.EmptyPlaybackResponseException();
+    };
+    private final AppSource.PublicPlayback unexpectedGuest = (series, vid, deadline) -> {
+        throw new AssertionError("Unexpected website request");
+    };
+
+    @Test public void emptyBodyWithOnlyTransientFailuresUsesGuestOnceWithinOriginalDeadline() throws Exception {
+        List<String> order = new ArrayList<>();
+        long[] deadlines = new long[2];
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
+            order.add("mobile"); deadlines[1] = deadline; throw new SocketTimeoutException();
+        });
+        AppSource.setAdditionalPlaybackForTest((vid, quality, identity, deadline) -> {
+            order.add("first"); deadlines[0] = deadline; throw new AppSource.EmptyPlaybackResponseException();
+        }, (vid, quality, identity, deadline) -> {
+            order.add("legacy"); assertEquals(deadlines[1], deadline); throw new java.net.ConnectException();
+        }, (series, vid, deadline) -> {
+            order.add("guest"); assertEquals("99", series); assertEquals("1", vid);
+            assertEquals(deadlines[0], deadline); return track;
+        });
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> {
+            order.add("get"); assertEquals(deadlines[1], deadline); throw new java.net.SocketException("网络连接中断");
+        });
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
+            order.add("post " + host); assertEquals(deadlines[1], deadline); throw new AppSource.EmptyPlaybackResponseException();
+        });
+        assertSame(track, AppSource.fetch("1", "auto", "99"));
+        assertEquals(java.util.Arrays.asList("first", "mobile", "legacy", "get", "post " + AppSource.VIDEO_API_HOST,
+                "post " + AppSource.RETRY_HOST, "guest"), order);
+        assertEquals(TimeUnit.SECONDS.toNanos(6), deadlines[0] - deadlines[1]);
+        assertEquals(1, registrations.get());
+    }
+
+    @Test public void compatibilitySuccessTakesPriorityOverEligibleWebsite() throws Exception {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> { throw new SocketTimeoutException(); });
+        AppSource.setAdditionalPlaybackForTest(emptyReader, (vid, quality, identity, deadline) -> track, unexpectedGuest);
+        assertSame(track, AppSource.fetch("1", "auto", "99"));
+        assertEquals(1, registrations.get());
+    }
+
+    @Test public void lastCompatibilityRouteCanSucceedWithoutRegistrationOrGuest() throws Exception {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> { throw new SocketTimeoutException(); });
+        AppSource.setAdditionalPlaybackForTest(emptyReader, emptyReader, unexpectedGuest);
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { throw new AppSource.EmptyPlaybackResponseException(); });
+        List<PlaybackDevice.Identity> used = new ArrayList<>();
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> {
+            used.add(identity);
+            if (AppSource.VIDEO_API_HOST.equals(host)) throw new AppSource.EmptyPlaybackResponseException();
+            assertEquals(AppSource.RETRY_HOST, host);
+            return com.hongguo.api.util.Json.parseObject("{\"code\":0,\"data\":{\"1\":{\"video_model\":{\"video_list\":["
+                    + "{\"codec_type\":\"h264\",\"encrypt_info\":{\"encrypt\":false},"
+                    + "\"main_url\":\"https://v1.qznovelvod.com/fixture.mp4\"}]}}}}");
+        });
+        assertEquals("https://v1.qznovelvod.com/fixture.mp4", AppSource.fetch("1", "auto", "99").url);
+        assertEquals(1, registrations.get());
+        assertEquals(2, used.size());
+        assertSame(used.get(0), used.get(1));
+    }
+
+    @Test public void nativeOnlyFirstTabTimeoutKeepsPreviousStopBehavior() throws Exception {
+        SocketTimeoutException timeout = new SocketTimeoutException("first tab");
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
+            throw new AssertionError("Native-only first-tab timeout previously stopped the chain");
+        });
+        AppSource.setAdditionalPlaybackForTest((vid, quality, identity, deadline) -> { throw timeout; }, null, unexpectedGuest);
+        assertSame(timeout, assertThrows(SocketTimeoutException.class, () -> AppSource.fetch("1", "auto")));
+    }
+
+    @Test public void timeoutWithoutEmptyCannotSelectWebsite() throws Exception {
+        SocketTimeoutException timeout = new SocketTimeoutException();
+        AppSource.SinglePlayback offline = (vid, quality, identity, deadline) -> { throw timeout; };
+        AppSource.setSinglePlaybackForTest(offline);
+        AppSource.setAdditionalPlaybackForTest(offline, offline, unexpectedGuest);
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> { throw timeout; });
+        AppSource.setPlaybackPostForTest((body, identity, host, deadline) -> { throw timeout; });
+        assertSame(timeout, assertThrows(SocketTimeoutException.class, () -> AppSource.fetch("1", "auto", "99")));
+    }
+
+    @Test public void missingSeriesDoesNotLookUpWebsite() throws Exception {
+        emptyCompatibilityRoutes();
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> { throw new SocketTimeoutException(); });
+        AppSource.setAdditionalPlaybackForTest(emptyReader, emptyReader, unexpectedGuest);
+        assertThrows(SocketTimeoutException.class, () -> AppSource.fetch("1", "auto"));
+        assertThrows(SocketTimeoutException.class, () -> AppSource.fetch("1", "auto", "invalid"));
+    }
+
+    @Test public void nonemptyMalformedMissingAndUnusableModelsAreNotEmptyResponses() throws Exception {
+        emptyCompatibilityRoutes();
+        for (String text : new String[]{" ", "{}", "{", "{\"code\":0,\"data\":{}}"}) {
+            AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
+                AppSource.parseMobileResponse(vid, text); return null;
+            });
+            AppSource.setAdditionalPlaybackForTest(emptyReader, null, unexpectedGuest);
+            Exception failure = assertThrows(IllegalStateException.class, () -> AppSource.fetch("1", "auto", "99"));
+            assertFalse(failure instanceof AppSource.EmptyPlaybackResponseException);
+        }
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> null);
+        AppSource.setAdditionalPlaybackForTest(emptyReader, null, unexpectedGuest);
+        assertTrue(assertThrows(IllegalStateException.class, () -> AppSource.fetch("1", "auto", "99"))
+                .getMessage().contains("模型"));
+    }
+
+    @Test public void hardFailureIsNotOverwrittenByLaterTimeoutOrEmpty() throws Exception {
+        emptyCompatibilityRoutes();
+        for (Exception hard : new Exception[]{new java.io.IOException("invalid transport"),
+                new java.net.SocketException("unknown socket problem"), new AppSource.PlaybackHttpException(503)}) {
+            AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> { throw hard; });
+            AppSource.setAdditionalPlaybackForTest(emptyReader,
+                    (vid, quality, identity, deadline) -> { throw new SocketTimeoutException(); }, unexpectedGuest);
+            assertSame(hard, assertThrows(Exception.class, () -> AppSource.fetch("1", "auto", "99")));
+        }
+    }
+
+    @Test public void refusalAndCancellationStopAtFirstTabAndAfterAnEmpty() throws Exception {
+        for (Exception terminal : new Exception[]{new AppSource.PlaybackHttpException(403),
+                new AppSource.PlaybackRejectedException("backoff"), new InterruptedIOException("cancelled")}) {
+            AppSource.SinglePlayback stopped = (vid, quality, identity, deadline) -> { throw terminal; };
+            AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> { throw new AssertionError("refusal ignored"); });
+            AppSource.setAdditionalPlaybackForTest(stopped, null, unexpectedGuest);
+            Class<? extends Exception> expected = terminal instanceof InterruptedIOException
+                    ? InterruptedIOException.class : AppSource.PlaybackRejectedException.class;
+            assertThrows(expected, () -> AppSource.fetch("1", "auto", "99"));
+            AppSource.setSinglePlaybackForTest(stopped);
+            AppSource.setAdditionalPlaybackForTest(emptyReader, null, unexpectedGuest);
+            assertThrows(expected, () -> AppSource.fetch("1", "auto", "99"));
+        }
+    }
+
+    @Test public void failedRegistrationCannotSelectWebsite() throws Exception {
+        PlaybackDevice.resetForTest((url, headers, body) -> { throw new java.io.IOException("offline"); });
+        AppSource.setAdditionalPlaybackForTest(emptyReader, null, unexpectedGuest);
+        assertThrows(java.io.IOException.class, () -> AppSource.fetch("1", "auto", "99"));
+    }
+
+    @Test public void secondaryReadTimeoutAfterReceivingModelDisqualifiesWebsite() throws Exception {
+        emptyCompatibilityRoutes();
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> { throw new SocketTimeoutException(); });
+        AppSource.setAdditionalPlaybackForTest(emptyReader, null, unexpectedGuest);
+        AppSource.setPlaybackTabForTest((vid, identity, deadline) -> com.hongguo.api.util.Json.parseObject(
+                "{\"code\":0,\"data\":{\"1\":{\"video_model\":{\"fallback_api\":\"https://www.fqnovel.com/test\"}}}}"));
+        SocketTimeoutException modelFailure = new SocketTimeoutException("fixture model");
+        AppSource.setPlaybackFallbackForTest((url, deadline) -> { throw modelFailure; });
+        assertSame(modelFailure, assertThrows(SocketTimeoutException.class, () -> AppSource.fetch("1", "auto", "99")));
+    }
+
+    @Test public void emptyResponsesLeadToOneWebsiteRefusalWithoutRetry() throws Exception {
+        emptyCompatibilityRoutes();
+        AtomicInteger calls = new AtomicInteger();
+        PublicEpisodeSource.GuestUnavailableException denied = new PublicEpisodeSource.GuestUnavailableException();
+        AppSource.setSinglePlaybackForTest(emptyReader);
+        AppSource.setAdditionalPlaybackForTest(emptyReader, emptyReader, (series, vid, deadline) -> {
+            calls.incrementAndGet(); throw denied;
+        });
+        assertSame(denied, assertThrows(PublicEpisodeSource.GuestUnavailableException.class,
+                () -> AppSource.fetch("1", "auto", "99")));
+        assertEquals(1, calls.get());
+    }
+
+    @Test public void lateNativeSuccessCannotEscapeEpisodeDeadlineOrTriggerGuest() throws Exception {
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
+            TimeUnit.NANOSECONDS.sleep(Math.max(1, deadline - System.nanoTime()));
+            return track;
+        });
+        AppSource.setAdditionalPlaybackForTest(null, null, unexpectedGuest);
+        assertThrows(SocketTimeoutException.class, () -> AppSource.fetch("1", "auto", "99", 100));
+    }
+
+    @Test public void optionalSlowReadLeavesTimeForGuestUnderShortBudget() throws Exception {
+        long[] limits = new long[2];
+        AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
+            limits[1] = deadline;
+            long remaining = deadline - System.nanoTime();
+            if (remaining > 0) TimeUnit.NANOSECONDS.sleep(remaining);
+            throw new SocketTimeoutException();
+        });
+        AppSource.setAdditionalPlaybackForTest((vid, quality, identity, deadline) -> {
+            limits[0] = deadline; throw new AppSource.EmptyPlaybackResponseException();
+        }, (vid, quality, identity, deadline) -> { throw new AssertionError("expired optional read"); },
+        (series, vid, deadline) -> {
+            assertEquals(limits[0], deadline);
+            assertTrue(deadline > System.nanoTime()); return track;
+        });
+        assertSame(track, AppSource.fetch("1", "auto", "99", 900));
+        assertEquals(TimeUnit.MILLISECONDS.toNanos(300), limits[0] - limits[1]);
+    }
+
     @Test public void realEmptyGzipThenValidGzipRecoversBothEpisodes() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
             java.io.ByteArrayOutputStream compressed = new java.io.ByteArrayOutputStream();
@@ -114,7 +307,7 @@ public class PlaybackRecoveryTest {
         try (MockWebServer server = new MockWebServer()) {
             for (int status : new int[]{200, 503, 429}) {
                 server.enqueue(new MockResponse().setResponseCode(status).setHeader("Retry-After", "30")
-                        .setHeader("Content-Encoding", "gzip").setBody(""));
+                        .setHeader("Content-Encoding", "gzip").setBody("malformed body must never be read"));
             }
             server.start();
             AppSource.setSinglePlaybackForTest((vid, quality, identity, deadline) -> {
