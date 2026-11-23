@@ -98,6 +98,9 @@ internal fun DanmakuSettingsPanel(
         DanmakuChoiceRow("文字效果", DanmakuPrefs.EFFECT_LABELS, settings.effect, settings.enabled) {
             onChange(settings.copy(effect = it))
         }
+        DanmakuChoiceRow("弹幕密度", DanmakuPrefs.DENSITY_LABELS, settings.density, settings.enabled) {
+            onChange(settings.copy(density = it))
+        }
         DanmakuChoiceRow("移动速度", DanmakuPrefs.SPEED_LABELS, settings.speed, settings.enabled) {
             onChange(settings.copy(speed = it))
         }

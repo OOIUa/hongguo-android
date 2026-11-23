@@ -28,6 +28,34 @@ object DanmakuEmoji {
         "拜托" to "🙏", "厉害了我的哥" to "😲",
         // Codes observed in live bullet-comment traffic that the initial guess set missed.
         "哭" to "😭", "爽" to "😆", "怒" to "😠", "送花" to "🌹", "盯" to "👀",
+        // 2026-11-21 实网扫描（9 集 × 3 个时间窗）补上的缺失码。
+        "飞吻" to "😘", "没看够" to "🥺",
+        // 同一系列 15 集扫描 + 真机日志补上的缺失码。
+        "舔屏" to "😋", "尬笑" to "😅", "送心" to "💕", "什么" to "❓", "撇嘴" to "😒",
+        // 2026-11-21 十小时真机使用日志里出现的缺失码。
+        "你细品" to "🧐", "快哭了" to "🥲", "伤心" to "😢", "探究" to "🔍",
+        "石化" to "🗿", "恐惧" to "😨",
+        // 2026-11-21 晚间日志补上的缺失码。
+        "做鬼脸" to "😝", "懂了" to "💡", "注意" to "⚠️",
+        // 2026-11-21 深夜日志补上的缺失码。
+        "学会了" to "🎓", "重拳出击" to "👊", "饱了" to "😋",
+        // 2026-11-22 日志补上的缺失码。
+        "敬礼" to "🫡", "求爆更" to "🙏", "顶帖" to "🔝", "惊呆" to "😲", "悲伤" to "😔",
+        "心疼" to "💔", "点赞" to "👍", "心" to "❤️", "泪" to "😭",
+        // 2026-11-22 真机日志里最后剩下没覆盖的 7 个码（同一份日志的 15:20–17:38 段）。
+        "泪目" to "🥲", "暖心" to "🥰", "奋斗" to "💪", "跪了" to "🧎", "惊喜" to "🤩",
+        "感动" to "🥹", "kiss" to "😘",
+        // 2026-11-23 并入桌面版（jackotom/hongguo-drama 8.0）表情表里的 24 个码。
+        // 那套名字与平台同源（抖音系常见名），但对方只实测过三集，这 24 个还没在真机日志里出现过。
+        "再见" to "👋", "拜拜" to "👋", "握手" to "🤝", "拥抱" to "🤗", "亲亲" to "😘",
+        "色" to "😍", "可怜" to "🥺", "难过" to "😞", "开心" to "😄", "坏笑" to "😏",
+        "调皮" to "😜", "吐舌" to "😛", "皱眉" to "😣", "翻白眼" to "🙄", "鄙视" to "😒",
+        "机智" to "🤓", "灵机一动" to "💡", "捂嘴笑" to "🤭", "汗" to "😓", "睡" to "😴",
+        "花" to "🌸", "强" to "💪", "吐血" to "🤮", "破涕为笑" to "😂",
+        // 同一批扫描里没有出现、但名称与图形一一对应的常见码，先补上以免将来显示成方括号。
+        "抱拳" to "🙏", "膜拜" to "🙇", "红包" to "🧧", "蛋糕" to "🎂", "啤酒" to "🍺",
+        "咖啡" to "☕", "牛" to "🐮", "猪" to "🐷", "猫" to "🐱", "摸鱼" to "🐟",
+        "干饭" to "🍚", "委屈" to "🥺", "裂开" to "💔", "打call" to "🙌",
     )
 
     /** Expands every recognized "[code]" to its emoji, leaving the rest of [text] and unknown codes as-is. */
@@ -52,7 +80,8 @@ object DanmakuEmoji {
                 break
             }
             out.append(clean, i, open)
-            val emoji = TABLE[clean.substring(open + 1, close).lowercase()]
+            val code = clean.substring(open + 1, close)
+            val emoji = TABLE[code.lowercase()]
             if (emoji != null) out.append(emoji) else out.append(clean, open, close + 1)
             i = close + 1
         }

@@ -13,6 +13,45 @@ class DanmakuEmojiTest {
         assertEquals("😍😍😍", DanmakuEmoji.display("[爱慕][爱慕][爱慕]"))
     }
 
+    @Test fun `codes found in live traffic are replaced`() {
+        assertEquals("😘", DanmakuEmoji.display("[飞吻]"))
+        assertEquals("🥺", DanmakuEmoji.display("[没看够]"))
+        assertEquals("还没看够🥺", DanmakuEmoji.display("还没看够[没看够]"))
+        assertEquals("😋", DanmakuEmoji.display("[舔屏]"))
+        assertEquals("😅", DanmakuEmoji.display("[尬笑]"))
+        assertEquals("💕", DanmakuEmoji.display("[送心]"))
+        assertEquals("❓", DanmakuEmoji.display("[什么]"))
+        assertEquals("😒", DanmakuEmoji.display("[撇嘴]"))
+        assertEquals("🧐", DanmakuEmoji.display("[你细品]"))
+        assertEquals("🥲", DanmakuEmoji.display("[快哭了]"))
+        assertEquals("😢", DanmakuEmoji.display("[伤心]"))
+        assertEquals("🔍", DanmakuEmoji.display("[探究]"))
+        assertEquals("🗿", DanmakuEmoji.display("[石化]"))
+        assertEquals("😨", DanmakuEmoji.display("[恐惧]"))
+    }
+
+    @Test fun `codes left over from the 2026-11-22 device log are replaced`() {
+        assertEquals("🥲", DanmakuEmoji.display("[泪目]"))
+        assertEquals("🥰", DanmakuEmoji.display("[暖心]"))
+        assertEquals("💪", DanmakuEmoji.display("[奋斗]"))
+        assertEquals("🧎", DanmakuEmoji.display("[跪了]"))
+        assertEquals("🤩", DanmakuEmoji.display("[惊喜]"))
+        assertEquals("🥹", DanmakuEmoji.display("[感动]"))
+        assertEquals("😘", DanmakuEmoji.display("[KISS]"))
+        assertEquals("好🥹", DanmakuEmoji.display("好[感动]"))
+    }
+
+    @Test fun `codes imported from the desktop port table are replaced`() {
+        val codes = mapOf(
+            "再见" to "👋", "拜拜" to "👋", "握手" to "🤝", "拥抱" to "🤗", "亲亲" to "😘",
+            "色" to "😍", "可怜" to "🥺", "难过" to "😞", "开心" to "😄", "坏笑" to "😏",
+            "调皮" to "😜", "吐舌" to "😛", "皱眉" to "😣", "翻白眼" to "🙄", "鄙视" to "😒",
+            "机智" to "🤓", "灵机一动" to "💡", "捂嘴笑" to "🤭", "汗" to "😓", "睡" to "😴",
+            "花" to "🌸", "强" to "💪", "吐血" to "🤮", "破涕为笑" to "😂",
+        )
+        for ((code, emoji) in codes) assertEquals("[$code]", emoji, DanmakuEmoji.display("[$code]"))
+    }
+
     @Test fun `unknown code is kept verbatim`() {
         assertEquals("[不存在的表情]", DanmakuEmoji.display("[不存在的表情]"))
         assertEquals("前缀[不存在的表情]后缀", DanmakuEmoji.display("前缀[不存在的表情]后缀"))

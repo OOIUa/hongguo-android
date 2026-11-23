@@ -36,6 +36,104 @@ class DanmakuRepositoryTest {
             .put("extra", JSONObject().put("next_query_danmaku_list_time", next))).toString()
     }
 
+    /**
+     * 身份择优测试用仓库：记录每次请求使用的 iid，并按 iid 决定返回多少条。
+     * 候选身份依次从 [candidates] 取。
+     */
+    private fun pickerRepository(
+        seen: MutableList<String>,
+        candidates: List<String>,
+        respond: (start: Long, iid: String) -> String,
+    ): DanmakuRepository {
+        now = 0L; sleeps.clear()
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val iid = request.url.queryParameter("iid").orEmpty()
+            seen += iid
+            val buffer = okio.Buffer()
+            request.body?.writeTo(buffer)
+            val payload = JSONObject(buffer.readUtf8())
+            val start = payload.getJSONObject("business_param").getLong("start_offset_time")
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(respond(start, iid).toResponseBody()).build()
+        }.build()
+        var next = 0
+        fun identity(iid: String) = com.hongguo.api.playback.VendorConstants.device + mapOf(
+            "iid" to iid, "device_id" to "1000000000000099",
+        )
+        val primary = identity("1000000000000001")
+        return DanmakuRepository(
+            http = http,
+            device = primary,
+            signer = Signer(device = primary, clock = { 1_792_016_000_000L }, random = { 0.0 }),
+            identityCandidates = { identity(candidates[next++]) },
+            clock = { now }, sleep = { sleeps += it }, random = { 0.0 },
+        )
+    }
+
+    private fun comments(count: Int, start: Long) =
+        (0 until count).map { Triple("c$it", start + it, "弹幕$it") }
+
+    @Test fun `richer candidate identity is adopted for the window and later windows`() {
+        val seen = mutableListOf<String>()
+        val repo = pickerRepository(seen, listOf("2000000000000002")) { start, iid ->
+            // 当前身份只有 2 条，候选身份有 5 条。
+            val count = if (iid == "2000000000000002") 5 else 2
+            windowJson(start, start + 30_000, comments(count, start))
+        }
+        val window = repo.window("123", "999", 120_000, 0)
+        assertEquals(5, window.comments.size)
+        assertEquals(listOf("1000000000000001", "2000000000000002"), seen)
+
+        // 之后的窗口直接使用胜出的身份，不再比较。
+        repo.window("123", "999", 120_000, 30_000)
+        assertEquals("2000000000000002", seen.last())
+    }
+
+    @Test fun `sparser candidate is discarded and the original identity stays`() {
+        val seen = mutableListOf<String>()
+        val repo = pickerRepository(seen, listOf("2000000000000002")) { start, iid ->
+            val count = if (iid == "2000000000000002") 1 else 4
+            windowJson(start, start + 30_000, comments(count, start))
+        }
+        val window = repo.window("123", "999", 120_000, 0)
+        assertEquals(4, window.comments.size)
+
+        repo.window("123", "999", 120_000, 30_000)
+        assertEquals("1000000000000001", seen.last())
+    }
+
+    @Test fun `empty window does not compare and waits for a window with comments`() {
+        val seen = mutableListOf<String>()
+        val repo = pickerRepository(seen, listOf("2000000000000002")) { start, iid ->
+            val count = when {
+                start == 0L -> 0
+                iid == "2000000000000002" -> 6
+                else -> 2
+            }
+            windowJson(start, start + 30_000, comments(count, start))
+        }
+        repo.window("123", "999", 120_000, 0)
+        assertEquals(1, seen.size)          // 0 条不比较
+
+        val second = repo.window("123", "999", 120_000, 30_000)
+        assertEquals(6, second.comments.size)
+        assertEquals(3, seen.size)          // 有弹幕的窗口才比较一次
+    }
+
+    @Test fun `dense window skips the comparison entirely`() {
+        val seen = mutableListOf<String>()
+        val repo = pickerRepository(seen, listOf("2000000000000002")) { start, _ ->
+            windowJson(start, start + 30_000, comments(25, start))
+        }
+        val window = repo.window("123", "999", 120_000, 0)
+        assertEquals(25, window.comments.size)
+        assertEquals(1, seen.size)          // 已经够密，不浪费请求
+
+        repo.window("123", "999", 120_000, 30_000)
+        assertEquals("1000000000000001", seen.last())
+    }
+
     private fun repository(respond: (Long, String) -> String): DanmakuRepository {
         now = 0L; sleeps.clear()
         val http = OkHttpClient.Builder().addInterceptor { chain ->

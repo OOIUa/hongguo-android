@@ -40,6 +40,16 @@ object DanmakuPrefs {
     const val SPEED_DEFAULT = 2
     private val SPEED_SCALES = floatArrayOf(1.9f, 1.45f, 1f, 0.62f, 0.42f)
 
+    /**
+     * 密度两档：标准就是现在的排布；稀疏把行距拉到 1.6 倍字高、同一条轨道上前后两句的间距拉到 1.5 倍。
+     * 只改视觉排布，不改变拉取数量。
+     */
+    val DENSITY_LABELS = listOf("稀疏", "标准")
+    const val DENSITY_STANDARD = 1
+    const val DENSITY_DEFAULT = DENSITY_STANDARD
+    private val DENSITY_LINE_PITCH = floatArrayOf(1.6f, 1.12f)
+    private val DENSITY_GAP_DP = floatArrayOf(36f, 24f)
+
     /** 文字效果三档：纯白字、细黑边、黑阴影，默认用黑边。 */
     val EFFECT_LABELS = listOf("白字", "黑边", "阴影")
     const val EFFECT_DEFAULT = 1
@@ -66,6 +76,14 @@ object DanmakuPrefs {
     fun coverageFromPermille(value: Int) =
         COVERAGE_PERMILLE.indices.minByOrNull { abs(COVERAGE_PERMILLE[it] - value) } ?: COVERAGE_DEFAULT
     fun effect(value: Int) = value.coerceIn(0, EFFECT_LABELS.lastIndex)
+    fun density(value: Int) = value.coerceIn(0, DENSITY_LABELS.lastIndex)
+
+    /** 行距系数（字高的倍数）。 */
+    fun densityLinePitch(value: Int) = DENSITY_LINE_PITCH[density(value)]
+
+    /** 同一条轨道上前后两句之间的最小间距（dp）。 */
+    fun densityGapDp(value: Int) = DENSITY_GAP_DP[density(value)]
+    fun densityLabel(value: Int) = DENSITY_LABELS[density(value)]
 
     fun coverageFraction(value: Int) = COVERAGE_FRACTIONS[coverage(value)]
     fun fontLabel(value: Int) = FONT_LABELS[font(value)]
@@ -89,6 +107,7 @@ data class DanmakuSettings(
     val opacity: Int = DanmakuPrefs.OPACITY_DEFAULT,
     val effect: Int = DanmakuPrefs.EFFECT_DEFAULT,
     val speed: Int = DanmakuPrefs.SPEED_DEFAULT,
+    val density: Int = DanmakuPrefs.DENSITY_DEFAULT,
 ) {
     /** 把每一项夹回支持的档位；持久化里可能有旧版本写入的任意整数。 */
     fun normalized() = copy(
@@ -97,5 +116,6 @@ data class DanmakuSettings(
         opacity = DanmakuPrefs.opacity(opacity),
         effect = DanmakuPrefs.effect(effect),
         speed = DanmakuPrefs.speed(speed),
+        density = DanmakuPrefs.density(density),
     )
 }

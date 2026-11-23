@@ -128,6 +128,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             opacity = preferences.getInt("danmaku_opacity", DanmakuPrefs.OPACITY_DEFAULT),
             effect = preferences.getInt("danmaku_effect", DanmakuPrefs.EFFECT_DEFAULT),
             speed = preferences.getInt("danmaku_speed", DanmakuPrefs.SPEED_DEFAULT),
+            // 档位顺序改过（稀疏在前），旧键的值含义已不同，直接换新键从默认档开始。
+            density = preferences.getInt("danmaku_density_v2", DanmakuPrefs.DENSITY_DEFAULT),
         ).normalized(),
         themeStyle = AppThemeStyle.fromKey(preferences.getString(ThemePreferences.STYLE, null)),
         themeMode = ThemeMode.stored(preferences.getString(ThemePreferences.MODE, null),
@@ -485,6 +487,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
             putInt("danmaku_opacity", next.opacity)
             putInt("danmaku_effect", next.effect)
             putInt("danmaku_speed", next.speed)
+            putInt("danmaku_density_v2", next.density)
         }
         mutableState.update { it.copy(danmaku = next) }
     }
