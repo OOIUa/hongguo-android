@@ -261,7 +261,7 @@ public class ProgressiveMediaTest {
         assertEquals(original, session.downloadedBytes());
     }
 
-    @Test public void missingDigestDenialsAndUntrustedRedirectsNeverContactTheMirror() throws Exception {
+    @Test public void denialsAndDeferredMaintenanceNeverContactTheMirror() throws Exception {
         byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
         Origin primary = new Origin(media), backup = new Origin(media);
         primary.contentDigest = backup.contentDigest = reprDigest(media);
@@ -273,15 +273,50 @@ public class ProgressiveMediaTest {
         primary.status = 206;
         primary.reprDigest = reprDigest(media);
         session = openMirrors(primary, backup);
-        for (int status : new int[] {401, 403, 429, 302, 503}) {
+        for (int status : new int[] {401, 403, 429, 503}) {
             primary.status = status;
-            primary.location = "https://unexpected.invalid/file.mp4";
             if (status == 503) primary.retryAfter = "30";
             int before = primary.requests.get();
             try { session.read(1024 * 1024, new byte[16], 0, 16); fail(); } catch (IOException expected) { }
             assertEquals(before + 1, primary.requests.get());
             assertEquals(0, backup.requests.get());
         }
+    }
+
+    /**
+     * 落地域不在白名单、但地址形状正常（https + 443）时，属于 CDN 按省份/边缘调度的常见情况：
+     * 应该换备用源继续读，而不是整集终态失败；同时绝不对不受信主机发请求。
+     * 见 v0.7.34 的 trustedMediaUri 白名单（真机 1080P 主路曾因此直接弹失败）。
+     */
+    @Test public void untrustedButWellFormedRedirectFallsBackToTheMirrorWithoutContactingIt() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin primary = new Origin(media), backup = new Origin(media);
+        primary.contentDigest = backup.contentDigest = reprDigest(media);
+        primary.reprDigest = backup.reprDigest = reprDigest(media);
+        session = openMirrors(primary, backup);
+        session.read(1024 * 1024, new byte[16], 0, 16);
+        int before = primary.requests.get();
+        primary.status = 302;
+        primary.location = "https://unexpected.invalid/file.mp4";
+        session.read(1024 * 1024 + 256 * 1024, new byte[16], 0, 16);
+        assertEquals(before + 1, primary.requests.get());
+        assertTrue("mirror serves the block after the landing host is rejected", backup.requests.get() >= 1);
+    }
+
+    /** 形状不正常的跳转（明文降级）仍然是终态失败，且不触碰备用镜像。 */
+    @Test public void malformedRedirectStaysTerminalAndNeverContactsTheMirror() throws Exception {
+        byte[] media = clear(expandMdat(fixture(false), 2 * 1024 * 1024));
+        Origin primary = new Origin(media), backup = new Origin(media);
+        primary.contentDigest = backup.contentDigest = reprDigest(media);
+        session = openMirrors(primary, backup);
+        session.read(1024 * 1024, new byte[16], 0, 16);
+        int before = primary.requests.get();
+        primary.status = 302;
+        primary.location = "http://unexpected.invalid/file.mp4";
+        try { session.read(1024 * 1024 + 256 * 1024, new byte[16], 0, 16); fail(); }
+        catch (IOException expected) { }
+        assertEquals(before + 1, primary.requests.get());
+        assertEquals(0, backup.requests.get());
     }
 
     @Test public void cancellingAStalledPrimaryReadDoesNotActivateTheMirror() throws Exception {

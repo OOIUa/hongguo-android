@@ -4,6 +4,7 @@ package com.hongguo.api.service;
 import com.hongguo.api.util.Crypto;
 import com.hongguo.api.util.Http;
 import com.hongguo.api.util.Json;
+import com.hongguo.api.util.Log;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -64,6 +65,10 @@ public final class PlaybackDevice {
     /** 注册请求固定主机（自检与排障用）。 */
     public static final String REGISTER_HOST = "log5-applog-lf.fqnovel.com";
 
+    /** 匿名设备激活（{@code app_alert_check}，官方客户端注册后必走一次）。 */
+    static final String ACTIVATE_URL =
+            "https://log5-applog-lf.fqnovel.com/service/2/app_alert_check/";
+
     private static final String REGISTER_UA =
             "com.phoenix.read/72232 (Linux; U; Android 16; zh_CN; 25053RT47C; "
             + "Build/BP2A.250605.031.A3)";
@@ -79,6 +84,8 @@ public final class PlaybackDevice {
     static final long FAILURE_COOLDOWN_MS = 10_000L;
 
     private static final int TIMEOUT_MS = 8_000;
+    /** 激活是尽力而为的旁路请求，超时要比注册短，避免拖慢起播。 */
+    private static final int ACTIVATE_TIMEOUT_MS = 3_000;
 
     private static final Set<String> ALLOWED_COOKIES =
             new java.util.HashSet<>(Arrays.asList("install_id", "ttreq", "store-region", "store-region-src"));
@@ -94,12 +101,19 @@ public final class PlaybackDevice {
         public final String cdid;
         /** 注册响应下发的匿名 Cookie；可能为空。 */
         public final String cookie;
+        /** 注册下发的不透明设备标识（klink_egdi），官方播放 query 会带；可能为空。 */
+        public final String egdi;
 
         public Identity(String deviceId, String iid, String cdid, String cookie) {
+            this(deviceId, iid, cdid, cookie, "");
+        }
+
+        public Identity(String deviceId, String iid, String cdid, String cookie, String egdi) {
             this.deviceId = deviceId;
             this.iid = iid;
             this.cdid = cdid;
             this.cookie = cookie;
+            this.egdi = egdi == null ? "" : egdi;
         }
 
         @Override
@@ -132,12 +146,30 @@ public final class PlaybackDevice {
         }
     }
 
-    /** 可替换的注册传输（JVM 测试注入）；生产实现见 {@link #httpRegister}. */
+    /** 可替换的注册传输（JVM 测试注入）；生产实现见 {@link #httpRegister}。 */
     interface Transport {
         Reply post(String url, Map<String, String> headers, byte[] body) throws IOException;
+
+        /**
+         * 设备激活用的无正文 GET（{@code app_alert_check}）。
+         * 测试注入的传输默认不实现，返回 null 即跳过激活，不影响既有用例。
+         */
+        default Reply get(String url, Map<String, String> headers) throws IOException {
+            return null;
+        }
     }
 
-    private static Transport transport = PlaybackDevice::httpRegister;
+    private static Transport transport = new Transport() {
+        @Override
+        public Reply post(String url, Map<String, String> headers, byte[] body) throws IOException {
+            return httpRegister(url, headers, body);
+        }
+
+        @Override
+        public Reply get(String url, Map<String, String> headers) throws IOException {
+            return httpGet(url, headers);
+        }
+    };
     private static RegistrationException lastFailure;
     private static long lastFailureAt;
     private static long clockOffsetForTest;
@@ -225,7 +257,35 @@ public final class PlaybackDevice {
         } catch (Exception e) {
             throw new IOException("register response is not JSON");
         }
-        return parse(j, cdid, cookieHeader(res.setCookies));
+        Identity identity = parse(j, cdid, cookieHeader(res.setCookies));
+        activate(identity);
+        return identity;
+    }
+
+    /**
+     * 注册后立刻做一次 {@code app_alert_check} 激活（官方客户端流程，2026-11-24 对齐 lvguo-tv）。
+     *
+     * 未激活的匿名设备在播放接口上会被当成低质量设备，返回 HTTP 200 + 0 字节。
+     * 激活失败不阻断取流：只记一行诊断，签名照常进行。
+     */
+    static void activate(Identity identity) {
+        if (identity == null || identity.deviceId.isEmpty() || identity.iid.isEmpty()) return;
+        try {
+            String url = ACTIVATE_URL
+                    + "?aid=8662&app_name=novelread&channel=update_64"
+                    + "&device_id=" + identity.deviceId
+                    + "&iid=" + identity.iid
+                    + "&device_platform=android&os=android"
+                    + "&version_code=73932&version_name=7.3.9.32"
+                    + "&_rticket=" + now();
+            Map<String, String> h = new java.util.LinkedHashMap<>();
+            h.put("User-Agent", REGISTER_UA);
+            h.put("Accept", "application/json");
+            Reply res = transport.get(url, h);
+            Log.info("app_alert_check -> " + (res == null ? "skipped" : res.status));
+        } catch (Exception e) {
+            Log.info("app_alert_check -> failed " + e.getClass().getSimpleName());
+        }
     }
 
     /** 只留匿名注册下发的四个 Cookie，其他一律丢弃。 */
@@ -364,7 +424,17 @@ public final class PlaybackDevice {
         String deviceId = responseId(j, "device_id");
         String iid = responseId(j, "install_id");
         if (deviceId.isEmpty() || iid.isEmpty()) throw new IOException("register response has no ids");
-        return new Identity(deviceId, iid, cdid, cookie);
+        return new Identity(deviceId, iid, cdid, cookie, responseEgdi(j));
+    }
+
+    /** 注册响应里的 {@code klink_egdi}（不透明字符串，可能直接给也可能包一层 data）。 */
+    static String responseEgdi(Map<String, Object> j) {
+        Object v = j.get("klink_egdi");
+        if (v == null || "".equals(v)) {
+            Object data = j.get("data");
+            if (data instanceof Map) v = ((Map<?, ?>) data).get("klink_egdi");
+        }
+        return v instanceof String ? ((String) v).trim() : "";
     }
 
     /**
@@ -400,6 +470,14 @@ public final class PlaybackDevice {
             if ("Set-Cookie".equalsIgnoreCase(e.getKey())) setCookies.addAll(e.getValue());
         }
         return new Reply(res.status, res.text(), setCookies);
+    }
+
+    private static Reply httpGet(String url, Map<String, String> headers) throws IOException {
+        Http.Req req = new Http.Req(url).method("GET").timeout(ACTIVATE_TIMEOUT_MS);
+        req.followRedirect = false;
+        for (Map.Entry<String, String> e : headers.entrySet()) req.header(e.getKey(), e.getValue());
+        Http.Resp res = Http.send(req);
+        return new Reply(res.status, res.text(), Collections.emptyList());
     }
 
     private static byte[] gzip(byte[] data) throws IOException {

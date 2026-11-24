@@ -974,7 +974,8 @@ public final class AppSource {
             throws Exception {
         com.hongguo.api.playback.MobilePlayerV5.TabRequest signed =
                 com.hongguo.api.playback.MobilePlayerV5.requestVideoTab(
-                        vid, identity.deviceId, identity.iid, identity.cdid, System.currentTimeMillis());
+                        vid, identity.deviceId, identity.iid, identity.cdid, System.currentTimeMillis(),
+                        identity.egdi);
         Http.Req req = new Http.Req(signed.getUrl()).method("GET").timeout(PLAYBACK_TIMEOUT_MS);
         req.followRedirect = false;
         for (Map.Entry<String, String> header : signed.getHeaders().entrySet()) {
@@ -995,7 +996,7 @@ public final class AppSource {
     private static Stream.VideoTrack fetchPrimary(String vid, String quality, PlaybackDevice.Identity identity, long deadline) throws Exception {
         checkPlaybackCancellation();
         com.hongguo.api.playback.MobilePlayerV5.Request signed =
-                com.hongguo.api.playback.MobilePlayerV5.request(vid, identity.deviceId, identity.iid, identity.cdid, System.currentTimeMillis());
+                com.hongguo.api.playback.MobilePlayerV5.request(vid, identity.deviceId, identity.iid, identity.cdid, System.currentTimeMillis(), identity.egdi);
         Http.Req req = new Http.Req(signed.getUrl()).method("POST").timeout(PLAYBACK_TIMEOUT_MS);
         req.followRedirect = false;
         for (Map.Entry<String, String> header : signed.getHeaders().entrySet()) req.header(header.getKey(), header.getValue());
