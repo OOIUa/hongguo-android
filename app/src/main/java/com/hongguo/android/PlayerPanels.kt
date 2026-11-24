@@ -28,7 +28,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -98,7 +100,9 @@ internal fun PlaybackSpeedPicker(current: Float, anchor: Rect, origin: Offset, o
     Box(Modifier.fillMaxSize().testTag("player_speed_scrim").pointerInput(onDismiss) { detectTapGestures { onDismiss() } })
     Column(Modifier
         .layout { measurable, constraints ->
-            val list = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+            val maxHeight = (anchor.top - origin.y - 12.dp.toPx()).roundToInt()
+                .coerceIn(120, constraints.maxHeight.coerceAtLeast(120))
+            val list = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0, maxHeight = maxHeight))
             layout(constraints.maxWidth, constraints.maxHeight) {
                 val x = (anchor.center.x - origin.x - list.width / 2f).roundToInt()
                     .coerceIn(0, (constraints.maxWidth - list.width).coerceAtLeast(0))
@@ -109,6 +113,7 @@ internal fun PlaybackSpeedPicker(current: Float, anchor: Rect, origin: Offset, o
         .width(IntrinsicSize.Max)
         .clip(RoundedCornerShape(12.dp))
         .background(PlayerPanelColor.copy(alpha = .94f))
+        .verticalScroll(rememberScrollState())
         .padding(vertical = 6.dp)
         .testTag("player_speed_list")) {
         PlaybackSpeeds.asReversed().forEach { speed ->

@@ -31,8 +31,11 @@ import com.hongguo.android.danmaku.DanmakuSettings
 
 private val mediaCleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-/** SETTINGS and THEME_STYLE are pages of their own (no bottom bar), opened from 我的 and closed back to where they came from. */
-enum class AppTab { HOME, CATEGORY, SEARCH, FAVORITES, MINE, HISTORY, ACCOUNT, SETTINGS, THEME_STYLE, RANK, PLAY_HISTORY, LOCAL_FAVORITES }
+/** SETTINGS (软件设置), ABOUT (关于软件) and settings sub-pages have no bottom bar and return to their origin. */
+enum class AppTab {
+    HOME, CATEGORY, SEARCH, FAVORITES, MINE, HISTORY, ACCOUNT, SETTINGS, THEME_STYLE,
+    PLAYBACK_SETTINGS, ACCOUNT_SETTINGS, STORAGE_SETTINGS, ABOUT, RANK, PLAY_HISTORY, LOCAL_FAVORITES,
+}
 
 data class FeedState(
     val items: List<DramaCard> = emptyList(),
@@ -184,6 +187,10 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var myLibraryOrigin = AppTab.MINE
     private var settingsOrigin = AppTab.MINE
     private var themeOrigin = AppTab.SETTINGS
+    private var playbackSettingsOrigin = AppTab.SETTINGS
+    private var accountSettingsOrigin = AppTab.SETTINGS
+    private var storageSettingsOrigin = AppTab.SETTINGS
+    private var aboutOrigin = AppTab.MINE
 
     fun closeSearch() = navigate(searchOrigin, rememberOrigin = false)
     fun closeRank() = navigate(rankOrigin, rememberOrigin = false)
@@ -238,6 +245,10 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     fun closeMyLibrary() = navigate(myLibraryOrigin, rememberOrigin = false)
     fun closeSettings() = navigate(settingsOrigin, rememberOrigin = false)
     fun closeThemeStyle() = navigate(themeOrigin, rememberOrigin = false)
+    fun closePlaybackSettings() = navigate(playbackSettingsOrigin, rememberOrigin = false)
+    fun closeAccountSettings() = navigate(accountSettingsOrigin, rememberOrigin = false)
+    fun closeStorageSettings() = navigate(storageSettingsOrigin, rememberOrigin = false)
+    fun closeAbout() = navigate(aboutOrigin, rememberOrigin = false)
     fun selectLibrarySource(cloud: Boolean) {
         librarySourceChosen = true
         mutableState.update { it.copy(libraryCloud = cloud) }
@@ -271,9 +282,21 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private fun navigate(tab: AppTab, rememberOrigin: Boolean) {
         if (rememberOrigin && tab == AppTab.SEARCH && state.value.tab != AppTab.SEARCH) searchOrigin = state.value.tab
         if (rememberOrigin && tab == AppTab.RANK && state.value.tab != AppTab.RANK) rankOrigin = state.value.tab
-        if (rememberOrigin && tab == AppTab.ACCOUNT && state.value.tab != AppTab.ACCOUNT) accountOrigin = state.value.tab
+        if (rememberOrigin && tab == AppTab.ACCOUNT && state.value.tab != AppTab.ACCOUNT) {
+            if (!(state.value.tab == AppTab.ACCOUNT_SETTINGS && accountSettingsOrigin == AppTab.ACCOUNT)) {
+                accountOrigin = state.value.tab
+            }
+        }
         if (rememberOrigin && tab == AppTab.SETTINGS && state.value.tab != AppTab.SETTINGS) settingsOrigin = state.value.tab
         if (rememberOrigin && tab == AppTab.THEME_STYLE && state.value.tab != AppTab.THEME_STYLE) themeOrigin = state.value.tab
+        if (rememberOrigin && tab == AppTab.PLAYBACK_SETTINGS && state.value.tab != AppTab.PLAYBACK_SETTINGS) playbackSettingsOrigin = state.value.tab
+        if (rememberOrigin && tab == AppTab.ACCOUNT_SETTINGS && state.value.tab != AppTab.ACCOUNT_SETTINGS) {
+            if (!(state.value.tab == AppTab.ACCOUNT && accountOrigin == AppTab.ACCOUNT_SETTINGS)) {
+                accountSettingsOrigin = state.value.tab
+            }
+        }
+        if (rememberOrigin && tab == AppTab.STORAGE_SETTINGS && state.value.tab != AppTab.STORAGE_SETTINGS) storageSettingsOrigin = state.value.tab
+        if (rememberOrigin && tab == AppTab.ABOUT && state.value.tab != AppTab.ABOUT) aboutOrigin = state.value.tab
         if (rememberOrigin && tab in setOf(AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES) && state.value.tab !in setOf(AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES)) myLibraryOrigin = state.value.tab
         // The source stays as onAccountSession or the user left it: a signed-in account's records come first.
         if (rememberOrigin && tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) && state.value.tab !in setOf(AppTab.HISTORY, AppTab.FAVORITES, AppTab.ACCOUNT)) libraryOrigin = state.value.tab

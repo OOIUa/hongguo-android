@@ -66,6 +66,9 @@ class AppThemeStyleTest {
                 "secondary on canvas" to contrast(p.muted, p.canvas),
                 "secondary on card" to contrast(p.muted, p.card),
                 "accent text on card" to contrast(textAccent, p.card),
+                "body on account card start" to contrast(p.ink, p.accountCardStart),
+                "body on account card end" to contrast(p.ink, p.accountCardEnd),
+                "secondary on account card end" to contrast(p.muted, p.accountCardEnd),
                 "notice" to contrast(p.noticeText, p.noticeBackground),
             ).forEach { (name, ratio) -> assertTrue("${p.canvas} $name contrast $ratio", ratio >= 4.5) }
         }

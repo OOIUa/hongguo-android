@@ -68,9 +68,9 @@ class MainActivity : ComponentActivity() {
             val dark = resolveDark(state.themeMode, layout, isSystemInDarkTheme())
             // 沉浸暗场's video feed stays dark in every mode, with its status bar and bottom bar.
             val feedDark = layout == AppThemeStyle.IMMERSIVE && state.tab == AppTab.HOME && state.selectedCard == null
-            // A detail page's picture sits behind the status bar, so its icons stay light until the picture scrolls away.
+            // A detail page's blurred header runs behind the transparent status bar in every theme.
             var detailPictureUnderBar by remember(state.selectedCard?.id) { mutableStateOf(true) }
-            val statusBarOverPicture = state.selectedCard != null && layout != AppThemeStyle.WARM && detailPictureUnderBar
+            val statusBarOverPicture = state.selectedCard != null && detailPictureUnderBar
             // The player owns the system bars while open; the theme re-applies them when it closes.
             HongguoTheme(layout, dark = dark, windowDark = dark || feedDark, statusBarOverPicture = statusBarOverPicture, applyToWindow = !state.playerOpen) {
                 CompositionLocalProvider(LocalDetailPictureUnderBar provides { detailPictureUnderBar = it }) {
@@ -90,6 +90,10 @@ class MainActivity : ComponentActivity() {
                         state.tab == AppTab.ACCOUNT -> model.closeAccount()
                         state.tab == AppTab.SETTINGS -> model.closeSettings()
                         state.tab == AppTab.THEME_STYLE -> model.closeThemeStyle()
+                        state.tab == AppTab.PLAYBACK_SETTINGS -> model.closePlaybackSettings()
+                        state.tab == AppTab.ACCOUNT_SETTINGS -> model.closeAccountSettings()
+                        state.tab == AppTab.STORAGE_SETTINGS -> model.closeStorageSettings()
+                        state.tab == AppTab.ABOUT -> model.closeAbout()
                         state.tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) -> model.closeLibrary()
                         state.tab in setOf(AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES) -> model.closeMyLibrary()
                         else -> model.selectTab(AppTab.HOME)
@@ -106,7 +110,10 @@ class MainActivity : ComponentActivity() {
                 val playerActive = transition.targetState == EnterExitState.Visible
                 if (playerShown) EpisodePlayerScreen(state, model, accountModel, active = playerActive)
                 else {
-                    val showNav = state.selectedCard == null && state.tab !in setOf(AppTab.SEARCH, AppTab.RANK, AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE, AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES)
+                    val showNav = state.selectedCard == null && state.tab !in setOf(
+                        AppTab.SEARCH, AppTab.RANK, AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE,
+                        AppTab.PLAYBACK_SETTINGS, AppTab.ACCOUNT_SETTINGS, AppTab.STORAGE_SETTINGS, AppTab.ABOUT, AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES,
+                    )
                     // 悬浮玻璃: the bar floats as a liquid-glass capsule and the page runs underneath it.
                     val floatingNav = showNav && state.navBarStyle == NavBarStyle.GLASS
                     val backdrop = rememberGlassBackdrop()
@@ -186,15 +193,31 @@ class MainActivity : ComponentActivity() {
                                         accountState.websiteProfile?.avatarUrl else accountState.profile?.avatarUrl,
                                     accountStatus = when (accountState.sessionStatus) {
                                         AccountSessionStatus.WEBSITE_ONLY -> "官网已登录，手机云账号未接通"
-                                        AccountSessionStatus.LOGGED_IN -> "查看账号收藏、历史与预约"
+                                        AccountSessionStatus.LOGGED_IN -> if (accountState.syncEnabled) "进度同步已开启 · 云片单已连通"
+                                            else "云片单已连通 · 进度同步已关闭"
                                         AccountSessionStatus.NEEDS_VERIFICATION -> "已保存账号，等待重新验证"
-                                        else -> "登录后查看手机片单"
-                                    }, style = layout)
+                                        else -> "登录后同步收藏、历史与预约"
+                                    },
+                                    accountSignedIn = signedIn,
+                                    cloudLibraryCount = if (signedIn) accountState.favorites.size else null,
+                                    cloudReservationCount = if (signedIn) accountState.reservations.size else null)
                                 AppTab.ACCOUNT -> AccountScreen(accountModel, onBack = model::closeAccount,
-                                    onOpenLibrary = model::openLibrary)
-                                AppTab.SETTINGS -> SystemSettingsScreen(tabState, model, updateState, updateModel,
-                                    onTheme = { model.selectTab(AppTab.THEME_STYLE) }, onBack = model::closeSettings)
+                                    onOpenLibrary = model::openLibrary,
+                                    onAccountSettings = { model.selectTab(AppTab.ACCOUNT_SETTINGS) })
+                                AppTab.SETTINGS -> SystemSettingsScreen(tabState,
+                                    accountState = accountState,
+                                    onAppearance = { model.selectTab(AppTab.THEME_STYLE) },
+                                    onPlayback = { model.selectTab(AppTab.PLAYBACK_SETTINGS) },
+                                    onAccount = { model.selectTab(AppTab.ACCOUNT_SETTINGS) },
+                                    onStorage = { model.selectTab(AppTab.STORAGE_SETTINGS) },
+                                    onBack = model::closeSettings)
                                 AppTab.THEME_STYLE -> ThemeStyleScreen(tabState, model, model::closeThemeStyle)
+                                AppTab.PLAYBACK_SETTINGS -> PlaybackSettingsScreen(tabState, model, model::closePlaybackSettings)
+                                AppTab.ACCOUNT_SETTINGS -> AccountSettingsScreen(accountModel,
+                                    onOpenAccount = { model.selectTab(AppTab.ACCOUNT) },
+                                    onBack = model::closeAccountSettings)
+                                AppTab.STORAGE_SETTINGS -> StorageSettingsScreen(updateState, updateModel, model::closeStorageSettings)
+                                AppTab.ABOUT -> AboutSoftwareScreen(updateState, updateModel, model::closeAbout)
                                 AppTab.PLAY_HISTORY -> PlayHistoryScreen(tabState, model, accountModel)
                                 AppTab.LOCAL_FAVORITES -> LocalFavoritesScreen(tabState, model)
                             }
@@ -268,8 +291,12 @@ private fun BrandHeader() {
 /** Pages opened on top (detail, 搜索, 账号, 设置, 主题样式) slide in from the right and back out; switching tabs cross-fades. */
 private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, to: String): ContentTransform {
     fun depth(key: String) = when {
-        key.startsWith("detail_") || key == "tab_${AppTab.THEME_STYLE.name}" -> 2
-        key == "tab_${AppTab.SEARCH.name}" || key == "tab_${AppTab.RANK.name}" || key == "tab_${AppTab.ACCOUNT.name}" || key == "tab_${AppTab.SETTINGS.name}" ||
+        key.startsWith("detail_") -> 3
+        key == "tab_${AppTab.THEME_STYLE.name}" || key == "tab_${AppTab.PLAYBACK_SETTINGS.name}" ||
+            key == "tab_${AppTab.ACCOUNT_SETTINGS.name}" || key == "tab_${AppTab.STORAGE_SETTINGS.name}" ||
+            key == "tab_${AppTab.ACCOUNT.name}" -> 2
+        key == "tab_${AppTab.SEARCH.name}" || key == "tab_${AppTab.RANK.name}" ||
+            key == "tab_${AppTab.SETTINGS.name}" || key == "tab_${AppTab.ABOUT.name}" ||
             key == "tab_${AppTab.PLAY_HISTORY.name}" || key == "tab_${AppTab.LOCAL_FAVORITES.name}" -> 1
         else -> 0
     }
@@ -287,12 +314,8 @@ private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, 
 }
 
 /** Pages whose own picture fills the area behind the status bar (they pad their top controls themselves). */
-private fun drawsUnderStatusBar(key: String, layout: AppThemeStyle): Boolean = when (layout) {
-    AppThemeStyle.IMMERSIVE -> key == "tab_${AppTab.HOME.name}" || key.startsWith("detail_")
-    AppThemeStyle.CARDS -> key.startsWith("detail_")
-    // 暖白精修's detail page has no picture at the top: its header already runs on into the status bar's color.
-    AppThemeStyle.WARM -> false
-}
+private fun drawsUnderStatusBar(key: String, layout: AppThemeStyle): Boolean =
+    key.startsWith("detail_") || (layout == AppThemeStyle.IMMERSIVE && key == "tab_${AppTab.HOME.name}")
 
 /** False while a page is animating out, so its back handlers and taps stand down. */
 internal val LocalPageActive = compositionLocalOf { true }

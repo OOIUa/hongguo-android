@@ -33,7 +33,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 /** Where users can change the theme later; shown in the picker and in the confirmation message. */
-internal const val THEME_SETTINGS_PATH = "「我的 › 设置 › 主题样式」"
+internal const val THEME_SETTINGS_PATH = "「我的 › 软件设置 › 外观设置」"
 
 internal fun themeAppliedMessage(style: AppThemeStyle, chosen: Boolean): String =
     if (chosen) "已应用「${style.label}」，可在${THEME_SETTINGS_PATH}中随时切换"

@@ -37,8 +37,20 @@ class MyPageFlowTest {
             pressBack()
             compose.waitUntil(5_000) { model.state.value.tab == AppTab.MINE }
             compose.onNodeWithTag("my_settings").performScrollTo().performClick()
+            compose.onNodeWithTag("settings_account").performScrollTo().performClick()
+            compose.onNodeWithTag("account_settings_screen").assertExists()
+            compose.onNodeWithTag("account_sync_switch").assertExists()
+            compose.onNodeWithTag("account_settings_open_account").performScrollTo().performClick()
+            compose.onNodeWithTag("account_screen").assertExists()
+            compose.onNodeWithTag("account_back").performClick()
+            compose.onNodeWithTag("account_settings_screen").assertExists()
+            compose.onNodeWithTag("account_settings_back").performClick()
+            compose.onNodeWithTag("settings_playback").performScrollTo().performClick()
             compose.onNodeWithTag("settings_autoplay").performScrollTo().performClick()
             compose.onNodeWithTag("settings_preload").performScrollTo().performClick()
+            compose.onNodeWithTag("playback_back").performScrollTo().performClick()
+            compose.onNodeWithTag("settings_back").performScrollTo().performClick()
+            compose.onNodeWithTag("my_about").performScrollTo().performClick()
             compose.onNodeWithTag("settings_auto_update").performScrollTo().performClick()
             assertEquals(!originalAutoplay, model.state.value.autoPlayNext)
             assertEquals(!originalPreload, model.state.value.preloadNext)
@@ -57,7 +69,6 @@ class MyPageFlowTest {
                     assertEquals(!originalAutomatic, freshUpdater.state.value.automaticChecksEnabled)
                 }
             } finally { compose.runOnIdle { store.clear() } }
-            compose.onNodeWithTag("settings_back").performScrollTo().performClick()
             compose.onNodeWithTag("update_check").performScrollTo().performClick()
             compose.onNodeWithTag("update_dialog").assertExists()
             compose.runOnIdle { updater.dismiss() }

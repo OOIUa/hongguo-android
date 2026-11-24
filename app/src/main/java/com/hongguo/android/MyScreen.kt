@@ -1,12 +1,13 @@
 package com.hongguo.android
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,47 +15,62 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.ManageAccounts
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CloudQueue
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.PrivacyTip
-import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -63,285 +79,1594 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.hongguo.account.AccountState
+import kotlinx.coroutines.launch
 
 @Composable
-internal fun MyScreen(state: HongguoUiState, model: HongguoViewModel,
-                      updateState: UpdateUiState, updateModel: UpdateViewModel,
-                      accountName: String? = null, accountStatus: String = "登录后查看手机片单",
-                      accountAvatar: String? = null,
-                      style: AppThemeStyle = AppThemeStyle.WARM,
-                      onAccount: () -> Unit = { model.selectTab(AppTab.ACCOUNT) }) {
-    // 设置 and 主题样式 are pages of their own (AppTab.SETTINGS / THEME_STYLE), not states of 我的: leaving and coming
-    // back to 我的 always shows 我的.
+internal fun MyScreen(
+    state: HongguoUiState,
+    model: HongguoViewModel,
+    updateState: UpdateUiState,
+    updateModel: UpdateViewModel,
+    accountName: String? = null,
+    accountStatus: String = "登录后同步收藏、历史与预约",
+    accountAvatar: String? = null,
+    accountSignedIn: Boolean = false,
+    cloudLibraryCount: Int? = null,
+    cloudReservationCount: Int? = null,
+    onAccount: () -> Unit = { model.selectTab(AppTab.ACCOUNT) },
+) {
     val openSettings = { model.selectTab(AppTab.SETTINGS) }
-    when (style) {
-        AppThemeStyle.IMMERSIVE -> {
-            ImmersiveMine(state, model, updateState, updateModel, accountName, accountStatus, accountAvatar, onAccount, openSettings) { model.selectTab(AppTab.THEME_STYLE) }
-            return
-        }
-        AppThemeStyle.CARDS -> {
-            CardsMine(state, model, updateState, updateModel, accountName, accountStatus, accountAvatar, onAccount, openSettings)
-            return
-        }
-        AppThemeStyle.WARM -> Unit
+    val openAbout = { model.selectTab(AppTab.ABOUT) }
+    val openLocalFavorites = { model.selectTab(AppTab.LOCAL_FAVORITES) }
+    val openLocalHistory = { model.openPlayHistory(local = true) }
+    val openCloudLibrary = {
+        model.selectTab(AppTab.FAVORITES)
+        model.selectLibrarySource(true)
     }
-    // Each destination has one entry: the stat cards open 收藏 / 历史, the account card opens the account page, and the
-    // grouped list below holds the rest. The former header gear and 播放历史 row repeated entries already on screen.
-    LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(0.dp).plusNavClearance(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Text("我的", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Ink,
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp))
-        }
-        item {
-            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-                Row(Modifier.fillMaxWidth().testTag("my_account_card").clickable(onClick = onAccount).padding(16.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Cream), Alignment.Center) {
-                        Icon(Icons.Outlined.PersonOutline, null, Modifier.size(28.dp), tint = Muted)
-                        AccountAvatarImage(accountAvatar)
+
+    val navClearance = LocalNavClearance.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("my_screen")
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp + navClearance),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        RefinedAccountCard(
+            accountName = accountName,
+            accountStatus = accountStatus,
+            accountAvatar = accountAvatar,
+            signedIn = accountSignedIn,
+            localFavorites = state.favorites.size,
+            localHistory = state.history.size,
+            cloudLibrary = cloudLibraryCount,
+            cloudReservations = cloudReservationCount,
+            onAccount = onAccount,
+            onFavorites = openLocalFavorites,
+            onHistory = openLocalHistory,
+            onCloud = openCloudLibrary,
+        )
+        MyBentoSection(
+            latest = state.history.firstOrNull(),
+            favoriteCount = state.favorites.size,
+            historyCount = state.history.size,
+            onContinue = { entry ->
+                if (entry != null) model.openLibrary(entry) else model.selectTab(AppTab.HOME)
+            },
+            onFavorites = openLocalFavorites,
+            onHistory = openLocalHistory,
+        )
+        MyMainMenuCard(
+            themeLabel = state.themeStyle.label,
+            updateState = updateState,
+            onSettings = openSettings,
+            onAbout = openAbout,
+            onQuickUpdate = updateModel::checkForUpdates,
+        )
+    }
+}
+
+@Composable
+private fun RefinedAccountCard(
+    accountName: String?,
+    accountStatus: String,
+    accountAvatar: String?,
+    signedIn: Boolean,
+    localFavorites: Int,
+    localHistory: Int,
+    cloudLibrary: Int?,
+    cloudReservations: Int?,
+    onAccount: () -> Unit,
+    onFavorites: () -> Unit,
+    onHistory: () -> Unit,
+    onCloud: () -> Unit,
+) {
+    val shape = RoundedCornerShape(22.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(AccountCardStart, AccountCardEnd)))
+            .border(1.dp, AccountCardBorder, shape),
+    ) {
+        // Subtle top-right brand ambient glow + faint logo watermark
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 28.dp, y = (-32).dp)
+                .size(136.dp)
+                .background(Brush.radialGradient(listOf(AccountCardGlow, Color.Transparent))),
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_logo),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 12.dp, y = (-12).dp)
+                .size(84.dp)
+                .alpha(0.05f),
+        )
+
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("my_account_card")
+                    .clickable(onClick = onAccount)
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(if (signedIn) SoftOrange else Cream)
+                        .border(if (signedIn) 1.5.dp else 1.dp, if (signedIn) AccentBorder else Line, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (signedIn) {
+                        val initial = accountName?.trim()?.firstOrNull()?.toString() ?: "果"
+                        Text(initial, color = AccentInk, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Outlined.PersonOutline, null, Modifier.size(24.dp), tint = Muted)
                     }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(accountName ?: "登录红果账号", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(accountStatus, color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                    AccountAvatarImage(accountAvatar)
+                }
+
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        text = accountName ?: "登录红果账号",
+                        color = Ink,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (signedIn) {
+                            Box(Modifier.size(7.dp).clip(CircleShape).background(StatusOk))
+                        }
+                        Text(
+                            text = accountStatus,
+                            color = Muted,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
-                    Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = Muted)
+                }
+
+                Surface(
+                    shape = CircleShape,
+                    color = if (signedIn) Cream else SoftOrange,
+                ) {
+                    Text(
+                        text = if (signedIn) "账号" else "去登录",
+                        color = if (signedIn) Ink else AccentInk,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
                 }
             }
-        }
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MyStat("本机收藏", state.favorites.size, Icons.Outlined.StarBorder, Modifier.weight(1f).testTag("my_favorites")) {
-                    model.selectTab(AppTab.LOCAL_FAVORITES)
-                }
-                MyStat("本机看过", state.history.size, Icons.Outlined.History, Modifier.weight(1f).testTag("my_history")) {
-                    model.openPlayHistory(local = true)
-                }
+
+            HorizontalDivider(
+                color = Line,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 11.dp),
+            ) {
+                AccountQuickStat(
+                    value = localFavorites.toString(),
+                    label = "收藏",
+                    modifier = Modifier.weight(1f),
+                    onClick = onFavorites,
+                )
+                AccountQuickStat(
+                    value = localHistory.toString(),
+                    label = "看过",
+                    modifier = Modifier.weight(1f),
+                    onClick = onHistory,
+                )
+                AccountQuickStat(
+                    value = cloudLibrary?.toString() ?: "—",
+                    label = "云片单",
+                    valueColor = if (signedIn) AccentInk else Ink,
+                    modifier = Modifier.weight(1f),
+                    onClick = onCloud,
+                )
+                AccountQuickStat(
+                    value = cloudReservations?.toString() ?: "—",
+                    label = "预约",
+                    modifier = Modifier.weight(1f),
+                    onClick = onAccount,
+                )
             }
-        }
-        item {
-            MyServiceMenu("主题样式、自动连播、预加载与更新", state.themeStyle.label, updateState, updateModel, onAccount, openSettings)
-        }
-        item {
-            Text("本机收藏与观看记录仅保存在这台设备。", color = Muted, fontSize = 12.sp, lineHeight = 20.sp,
-                modifier = Modifier.padding(top = 8.dp))
-            Text("红果独立版 ${BuildConfig.VERSION_NAME}", color = Muted, fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp))
         }
     }
 }
 
 @Composable
-private fun MyStat(label: String, count: Int, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
-    Surface(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(16.dp), color = CardSurface) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(icon, null, Modifier.size(16.dp), tint = Muted)
-                Text(label, color = Muted, fontSize = 14.sp)
+internal fun AccountQuickStat(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = Ink,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 3.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(value, color = valueColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = Muted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun MyBentoSection(
+    latest: LibraryEntry?,
+    favoriteCount: Int,
+    historyCount: Int,
+    onContinue: (LibraryEntry?) -> Unit,
+    onFavorites: () -> Unit,
+    onHistory: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(148.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Left: Continue watching poster card (7/12 width)
+        Box(
+            modifier = Modifier
+                .weight(7f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF7B3B2C), Color(0xFF2C1814))))
+                .testTag("my_continue_watching")
+                .clickable { onContinue(latest) },
+        ) {
+            if (latest != null) {
+                Cover(latest.card.cover, latest.card.title, Modifier.fillMaxSize())
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color(0x521F120E),
+                                0.45f to Color(0x661E110E),
+                                1f to Color(0xE0180D0A),
+                            ),
+                        ),
+                )
             }
-            Text(count.toString(), color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.18f),
+                    ) {
+                        Text(
+                            text = "继续追剧",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.22f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, null, Modifier.size(16.dp), tint = Color.White)
+                    }
+                }
+
+                if (latest != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(
+                            text = latest.card.title,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val ep = latest.episodeIndex.coerceAtLeast(1)
+                        val progressNote = if (latest.card.episodeCount > 0) {
+                            val pct = ((ep.toFloat() / latest.card.episodeCount).coerceIn(0.01f, 1f) * 100).toInt()
+                            "第${ep}集 · 已看 $pct%"
+                        } else {
+                            "第${ep}集 · ${libraryPositionLabel(latest.positionMs)}"
+                        }
+                        Text(
+                            text = progressNote,
+                            color = Color.White.copy(alpha = 0.78f),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(1.dp))
+                        WatchProgress(
+                            entry = latest,
+                            track = Color.White.copy(alpha = 0.24f),
+                            fill = Color(0xFFFF8B74),
+                        )
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "还没有观看记录",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = "去首页找部好剧",
+                            color = Color.White.copy(alpha = 0.78f),
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
+            }
+        }
+
+        // Right: Stacked Local Favorites + Local History cards (5/12 width)
+        Column(
+            modifier = Modifier
+                .weight(5f)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            BentoStatTile(
+                label = "本机收藏",
+                count = favoriteCount,
+                icon = Icons.Outlined.StarBorder,
+                iconTint = AccentInk,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .testTag("my_favorites"),
+                onClick = onFavorites,
+            )
+            BentoStatTile(
+                label = "本机看过",
+                count = historyCount,
+                icon = Icons.Outlined.History,
+                iconTint = StatusBlue,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .testTag("my_history"),
+                onClick = onHistory,
+            )
         }
     }
 }
 
-/** 账号与隐私 · 设置 · 检查更新, the same three rows (with the same tags) in every theme. */
 @Composable
-private fun MyServiceMenu(settingsHint: String, themeLabel: String, updateState: UpdateUiState, updateModel: UpdateViewModel,
-                          onAccount: () -> Unit, openSettings: () -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
+private fun BentoStatTile(
+    label: String,
+    count: Int,
+    icon: ImageVector,
+    iconTint: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Surface(
+        modifier = modifier
+            .clip(shape)
+            .border(1.dp, Line, shape)
+            .clickable(onClick = onClick),
+        shape = shape,
+        color = CardSurface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 13.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(label, color = Muted, fontSize = 12.sp, maxLines = 1)
+                Icon(icon, null, Modifier.size(16.dp), tint = iconTint)
+            }
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(count.toString(), color = Ink, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                Text("部", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 2.dp))
+            }
+        }
+    }
+}
+
+/** Only two entries on 我的: 软件设置 and 关于软件. */
+@Composable
+private fun MyMainMenuCard(
+    themeLabel: String,
+    updateState: UpdateUiState,
+    onSettings: () -> Unit,
+    onAbout: () -> Unit,
+    onQuickUpdate: () -> Unit,
+) {
+    val shape = RoundedCornerShape(22.dp)
+    val update = updateState.update
+    Surface(
+        shape = shape,
+        color = CardSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Line, shape),
+    ) {
         Column {
-            MyMenuRow("账号与隐私", "登录方式、云片单与账号管理", "my_account", Icons.Outlined.PrivacyTip, onClick = onAccount)
-            MenuDivider()
-            MyMenuRow("设置", settingsHint, "my_settings", Icons.Outlined.Settings, trailing = themeLabel, onClick = openSettings)
-            MenuDivider()
-            MyMenuRow("检查更新", if (updateState.checking) "正在检查新版本…" else "当前版本 ${BuildConfig.VERSION_NAME}",
-                "update_check", Icons.Outlined.SystemUpdate, busy = updateState.checking) { updateModel.checkForUpdates() }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("my_settings")
+                    .clickable(onClick = onSettings)
+                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Cream),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Outlined.Settings, null, Modifier.size(19.dp), tint = Ink)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("软件设置", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text("外观 · 播放 · 账号 · 存储", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text(themeLabel, color = Muted, fontSize = 12.sp, maxLines = 1)
+                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp), tint = Muted)
+            }
+
+            HorizontalDivider(
+                color = Line.copy(alpha = 0.55f),
+                modifier = Modifier.padding(start = 64.dp, end = 16.dp),
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("my_about")
+                    .clickable(onClick = onAbout)
+                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Cream),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Outlined.Info, null, Modifier.size(19.dp), tint = Ink)
+                    }
+                    if (update != null) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 2.dp, y = (-2).dp)
+                                .size(9.dp)
+                                .clip(CircleShape)
+                                .background(Orange)
+                                .border(1.5.dp, CardSurface, CircleShape),
+                        )
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("关于软件", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = if (update != null) "发现新版本 v${update.versionName} · 版本与许可"
+                        else "红果独立版 v${BuildConfig.VERSION_NAME} · 检查更新",
+                        color = Muted,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (update != null) {
+                    Surface(
+                        shape = CircleShape,
+                        color = SoftOrange,
+                        modifier = Modifier
+                            .testTag("my_update_badge")
+                            .clickable(onClick = onQuickUpdate),
+                    ) {
+                        Text(
+                            text = "新版 ${update.versionName}",
+                            color = AccentInk,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                        )
+                    }
+                } else {
+                    Text("v${BuildConfig.VERSION_NAME}", color = Muted, fontSize = 12.sp, maxLines = 1)
+                }
+                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp), tint = Muted)
+            }
         }
     }
 }
 
-/** Starts under the row text, not under the icon tile. */
 @Composable
-private fun MenuDivider() = HorizontalDivider(color = Canvas, modifier = Modifier.padding(start = 64.dp, end = 18.dp))
-
-@Composable
-private fun MyMenuRow(title: String, subtitle: String, tag: String, icon: ImageVector? = null, trailing: String? = null,
-                      busy: Boolean = false, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().testTag(tag).clickable(onClick = onClick).padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (icon != null) Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(SoftOrange), Alignment.Center) {
-            Icon(icon, null, Modifier.size(20.dp), tint = AccentInk)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
-        }
-        if (trailing != null) Text(trailing, color = Muted, fontSize = 13.sp, maxLines = 1)
-        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Muted)
-        else Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = Muted)
-    }
-}
-
-@Composable
-private fun PageHeader(title: String, backLabel: String, backTag: String, onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+internal fun PageHeader(title: String, backLabel: String, backTag: String, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         IconButton(onClick = onBack, modifier = Modifier.testTag(backTag)) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, backLabel, tint = Ink)
         }
-        Text(title, color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** 软件设置: 4 grouped destinations (外观设置 / 播放设置 / 账号设置 / 存储设置), no footer caption. */
+@Composable
+internal fun SystemSettingsScreen(
+    state: HongguoUiState,
+    accountState: AccountState = AccountState(),
+    onAppearance: () -> Unit,
+    onPlayback: () -> Unit,
+    onAccount: () -> Unit,
+    onStorage: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
+    var cacheBytes by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(Unit) { cacheBytes = CacheStorage.measure(context).totalBytes }
+
+    val navClearance = LocalNavClearance.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("settings_screen")
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, bottom = 28.dp + navClearance),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        PageHeader("软件设置", "返回我的", "settings_back", onBack)
+        val shape = RoundedCornerShape(22.dp)
+        Surface(
+            shape = shape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, shape),
+        ) {
+            Column {
+                SettingsHubRow(
+                    title = "外观设置",
+                    subtitle = "主题样式、外观模式与底栏样式",
+                    pill = state.themeStyle.label,
+                    icon = Icons.Outlined.Palette,
+                    iconBg = SoftOrange,
+                    iconTint = AccentInk,
+                    tag = "settings_theme",
+                    onClick = onAppearance,
+                )
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(start = 68.dp, end = 16.dp),
+                )
+                SettingsHubRow(
+                    title = "播放设置",
+                    subtitle = "自动连播、预加载、倍速与弹幕",
+                    pill = playbackSpeedLabel(state.playbackSpeed),
+                    icon = Icons.Outlined.PlayCircleOutline,
+                    iconBg = StatusBlueSoft,
+                    iconTint = StatusBlue,
+                    tag = "settings_playback",
+                    onClick = onPlayback,
+                )
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(start = 68.dp, end = 16.dp),
+                )
+                SettingsHubRow(
+                    title = "账号设置",
+                    subtitle = "登录状态、观看进度同步与云端管理",
+                    pill = accountSettingsStatusPill(accountState),
+                    icon = Icons.Outlined.ManageAccounts,
+                    iconBg = StatusWarnSoft,
+                    iconTint = StatusWarn,
+                    tag = "settings_account",
+                    onClick = onAccount,
+                )
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(start = 68.dp, end = 16.dp),
+                )
+                SettingsHubRow(
+                    title = "存储设置",
+                    subtitle = "查看缓存占用与清理缓存",
+                    pill = cacheBytes?.let(CacheStorage::formatBytes) ?: "计算中…",
+                    icon = Icons.Outlined.Storage,
+                    iconBg = StatusOkSoft,
+                    iconTint = StatusOk,
+                    tag = "settings_storage",
+                    onClick = onStorage,
+                )
+            }
+        }
     }
 }
 
 @Composable
-internal fun SystemSettingsScreen(state: HongguoUiState, model: HongguoViewModel,
-                                 updateState: UpdateUiState, updateModel: UpdateViewModel,
-                                 onTheme: () -> Unit, onBack: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().testTag("settings_screen").padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(0.dp).plusNavClearance(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { PageHeader("设置", "返回我的", "settings_back", onBack) }
-        item {
-            Text("外观", color = Muted, fontSize = 14.sp)
-            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface, modifier = Modifier.padding(top = 12.dp)) {
-                Column {
-                    MyMenuRow("主题样式", "暖白精修、沉浸暗场、内容卡片", "settings_theme",
-                        trailing = state.themeStyle.label, onClick = onTheme)
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    NavBarStyleSetting(state.navBarStyle, model::setNavBarStyle)
-                }
-            }
+private fun SettingsHubRow(
+    title: String,
+    subtitle: String,
+    pill: String,
+    icon: ImageVector,
+    iconBg: Color,
+    iconTint: Color,
+    tag: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(tag)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(iconBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, null, Modifier.size(20.dp), tint = iconTint)
         }
-        item {
-            Text("播放偏好", color = Muted, fontSize = 14.sp)
-            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface, modifier = Modifier.padding(top = 12.dp)) {
-                Column {
-                    SettingSwitch("自动连播下一集", "本集结束后继续播放，也可上下滑动切集", state.autoPlayNext,
-                        "settings_autoplay", model::setAutoPlayNext)
-                    HorizontalDivider(color = Canvas, modifier = Modifier.padding(horizontal = 18.dp))
-                    SettingSwitch("下一集预加载", "提前准备少量内容，关闭可节省流量", state.preloadNext,
-                        "settings_preload", model::setPreloadNext)
-                }
-            }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        item {
-            Text("软件更新", color = Muted, fontSize = 14.sp)
-            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface, modifier = Modifier.padding(top = 12.dp)) {
-                SettingSwitch("启动时检查更新", "每次重新启动应用时检查，下载和安装仍需确认", updateState.automaticChecksEnabled,
-                    "settings_auto_update", updateModel::setAutomaticChecksEnabled)
-            }
+        Surface(shape = CircleShape, color = Cream) {
+            Text(
+                text = pill,
+                color = Ink,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            )
         }
-        item {
-            Text("收藏、播放记录和设置保存在本机。卸载应用或清除应用数据后，这些记录会被移除。",
-                color = Muted, fontSize = 12.sp, lineHeight = 21.sp, modifier = Modifier.padding(bottom = 28.dp))
-        }
+        Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp), tint = Muted)
     }
 }
 
+/** 外观设置: 主题样式 + 外观模式 + 底栏样式. Preserves theme_screen / theme_option_* / theme_mode_* / settings_navbar_* tags. */
 @Composable
 internal fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, onBack: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().testTag("theme_screen").padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(0.dp).plusNavClearance(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { PageHeader("主题样式", "返回设置", "theme_back", onBack) }
-        item {
-            Text("选择喜欢的界面风格，点选后立即生效。收藏、历史与播放设置不受影响。",
-                color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
-        }
-        item {
-            Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                AppThemeStyle.entries.forEach { style ->
-                    ThemeOption(style, selected = state.themeStyle == style, modifier = Modifier.weight(1f), previewDark = LocalHongguoPalette.current.isDark) {
-                        model.setThemeStyle(style)
+    val cardShape = RoundedCornerShape(22.dp)
+    val navClearance = LocalNavClearance.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("theme_screen")
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, bottom = 28.dp + navClearance),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        PageHeader("外观设置", "返回软件设置", "theme_back", onBack)
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("主题样式", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(state.themeStyle.label, color = AccentInk, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    AppThemeStyle.entries.forEach { style ->
+                        ThemeOption(
+                            style = style,
+                            selected = state.themeStyle == style,
+                            modifier = Modifier.weight(1f),
+                            previewDark = LocalHongguoPalette.current.isDark,
+                        ) {
+                            model.setThemeStyle(style)
+                        }
                     }
                 }
+                Text(
+                    text = state.themeStyle.summary,
+                    color = Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 19.sp,
+                )
             }
         }
-        item {
-            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(Orange))
-                        Text(state.themeStyle.label, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Text(state.themeStyle.summary, color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
-                }
-            }
-        }
-        item {
-            Surface(shape = RoundedCornerShape(16.dp), color = CardSurface) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("外观模式", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    val current = state.themeMode.orDefaultFor(state.themeStyle)
-                    Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ThemeMode.entries.forEach { mode ->
-                            val selected = current == mode
-                            Box(Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
-                                .background(if (selected) SoftOrange else Cream)
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("外观模式", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                val current = state.themeMode.orDefaultFor(state.themeStyle)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Cream)
+                        .padding(4.dp)
+                        .selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ThemeMode.entries.forEach { mode ->
+                        val selected = current == mode
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 40.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) CardSurface else Color.Transparent)
                                 .selectable(selected = selected, role = Role.RadioButton) { model.setThemeMode(mode) }
-                                .testTag("theme_mode_${mode.key}"), contentAlignment = Alignment.Center) {
-                                Text(mode.label, color = if (selected) AccentInk else Muted, fontSize = 14.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                                .testTag("theme_mode_${mode.key}"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = mode.label,
+                                color = if (selected) AccentInk else Muted,
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = "三套主题均有浅色与深色；沉浸暗场的刷剧画面始终保持深色。",
+                    color = Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 19.sp,
+                )
+            }
+        }
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            NavBarStyleSetting(state.navBarStyle, model::setNavBarStyle)
+        }
+    }
+}
+
+/** 播放设置: 自动连播 + 预加载 + 默认播放倍速 + 默认开启官方弹幕. */
+@Composable
+internal fun PlaybackSettingsScreen(state: HongguoUiState, model: HongguoViewModel, onBack: () -> Unit) {
+    val cardShape = RoundedCornerShape(22.dp)
+    val navClearance = LocalNavClearance.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("playback_screen")
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, bottom = 28.dp + navClearance),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        PageHeader("播放设置", "返回软件设置", "playback_back", onBack)
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Column {
+                SettingSwitch(
+                    title = "自动连播下一集",
+                    subtitle = "本集结束后自动切集，也可上下滑动切换",
+                    checked = state.autoPlayNext,
+                    tag = "settings_autoplay",
+                    onChange = model::setAutoPlayNext,
+                )
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                SettingSwitch(
+                    title = "下一集预加载",
+                    subtitle = "提前准备少量内容，关闭可节省流量",
+                    checked = state.preloadNext,
+                    tag = "settings_preload",
+                    onChange = model::setPreloadNext,
+                )
+            }
+        }
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("默认播放倍速", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = playbackSpeedLabel(state.playbackSpeed),
+                        color = AccentInk,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PlaybackSpeeds.chunked(4).forEach { row ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectableGroup(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            row.forEach { speed ->
+                                val selected = state.playbackSpeed == speed
+                                val label = playbackSpeedLabel(speed)
+                                val chipShape = RoundedCornerShape(12.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 40.dp)
+                                        .clip(chipShape)
+                                        .background(if (selected) SoftOrange else Canvas)
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (selected) Orange else Color.Transparent,
+                                            shape = chipShape,
+                                        )
+                                        .selectable(selected = selected, role = Role.RadioButton) {
+                                            model.setPlaybackSpeed(speed)
+                                        }
+                                        .testTag("settings_speed_$label"),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (selected) AccentInk else Ink,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                             }
                         }
                     }
-                    Text("三套主题都有浅色和深色。选择“跟随系统”后，会随系统自动切换。沉浸暗场的刷剧画面始终保持深色。",
-                        color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
                 }
             }
         }
-        item { Spacer(Modifier.height(28.dp)) }
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            SettingSwitch(
+                title = "默认开启官方弹幕",
+                subtitle = "播放页仍可随时微调显示区域、字号与透明度",
+                checked = state.danmaku.enabled,
+                tag = "settings_danmaku",
+                onChange = model::setDanmakuEnabled,
+            )
+        }
+    }
+}
+
+/** 存储设置: 实时展示视频/封面/更新包缓存占用并支持单项与一键清理. */
+@Composable
+internal fun StorageSettingsScreen(
+    updateState: UpdateUiState,
+    updateModel: UpdateViewModel,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var snapshot by remember { mutableStateOf(CacheSnapshot()) }
+    var loading by remember { mutableStateOf(true) }
+    var clearing by remember { mutableStateOf(false) }
+    var feedback by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        snapshot = CacheStorage.measure(context)
+        loading = false
+    }
+
+    fun clearSingle(category: CacheCategory, label: String) {
+        if (clearing) return
+        if (category == CacheCategory.UPDATES && updateState.downloading) {
+            feedback = "更新包正在下载中，暂不可清理"
+            return
+        }
+        val before = when (category) {
+            CacheCategory.MEDIA -> snapshot.mediaBytes
+            CacheCategory.IMAGE -> snapshot.imageBytes
+            CacheCategory.UPDATES -> snapshot.updatesBytes
+        }
+        if (before <= 0L) return
+        clearing = true
+        scope.launch {
+            snapshot = CacheStorage.clear(context, category, allowUpdatesCleanup = !updateState.downloading)
+            if (category == CacheCategory.UPDATES && !updateState.downloading) {
+                updateModel.clearDownloadedFile()
+            }
+            feedback = "已清理$label（释放 ${CacheStorage.formatBytes(before)}）"
+            clearing = false
+        }
+    }
+
+    fun clearAll() {
+        if (clearing || snapshot.totalBytes <= 0L) return
+        val before = snapshot.totalBytes
+        clearing = true
+        scope.launch {
+            val allowUpdates = !updateState.downloading
+            snapshot = CacheStorage.clearAll(context, allowUpdatesCleanup = allowUpdates)
+            if (allowUpdates) updateModel.clearDownloadedFile()
+            val freed = (before - snapshot.totalBytes).coerceAtLeast(0L)
+            feedback = if (allowUpdates) "已清理全部缓存（释放 ${CacheStorage.formatBytes(freed)}）"
+            else "已清理视频与图片缓存，正在下载的更新包已跳过"
+            clearing = false
+        }
+    }
+
+    val cardShape = RoundedCornerShape(22.dp)
+    val navClearance = LocalNavClearance.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("storage_screen")
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, bottom = 28.dp + navClearance),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        PageHeader("存储设置", "返回软件设置", "storage_back", onBack)
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("当前缓存占用", color = Muted, fontSize = 12.sp)
+                        Text(
+                            text = if (loading) "计算中…" else CacheStorage.formatBytes(snapshot.totalBytes),
+                            color = Ink,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                    }
+                    Surface(shape = CircleShape, color = Cream) {
+                        Text(
+                            text = if (snapshot.totalBytes > 0L) "均可安全清理" else "空间整洁",
+                            color = Muted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        )
+                    }
+                }
+
+                // 3-segment proportional bar
+                val total = snapshot.totalBytes.coerceAtLeast(1L).toFloat()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(CircleShape)
+                        .background(Cream),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    if (snapshot.mediaBytes > 0L) {
+                        Box(
+                            Modifier
+                                .weight((snapshot.mediaBytes / total).coerceAtLeast(0.03f))
+                                .fillMaxHeight()
+                                .background(Orange),
+                        )
+                    }
+                    if (snapshot.imageBytes > 0L) {
+                        Box(
+                            Modifier
+                                .weight((snapshot.imageBytes / total).coerceAtLeast(0.03f))
+                                .fillMaxHeight()
+                                .background(StatusBlue),
+                        )
+                    }
+                    if (snapshot.updatesBytes > 0L) {
+                        Box(
+                            Modifier
+                                .weight((snapshot.updatesBytes / total).coerceAtLeast(0.03f))
+                                .fillMaxHeight()
+                                .background(StatusOk),
+                        )
+                    }
+                }
+
+                // Legend
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    CacheLegendDot("视频", CacheStorage.formatBytes(snapshot.mediaBytes), Orange)
+                    CacheLegendDot("图片", CacheStorage.formatBytes(snapshot.imageBytes), StatusBlue)
+                    CacheLegendDot("安装包", CacheStorage.formatBytes(snapshot.updatesBytes), StatusOk)
+                }
+
+                val canClearAll = !loading && !clearing && snapshot.totalBytes > 0L
+                Surface(
+                    shape = CircleShape,
+                    color = if (canClearAll) Orange else Cream,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clip(CircleShape)
+                        .testTag("storage_clear_all")
+                        .clickable(enabled = canClearAll, onClick = ::clearAll),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                    ) {
+                        if (clearing) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Muted)
+                        } else {
+                            Icon(
+                                Icons.Outlined.DeleteOutline,
+                                null,
+                                Modifier.size(17.dp),
+                                tint = if (canClearAll) OnOrange else Muted,
+                            )
+                        }
+                        Text(
+                            text = when {
+                                clearing -> "正在清理缓存…"
+                                canClearAll -> "一键清理全部缓存（${CacheStorage.formatBytes(snapshot.totalBytes)}）"
+                                else -> "缓存已清空"
+                            },
+                            color = if (canClearAll) OnOrange else Muted,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+
+                feedback?.let { message ->
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = StatusOkSoft,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Outlined.VerifiedUser, null, Modifier.size(16.dp), tint = StatusOk)
+                            Text(message, color = StatusOk, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+            }
+        }
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Column {
+                CacheItemRow(
+                    title = "视频播放缓存",
+                    subtitle = "剧集分段缓冲与预加载文件",
+                    bytes = snapshot.mediaBytes,
+                    dotColor = Orange,
+                    enabled = !loading && !clearing && snapshot.mediaBytes > 0L,
+                    tag = "storage_clear_media",
+                    onClear = { clearSingle(CacheCategory.MEDIA, "视频播放缓存") },
+                )
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                CacheItemRow(
+                    title = "封面图片缓存",
+                    subtitle = "首页、榜单与片单剧集封面",
+                    bytes = snapshot.imageBytes,
+                    dotColor = StatusBlue,
+                    enabled = !loading && !clearing && snapshot.imageBytes > 0L,
+                    tag = "storage_clear_image",
+                    onClear = { clearSingle(CacheCategory.IMAGE, "封面图片缓存") },
+                )
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                CacheItemRow(
+                    title = "更新安装包",
+                    subtitle = if (updateState.downloading) "正在下载更新包，暂不可清理" else "已下载待安装或残留的 APK",
+                    bytes = snapshot.updatesBytes,
+                    dotColor = StatusOk,
+                    enabled = !loading && !clearing && !updateState.downloading && snapshot.updatesBytes > 0L,
+                    tag = "storage_clear_updates",
+                    onClear = { clearSingle(CacheCategory.UPDATES, "更新安装包") },
+                )
+            }
+        }
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, RoundedCornerShape(18.dp)),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.VerifiedUser,
+                    null,
+                    Modifier.padding(top = 1.dp).size(16.dp),
+                    tint = StatusOk,
+                )
+                Text(
+                    text = "清理缓存仅删除临时播放与图片文件，不会移除登录状态、本机收藏和观看记录。",
+                    color = Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 19.sp,
+                )
+            }
+        }
     }
 }
 
 @Composable
-internal fun ThemeOption(style: AppThemeStyle, selected: Boolean, modifier: Modifier, previewDark: Boolean? = null, onSelect: () -> Unit) {
-    val ring = if (selected) Orange else Color.Transparent
-    Column(modifier.clip(RoundedCornerShape(16.dp))
-        .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
-        .semantics { contentDescription = "${style.label}主题" }
-        .testTag("theme_option_${style.key}")
-        .border(2.dp, ring, RoundedCornerShape(16.dp))
-        .background(CardSurface)
-        .padding(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ThemePreview(style, previewDark)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)) {
-            if (selected) Box(Modifier.size(18.dp).clip(CircleShape).background(Orange), Alignment.Center) {
-                Icon(Icons.Outlined.Check, null, Modifier.size(13.dp), tint = OnOrange)
-            } else Box(Modifier.size(18.dp).padding(1.dp).border(2.dp, Muted, CircleShape))
-            // Wraps instead of clipping on narrow screens or large font scales.
-            Text(style.label, color = Ink, fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold,
-                maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
+private fun CacheLegendDot(label: String, size: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(color))
+        Text("$label $size", color = Muted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun CacheItemRow(
+    title: String,
+    subtitle: String,
+    bytes: Long,
+    dotColor: Color,
+    enabled: Boolean,
+    tag: String,
+    onClear: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(dotColor))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(title, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(CacheStorage.formatBytes(bytes), color = Muted, fontSize = 12.sp)
+            }
+            Text(subtitle, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Surface(
+            shape = CircleShape,
+            color = if (enabled) Cream else Color.Transparent,
+            modifier = Modifier
+                .clip(CircleShape)
+                .testTag(tag)
+                .clickable(enabled = enabled, onClick = onClear),
+        ) {
+            Text(
+                text = if (bytes > 0L) "清理" else "已清",
+                color = if (enabled) Ink else Muted.copy(alpha = 0.65f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            )
         }
     }
 }
 
-private val PreviewTones = listOf(Color(0xFF7B3B2C), Color(0xFF8A4F62), Color(0xFF5B4636), Color(0xFF3E4A61),
-    Color(0xFF2F5D50), Color(0xFF7A5C2E), Color(0xFF4B3F6B))
+/** 关于软件: 品牌版本卡 + 检查更新 / 启动查新 / 更新线路 + 开源许可与本机说明. */
+@Composable
+internal fun AboutSoftwareScreen(
+    updateState: UpdateUiState,
+    updateModel: UpdateViewModel,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
+    val cardShape = RoundedCornerShape(22.dp)
+    val navClearance = LocalNavClearance.current
+    val update = updateState.update
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("about_screen")
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, bottom = 28.dp + navClearance),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        PageHeader("关于软件", "返回我的", "about_back", onBack)
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Canvas)
+                        .border(1.dp, Line, RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(34.dp))
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("红果独立版", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Android ${BuildConfig.VERSION_NAME}（Build ${BuildConfig.VERSION_CODE}）",
+                        color = Muted,
+                        fontSize = 12.sp,
+                    )
+                    Text(
+                        text = "原生客户端 · 请求与媒体处理在本机执行",
+                        color = Muted,
+                        fontSize = 11.sp,
+                    )
+                }
+            }
+        }
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("update_check")
+                        .clickable(onClick = updateModel::checkForUpdates)
+                        .padding(horizontal = 16.dp, vertical = 15.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(SoftOrange),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Outlined.SystemUpdate, null, Modifier.size(19.dp), tint = AccentInk)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("检查更新", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = when {
+                                updateState.checking -> "正在检查新版本…"
+                                update != null -> "发现新版 v${update.versionName}，点此下载"
+                                else -> "当前已是最新版本"
+                            },
+                            color = Muted,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (updateState.checking) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = AccentInk)
+                    } else if (update != null) {
+                        Surface(shape = CircleShape, color = Orange) {
+                            Text(
+                                text = "NEW",
+                                color = OnOrange,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
+                        }
+                    }
+                    Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp), tint = Muted)
+                }
+
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+
+                SettingSwitch(
+                    title = "启动时检查更新",
+                    subtitle = "后台静默检查，下载与安装仍需确认",
+                    checked = updateState.automaticChecksEnabled,
+                    tag = "settings_auto_update",
+                    onChange = updateModel::setAutomaticChecksEnabled,
+                )
+
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("about_update_source")
+                        .clickable(enabled = !updateState.downloading) {
+                            val entries = UpdateSource.entries
+                            val next = entries[(entries.indexOf(updateState.source) + 1) % entries.size]
+                            updateModel.selectSource(next)
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("更新线路", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(updateState.source.label, color = AccentInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Icon(Icons.Outlined.ChevronRight, null, Modifier.size(16.dp), tint = Muted)
+                    }
+                }
+            }
+        }
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/${BuildConfig.UPDATE_REPOSITORY}")),
+                                )
+                            }
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("开源项目与发布页", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(BuildConfig.UPDATE_REPOSITORY, color = Muted, fontSize = 12.sp)
+                }
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("开源许可", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text("GPL-3.0-only", color = Muted, fontSize = 12.sp)
+                }
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Text(
+                    text = "本机收藏、播放记录和设置保存在当前设备；卸载应用或清除数据后会被移除。",
+                    color = Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 19.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ThemeOption(
+    style: AppThemeStyle,
+    selected: Boolean,
+    modifier: Modifier,
+    previewDark: Boolean? = null,
+    onSelect: () -> Unit,
+) {
+    val ring = if (selected) Orange else Color.Transparent
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .semantics { contentDescription = "${style.label}主题" }
+            .testTag("theme_option_${style.key}")
+            .border(2.dp, ring, RoundedCornerShape(16.dp))
+            .background(Canvas)
+            .padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ThemePreview(style, previewDark)
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
+        ) {
+            if (selected) Box(Modifier.size(18.dp).clip(CircleShape).background(Orange), Alignment.Center) {
+                Icon(Icons.Outlined.Check, null, Modifier.size(13.dp), tint = OnOrange)
+            } else Box(Modifier.size(18.dp).padding(1.dp).border(2.dp, Muted, CircleShape))
+            Text(
+                text = style.label,
+                color = Ink,
+                fontSize = 13.sp,
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
+    }
+}
+
+private val PreviewTones = listOf(
+    Color(0xFF7B3B2C), Color(0xFF8A4F62), Color(0xFF5B4636), Color(0xFF3E4A61),
+    Color(0xFF2F5D50), Color(0xFF7A5C2E), Color(0xFF4B3F6B),
+)
 
 /** A miniature of each theme's home screen, always drawn in that theme's own colors. */
 @Composable
 private fun ThemePreview(style: AppThemeStyle, dark: Boolean?) {
     val p = if (dark == null) style.palette() else style.palette(dark)
-    Box(Modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(10.dp)).background(p.canvas)
-        .border(1.dp, p.line, RoundedCornerShape(10.dp))) {
+    Box(
+        Modifier
+            .widthIn(max = 116.dp)
+            .fillMaxWidth()
+            .aspectRatio(9f / 16f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(p.canvas)
+            .border(1.dp, p.line, RoundedCornerShape(10.dp)),
+    ) {
         when (style) {
             AppThemeStyle.IMMERSIVE -> {
                 Box(Modifier.fillMaxSize().background(PreviewTones[0]))
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-                    0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = .85f))))
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = .85f))),
+                )
                 Column(Modifier.align(Alignment.CenterEnd).padding(end = 5.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     repeat(3) { Box(Modifier.size(8.dp).clip(CircleShape).background(Color.White.copy(alpha = .85f))) }
                 }
-                Column(Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(
+                    Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
                     Box(Modifier.width(44.dp).height(5.dp).clip(CircleShape).background(Color.White))
                     Box(Modifier.width(30.dp).height(3.dp).clip(CircleShape).background(Color.White.copy(alpha = .6f)))
                 }
@@ -353,8 +1678,13 @@ private fun ThemePreview(style: AppThemeStyle, dark: Boolean?) {
                 repeat(2) { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         repeat(3) { col ->
-                            Box(Modifier.weight(1f).aspectRatio(.75f).clip(RoundedCornerShape(2.dp))
-                                .background(PreviewTones[(row * 3 + col) % PreviewTones.size]))
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .aspectRatio(.75f)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(PreviewTones[(row * 3 + col) % PreviewTones.size]),
+                            )
                         }
                     }
                 }
@@ -363,8 +1693,14 @@ private fun ThemePreview(style: AppThemeStyle, dark: Boolean?) {
             }
             AppThemeStyle.CARDS -> Column(Modifier.fillMaxSize().padding(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Box(Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(p.card))
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(p.card).padding(3.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(p.card)
+                        .padding(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
                     Box(Modifier.fillMaxWidth(.7f).height(3.dp).background(p.accent))
                     Box(Modifier.fillMaxWidth(.85f).height(3.dp).background(p.line))
                     Box(Modifier.fillMaxWidth(.6f).height(3.dp).background(p.line))
@@ -387,10 +1723,23 @@ private fun ThemePreview(style: AppThemeStyle, dark: Boolean?) {
 
 @Composable
 private fun PreviewNav(p: HongguoPalette) {
-    Row(Modifier.fillMaxWidth().height(9.dp).clip(RoundedCornerShape(2.dp)).background(p.card),
-        horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        repeat(4) { i -> Box(Modifier.size(width = 6.dp, height = 3.dp).clip(CircleShape)
-            .background(if (i == 0) p.accent else p.line)) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(9.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(p.card),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(4) { i ->
+            Box(
+                Modifier
+                    .size(width = 6.dp, height = 3.dp)
+                    .clip(CircleShape)
+                    .background(if (i == 0) p.accent else p.line),
+            )
+        }
     }
 }
 
@@ -399,19 +1748,37 @@ private fun PreviewNav(p: HongguoPalette) {
 private fun NavBarStyleSetting(selected: NavBarStyle, onSelect: (NavBarStyle) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("底栏样式", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text("底栏样式", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Text("悬浮玻璃：页面在半透明胶囊下滚动，Android 12 及以上有模糊效果", color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
         }
         val pill = rememberTabIndicator()
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Cream).padding(3.dp)
-            .slidingPill(pill, selected, CardSurface, corner = 10.dp).selectableGroup()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Cream)
+                .padding(3.dp)
+                .slidingPill(pill, selected, CardSurface, corner = 10.dp)
+                .selectableGroup(),
+        ) {
             NavBarStyle.entries.forEach { style ->
                 val isSelected = style == selected
-                Box(Modifier.weight(1f).tabAnchor(pill, style).heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp))
-                    .selectable(selected = isSelected, role = Role.RadioButton) { onSelect(style) }
-                    .testTag("settings_navbar_${style.key}"), contentAlignment = Alignment.Center) {
-                    Text(style.label, color = if (isSelected) Ink else Muted, fontSize = 14.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium)
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .tabAnchor(pill, style)
+                        .heightIn(min = 40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .selectable(selected = isSelected, role = Role.RadioButton) { onSelect(style) }
+                        .testTag("settings_navbar_${style.key}"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = style.label,
+                        color = if (isSelected) Ink else Muted,
+                        fontSize = 14.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                    )
                 }
             }
         }
@@ -419,129 +1786,41 @@ private fun NavBarStyleSetting(selected: NavBarStyle, onSelect: (NavBarStyle) ->
 }
 
 @Composable
-private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, tag: String, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
+internal fun SettingSwitch(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    tag: String,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(
+                text = title,
+                color = if (enabled) Ink else Ink.copy(alpha = 0.55f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
         }
-        // Off state uses the secondary text color so the control stays visible on every theme.
-        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.testTag(tag),
-            colors = SwitchDefaults.colors(uncheckedThumbColor = Muted, uncheckedBorderColor = Muted,
-                uncheckedTrackColor = Cream))
-    }
-}
-
-/** B · 沉浸暗场: avatar header, four shortcuts and one grouped list. */
-@Composable
-private fun ImmersiveMine(state: HongguoUiState, model: HongguoViewModel, updateState: UpdateUiState, updateModel: UpdateViewModel,
-                          accountName: String?, accountStatus: String, accountAvatar: String?, onAccount: () -> Unit,
-                          openSettings: () -> Unit, openTheme: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(0.dp).plusNavClearance(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(top = 20.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onAccount)
-                .testTag("my_account_card").padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.size(64.dp).clip(CircleShape).background(Cream), Alignment.Center) {
-                    Icon(Icons.Outlined.PersonOutline, null, Modifier.size(32.dp), tint = Ink)
-                    AccountAvatarImage(accountAvatar)
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(accountName ?: "登录红果账号", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(accountStatus, color = Muted, fontSize = 13.sp)
-                }
-                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(22.dp), tint = Muted)
-            }
-        }
-        item {
-            Surface(color = CardSurface, shape = RoundedCornerShape(16.dp)) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-                    listOf(
-                        Triple(Icons.Outlined.History, "历史 ${state.history.size}") { model.openPlayHistory(local = true) },                        Triple(Icons.Outlined.StarBorder, "追剧 ${state.favorites.size}") { model.selectTab(AppTab.LOCAL_FAVORITES) },
-                        Triple(Icons.Outlined.CloudQueue, "云片单") { model.selectTab(AppTab.FAVORITES); model.selectLibrarySource(true) },
-                        Triple(Icons.Outlined.Palette, "主题", openTheme),
-                    ).forEachIndexed { index, (icon, label, action) ->
-                        Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = action)
-                            .heightIn(min = 56.dp).testTag(if (index == 0) "my_history" else "my_shortcut_$index"),
-                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(icon, null, tint = Ink, modifier = Modifier.size(24.dp))
-                            Text(label, color = Ink, fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-        }
-        item { MyServiceMenu("主题、播放与更新", state.themeStyle.label, updateState, updateModel, onAccount, openSettings) }
-        item {
-            Text("红果独立版 ${BuildConfig.VERSION_NAME} · 本机数据仅保存在这台设备", color = Muted, fontSize = 12.sp,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp))
-        }
-    }
-}
-
-/** C · 内容卡片: compact header, two stat cards and two grouped cards. */
-@Composable
-private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateState: UpdateUiState, updateModel: UpdateViewModel,
-                      accountName: String?, accountStatus: String, accountAvatar: String?, onAccount: () -> Unit, openSettings: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().testTag("my_screen").padding(horizontal = 12.dp),
-        contentPadding = PaddingValues(0.dp).plusNavClearance(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 20.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.size(60.dp).clip(CircleShape).background(CardSurface).border(1.dp, Line, CircleShape), Alignment.Center) {
-                    Icon(Icons.Outlined.PersonOutline, null, Modifier.size(28.dp), tint = Muted)
-                    AccountAvatarImage(accountAvatar)
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(accountName ?: "未登录", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Black,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(accountStatus, color = Muted, fontSize = 13.sp)
-                }
-                Surface(onClick = onAccount, shape = RoundedCornerShape(50), color = Ink,
-                    modifier = Modifier.heightIn(min = 36.dp).testTag("my_account_card")) {
-                    Text(if (accountName == null) "登录" else "账号", color = Canvas, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                }
-            }
-        }
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(Triple("本机看过", state.history.size, AppTab.HISTORY), Triple("本机收藏", state.favorites.size, AppTab.FAVORITES))
-                    .forEach { (label, count, tab) ->
-                        Surface(onClick = { model.selectTab(tab) }, color = CardSurface, shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.weight(1f).testTag(if (tab == AppTab.HISTORY) "my_history" else "my_favorites")) {
-                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    Icon(if (tab == AppTab.HISTORY) Icons.Outlined.History else Icons.Outlined.StarBorder, null,
-                                        Modifier.size(14.dp), tint = Muted)
-                                    Text(label, color = Muted, fontSize = 12.sp)
-                                }
-                                Row(verticalAlignment = Alignment.Bottom) {
-                                    Text("$count", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Black)
-                                    Text(" 部", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp))
-                                }
-                            }
-                        }
-                    }
-            }
-        }
-        item {
-            Surface(color = CardSurface, shape = RoundedCornerShape(14.dp)) {
-                MyMenuRow("云片单", "账号收藏、历史与预约", "my_cloud", Icons.Outlined.CloudQueue) {
-                    model.selectTab(AppTab.FAVORITES); model.selectLibrarySource(true)
-                }
-            }
-        }
-        item { MyServiceMenu("主题样式、自动连播、预加载与更新", state.themeStyle.label, updateState, updateModel, onAccount, openSettings) }
-        item {
-            Text("本机收藏与观看记录仅保存在这台设备。", color = Muted, fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 24.dp))
-        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            enabled = enabled,
+            modifier = Modifier.testTag(tag),
+            colors = SwitchDefaults.colors(
+                uncheckedThumbColor = Muted,
+                uncheckedBorderColor = Muted,
+                uncheckedTrackColor = Cream,
+            ),
+        )
     }
 }
 
@@ -549,6 +1828,10 @@ private fun CardsMine(state: HongguoUiState, model: HongguoViewModel, updateStat
 @Composable
 internal fun AccountAvatarImage(url: String?) {
     if (url.isNullOrBlank()) return
-    AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(),
-        contentDescription = "账号头像", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    AsyncImage(
+        model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(),
+        contentDescription = "账号头像",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+    )
 }

@@ -247,8 +247,9 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     // A temporary drag disables the owner without discarding this request's pause/resume intent.
     val sheetOpen = showEpisodes || showSpeed || showFavorites || showInfo || showDanmaku
     val temporaryDoubleSpeed = doubleSpeedHeld && activeVideo != null && !sheetOpen
+    val holdSpeed = maxOf(2f, state.playbackSpeed)
     val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null,
-        playbackSpeed = if (temporaryDoubleSpeed) 2f else state.playbackSpeed)
+        playbackSpeed = if (temporaryDoubleSpeed) holdSpeed else state.playbackSpeed)
     val togglePlayback = {
         playback.player?.let {
             if (it.playbackState == Player.STATE_ENDED) { it.seekTo(0); it.play() }
@@ -461,7 +462,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             Row(Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .5f))
                 .padding(horizontal = 13.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.FastForward, null, Modifier.size(16.dp), tint = Color.White)
-                Text(" 2× 临时加速中", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(" ${playbackSpeedLabel(holdSpeed)} 临时加速中", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 

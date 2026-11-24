@@ -180,6 +180,12 @@ class UpdateViewModel internal constructor(
             status = "已取消下载，可稍后重试", error = null) }
     }
 
+    /** Clears any cached downloaded APK reference after storage cleanup deletes cache/updates. */
+    fun clearDownloadedFile() {
+        if (state.value.downloading || installJob?.isActive == true) return
+        mutableState.update { it.copy(downloadedFile = null, downloadProgress = null, installPermissionRequired = false) }
+    }
+
     fun openInstaller(activity: Activity) {
         val file = state.value.downloadedFile ?: return
         if (installJob?.isActive == true) return

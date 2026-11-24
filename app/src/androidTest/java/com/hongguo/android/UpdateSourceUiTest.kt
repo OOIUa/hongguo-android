@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -66,6 +67,7 @@ class UpdateSourceUiTest {
         compose.runOnIdle { model = ViewModelProvider(compose.activity)[UpdateViewModel::class.java] }
         try {
             compose.onNodeWithTag("nav_mine").performClick()
+            compose.onNodeWithTag("my_about").performScrollTo().performClick()
             compose.onNodeWithTag("update_check").performScrollTo().performClick()
             compose.onNodeWithTag("update_dialog").assertExists()
 
@@ -80,7 +82,13 @@ class UpdateSourceUiTest {
 
     private fun selectAndVerify(model: UpdateViewModel, source: UpdateSource, checkLiveManifest: Boolean) {
         val tag = "update_source_${source.name.lowercase(Locale.ROOT)}"
-        compose.onNodeWithTag(tag).performScrollTo().performClick()
+        if (compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()) {
+            compose.onNodeWithTag("update_route_toggle").performClick()
+        }
+        compose.onNodeWithTag(tag).performClick()
+        if (compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()) {
+            compose.onNodeWithTag("update_route_toggle").performClick()
+        }
         compose.onNodeWithTag(tag).assertIsSelected()
         assertEquals(source, model.state.value.source)
         // commit waits for preceding apply writes, so this also exercises durable preference writes.

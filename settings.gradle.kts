@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "HongguoAndroid"
-include(":app")
+include(":app", ":tv")

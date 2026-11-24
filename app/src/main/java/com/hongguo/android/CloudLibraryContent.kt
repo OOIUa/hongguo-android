@@ -192,7 +192,7 @@ internal fun LazyListScope.cloudLibraryItems(
     }
     item {
         Text("历史每次读取最近50条；预约按上线状态各读取20条。收藏与历史各缓存最多200部。与本机片单分别保存。" +
-            if (showTitle) "“同步此后观看进度”默认关闭，只同步此后实际播放的进度，不上传本机旧记录。" else "",
+            if (showTitle) "观看进度同步可在「软件设置 › 账号设置」中开启，默认关闭，开启后不上传本机旧记录。" else "",
             color = Muted, fontSize = 12.sp, lineHeight = 19.sp, modifier = Modifier.padding(vertical = 12.dp))
     }
 }

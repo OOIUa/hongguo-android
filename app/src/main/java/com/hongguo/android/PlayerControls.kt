@@ -23,7 +23,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-internal val PlaybackSpeeds = listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)
+internal val PlaybackSpeeds = listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f, 2.5f, 3f)
 
 internal fun playbackSpeedLabel(speed: Float): String = "${speed.toString().removeSuffix(".0")}×"
 

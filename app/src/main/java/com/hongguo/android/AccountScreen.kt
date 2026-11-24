@@ -2,7 +2,6 @@ package com.hongguo.android
 
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.Checkbox
 import androidx.compose.material.icons.outlined.MoreVert
 import android.app.Activity
 import android.content.ClipData
@@ -85,6 +84,7 @@ internal fun AccountScreen(
     accountModel: AccountViewModel,
     onBack: () -> Unit,
     onOpenLibrary: (LibraryEntry) -> Unit,
+    onAccountSettings: () -> Unit = {},
 ) {
     val state by accountModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -160,7 +160,13 @@ internal fun AccountScreen(
             item { AccountNotice(error, "关闭", { webError = null }, tag = "account_web_error") }
         }
         if (state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
-            item { AccountProfileHeader(state, accountModel, onLogout = { logoutRequested = true }) }
+            item {
+                AccountProfileHeader(
+                    state = state,
+                    onAccountSettings = onAccountSettings,
+                    onLogout = { logoutRequested = true },
+                )
+            }
             cloudLibraryItems(state, accountModel, onOpenLibrary, { removeTarget = it })
         } else if (state.sessionStatus == AccountSessionStatus.WEBSITE_ONLY) {
             item {
@@ -286,7 +292,11 @@ private fun AccountAvatar(url: String?, size: Dp) {
 
 /** Profile and counters; actions used rarely wait in the menu so the lists stay near the top. */
 @Composable
-private fun AccountProfileHeader(state: AccountState, model: AccountViewModel, onLogout: () -> Unit) {
+private fun AccountProfileHeader(
+    state: AccountState,
+    onAccountSettings: () -> Unit,
+    onLogout: () -> Unit,
+) {
     val profile = state.profile ?: return
     var menuOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -300,9 +310,8 @@ private fun AccountProfileHeader(state: AccountState, model: AccountViewModel, o
             Box {
                 IconButton(onClick = { menuOpen = true }, modifier = Modifier.testTag("account_menu")) { Icon(Icons.Outlined.MoreVert, "账号操作", tint = Ink) }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("同步此后观看进度") }, modifier = Modifier.testTag("account_sync_switch"),
-                        trailingIcon = { Checkbox(checked = state.syncEnabled, onCheckedChange = null) },
-                        onClick = { model.setSyncEnabled(!state.syncEnabled) })
+                    DropdownMenuItem(text = { Text("账号设置") }, modifier = Modifier.testTag("account_open_settings"),
+                        onClick = { menuOpen = false; onAccountSettings() })
                     DropdownMenuItem(text = { Text("退出账号") }, modifier = Modifier.testTag("account_logout"),
                         onClick = { menuOpen = false; onLogout() })
                 }
@@ -320,7 +329,7 @@ private fun AccountProfileHeader(state: AccountState, model: AccountViewModel, o
                 }
             }
         }
-        if (state.pendingProgressCount > 0) Text("还有 ${state.pendingProgressCount} 条观看进度待确认",
+        if (state.pendingProgressCount > 0) Text("还有 ${state.pendingProgressCount} 条观看进度待确认 · 前往账号设置查看",
             color = Muted, fontSize = 12.sp, modifier = Modifier.testTag("account_pending_progress"))
     }
 }

@@ -4,7 +4,7 @@
 
 - GitHub 仓库：[OOIUa/hongguo-android](https://github.com/OOIUa/hongguo-android)。
 - 首个支持在线更新的版本：`0.3.0`，`versionCode=3`，tag 为 `v0.3.0`。
-- 当前源码版本为 `0.7.34`，`versionCode=45`，已同步 iOS 的官网访客片源回退。
+- 当前源码版本为 `0.8.0`，`versionCode=46`，包含播放源恢复（PR #19）、「我的 / 软件设置 / 账号设置 / 存储设置」与底部抽屉在线更新弹窗改版、详情页 C1 完整 3:4 大海报与追剧页重构，以及 2.5× / 3× 倍速播放。
 - 账号功能仍处于测试阶段。发行说明需简要说明官网验证、固定批次片单及可选进度上报的使用范围，实际登录与同步结果需用本人账号核对。
 - 应用 ID：`com.hongguo.android`；当前最低系统为 API 26。
 - 固定清单地址：`https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json`。

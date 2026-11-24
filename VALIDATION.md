@@ -1,3 +1,13 @@
+# 0.8.0 / versionCode 46（2026-11-24）
+
+本版包含 PR #19 的 App 级片源恢复，以及「我的 / 软件设置 / 账号设置 / 存储设置 / 关于软件」、底部抽屉在线更新弹窗、详情页完整竖版海报、追剧页海报墙重构和 2.5× / 3× 倍速。TV 模块不在本次发布范围内。
+
+- `:app:assembleDebug`、`:app:testDebugUnitTest`、`:app:lintDebug` 全部通过：470 项 JVM 测试 0 失败，Android Lint 0 个错误、47 个警告和 1 项提示。
+- 应用 APK 为 26,643,077 字节，SHA-256 为 `d4c4c29fb34cf2ac1d63588f8776585a053f2f3e431f8bce4a0d50c5e054058e`。`aapt` 核对包名 `com.hongguo.android`、versionCode 46、versionName 0.8.0、minSdk 26；`apksigner` 证书 SHA-256 与 `release-signing.sha256` 一致。
+- Android API 37 arm64 模拟器从同签名旧版覆盖安装 0.8.0 成功，本机偏好、收藏与历史沿用。`LivePlaybackV5Test` 前两集真实生产流首帧、跳转与暂停续播通过；收尾时 `ProgressiveMedia.deleteTree` 与后台分片下载并发删除临时文件触发一次 `NoSuchFileException`，不影响播放，待后续修复。
+- `MyPageFlowTest`、`ThemeSettingsFlowTest`、`AccountWebsiteSessionDeviceTest`、`LibraryFlowTest` 在模拟器通过。`UpdateSourceUiTest` 中加速线路 2 一次公网超时，其余线路通过。
+- 未连接实体手机；本轮未做个人账号登录与云同步验收。
+
 # 0.7.34 / versionCode 45（2026-11-23）
 
 Android 同步 iOS 0.1.32 的官网访客播放回退。463 项 JVM 测试全部通过，Android Lint 报告 0 个错误、32 个警告和 1 项提示。应用与仪器测试 APK 均构建成功。应用 APK 为 27,690,683 字节，SHA-256 为 `36dde8aa4d233e481856b54dd50b3d835024ac428669cb5d3ac918af5e3f78de`，签名证书与既有发布指纹一致。

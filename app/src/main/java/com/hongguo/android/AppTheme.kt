@@ -119,6 +119,16 @@ internal data class HongguoPalette(
     val navDivider: Color,
     val noticeBackground: Color,
     val noticeText: Color,
+    val accountCardStart: Color,
+    val accountCardEnd: Color,
+    val accountCardBorder: Color,
+    val accountCardGlow: Color,
+    val statusOk: Color,
+    val statusOkSoft: Color,
+    val statusWarn: Color,
+    val statusWarnSoft: Color,
+    val statusBlue: Color,
+    val statusBlueSoft: Color,
 )
 
 internal val WarmPalette = HongguoPalette(
@@ -129,6 +139,11 @@ internal val WarmPalette = HongguoPalette(
     canvas = Color(0xFFFCF8F4), cream = Color(0xFFF5EDE5), line = Color(0xFFE5DCD5), card = Color.White,
     navMuted = Color(0xFF827970), navDivider = Color(0xFFEAE3DD),
     noticeBackground = Color(0xFFFFEFE7), noticeText = Color(0xFF96492F),
+    accountCardStart = Color(0xFFFFFFFF), accountCardEnd = Color(0xFFFAF2EA),
+    accountCardBorder = Color(0xFFE9DDD3), accountCardGlow = Color(0x17C94426),
+    statusOk = Color(0xFF1E8E5A), statusOkSoft = Color(0xFFE6F6EE),
+    statusWarn = Color(0xFFC77700), statusWarnSoft = Color(0xFFFFF4E0),
+    statusBlue = Color(0xFF2F6FD6), statusBlueSoft = Color(0xFFEAF1FD),
 )
 
 internal val WarmDarkPalette = HongguoPalette(
@@ -139,6 +154,11 @@ internal val WarmDarkPalette = HongguoPalette(
     canvas = Color(0xFF1A1512), cream = Color(0xFF2C2520), line = Color(0xFF3A322C), card = Color(0xFF241E1A),
     navMuted = Color(0xFF9C9087), navDivider = Color(0xFF2C2520),
     noticeBackground = Color(0xFF33221B), noticeText = Color(0xFFFFB8A0),
+    accountCardStart = Color(0xFF2B231E), accountCardEnd = Color(0xFF221C18),
+    accountCardBorder = Color(0xFF3F342D), accountCardGlow = Color(0x1CFF9B7A),
+    statusOk = Color(0xFF4FD18B), statusOkSoft = Color(0xFF1B3326),
+    statusWarn = Color(0xFFF6B94E), statusWarnSoft = Color(0xFF362A16),
+    statusBlue = Color(0xFF74A8FF), statusBlueSoft = Color(0xFF1C293D),
 )
 
 internal val ImmersiveLightPalette = HongguoPalette(
@@ -149,6 +169,11 @@ internal val ImmersiveLightPalette = HongguoPalette(
     canvas = Color(0xFFF6F6F8), cream = Color(0xFFE9E9ED), line = Color(0xFFDFDFE5), card = Color.White,
     navMuted = Color(0xFF6E6E78), navDivider = Color(0xFFE4E4E9),
     noticeBackground = Color(0xFFFDEDE9), noticeText = Color(0xFF9A2E1E),
+    accountCardStart = Color(0xFFFFFFFF), accountCardEnd = Color(0xFFF4F4F8),
+    accountCardBorder = Color(0xFFE2E2E9), accountCardGlow = Color(0x14D63A24),
+    statusOk = Color(0xFF1E8E5A), statusOkSoft = Color(0xFFE6F6EE),
+    statusWarn = Color(0xFFC77700), statusWarnSoft = Color(0xFFFFF4E0),
+    statusBlue = Color(0xFF2F6FD6), statusBlueSoft = Color(0xFFEAF1FD),
 )
 
 internal val CardsDarkPalette = HongguoPalette(
@@ -159,6 +184,11 @@ internal val CardsDarkPalette = HongguoPalette(
     canvas = Color(0xFF0F1012), cream = Color(0xFF23252A), line = Color(0xFF2C2F35), card = Color(0xFF1A1B1F),
     navMuted = Color(0xFF8F939B), navDivider = Color(0xFF23252A),
     noticeBackground = Color(0xFF2C1A18), noticeText = Color(0xFFFFB4AB),
+    accountCardStart = Color(0xFF212329), accountCardEnd = Color(0xFF18191E),
+    accountCardBorder = Color(0xFF30333B), accountCardGlow = Color(0x21D42E24),
+    statusOk = Color(0xFF4FD18B), statusOkSoft = Color(0xFF183124),
+    statusWarn = Color(0xFFF6B94E), statusWarnSoft = Color(0xFF332714),
+    statusBlue = Color(0xFF76A9FF), statusBlueSoft = Color(0xFF1B273B),
 )
 
 internal val ImmersivePalette = HongguoPalette(
@@ -169,6 +199,11 @@ internal val ImmersivePalette = HongguoPalette(
     canvas = Color(0xFF0E0E11), cream = Color(0xFF26262D), line = Color(0xFF2E2E35), card = Color(0xFF1A1A1F),
     navMuted = Color(0xFF8E8E98), navDivider = Color(0xFF26262D),
     noticeBackground = Color(0xFF2A1A16), noticeText = Color(0xFFFFB4A2),
+    accountCardStart = Color(0xFF212128), accountCardEnd = Color(0xFF17171C),
+    accountCardBorder = Color(0xFF31313A), accountCardGlow = Color(0x24D63A24),
+    statusOk = Color(0xFF4FD18B), statusOkSoft = Color(0xFF173024),
+    statusWarn = Color(0xFFF6B94E), statusWarnSoft = Color(0xFF332714),
+    statusBlue = Color(0xFF76A9FF), statusBlueSoft = Color(0xFF1A263C),
 )
 
 internal val CardsPalette = HongguoPalette(
@@ -179,6 +214,11 @@ internal val CardsPalette = HongguoPalette(
     canvas = Color(0xFFF3F4F6), cream = Color(0xFFE9EBEE), line = Color(0xFFE1E4E8), card = Color.White,
     navMuted = Color(0xFF666B73), navDivider = Color(0xFFE6E8EB),
     noticeBackground = Color(0xFFFDEDEB), noticeText = Color(0xFF9A2A21),
+    accountCardStart = Color(0xFFFFFFFF), accountCardEnd = Color(0xFFF5F6F8),
+    accountCardBorder = Color(0xFFE0E3E8), accountCardGlow = Color(0x12D42E24),
+    statusOk = Color(0xFF1E8E5A), statusOkSoft = Color(0xFFE6F6EE),
+    statusWarn = Color(0xFFC77700), statusWarnSoft = Color(0xFFFFF4E0),
+    statusBlue = Color(0xFF2F6FD6), statusBlueSoft = Color(0xFFEAF1FD),
 )
 
 internal fun AppThemeStyle.palette(dark: Boolean = this == AppThemeStyle.IMMERSIVE): HongguoPalette = when (this) {
@@ -207,6 +247,16 @@ internal val NavMuted: Color @Composable @ReadOnlyComposable get() = LocalHonggu
 internal val NavDivider: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.navDivider
 internal val NoticeBackground: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.noticeBackground
 internal val NoticeText: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.noticeText
+internal val AccountCardStart: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountCardStart
+internal val AccountCardEnd: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountCardEnd
+internal val AccountCardBorder: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountCardBorder
+internal val AccountCardGlow: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountCardGlow
+internal val StatusOk: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusOk
+internal val StatusOkSoft: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusOkSoft
+internal val StatusWarn: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusWarn
+internal val StatusWarnSoft: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusWarnSoft
+internal val StatusBlue: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusBlue
+internal val StatusBlueSoft: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusBlueSoft
 
 private val LightNavigationScrim = android.graphics.Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
 private val DarkNavigationScrim = android.graphics.Color.argb(0x80, 0x1b, 0x1b, 0x1b)

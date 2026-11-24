@@ -1,6 +1,7 @@
 package com.hongguo.android
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -8,8 +9,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Column
@@ -85,6 +89,76 @@ internal fun AccountFavoriteAction(card: DramaCard, model: AccountViewModel, dar
                     if (owner != null && owner == model.ownerKey) model.setFavorite(card, add, expectedOwner = owner)
                 }, modifier = Modifier.testTag("confirm_account_favorite")) { Text("确认") }
             }, dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } })
+    }
+}
+
+/** Compact 48dp cloud favorite square button used beside the primary play button in C1 detail layout. */
+@Composable
+internal fun AccountFavoriteIconButton(
+    card: DramaCard,
+    model: AccountViewModel,
+    modifier: Modifier = Modifier,
+    onSignIn: () -> Unit = {},
+) {
+    val state by model.state.collectAsStateWithLifecycle()
+    val owner = model.ownerKey
+    var confirmation by remember(card.id, owner) { mutableStateOf<Boolean?>(null) }
+    val signedIn = state.sessionStatus == AccountSessionStatus.LOGGED_IN
+    val present = state.favorites.any { it.card.id == card.id }
+    val uncertain = card.id in state.favoriteUncertainIds
+    val busy = card.id in state.favoriteBusyIds
+    val label = when {
+        busy -> "正在核对账号收藏"
+        uncertain -> "核对账号收藏"
+        !signedIn -> "登录后同步账号收藏"
+        present -> "取消账号收藏"
+        else -> "加入账号收藏"
+    }
+    Surface(
+        onClick = {
+            if (!signedIn) onSignIn()
+            else if (uncertain) model.resolveFavorite(card.id)
+            else confirmation = !present
+        },
+        enabled = !busy && !state.busy,
+        shape = RoundedCornerShape(14.dp),
+        color = if (present) StatusBlueSoft else CardSurface,
+        border = BorderStroke(1.dp, if (present) StatusBlue.copy(alpha = 0.55f) else Line),
+        modifier = modifier
+            .size(48.dp)
+            .testTag("account_favorite_toggle")
+            .semantics { contentDescription = label },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (busy) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = StatusBlue)
+            } else {
+                Icon(
+                    imageVector = if (present) Icons.Outlined.CloudDone else Icons.Outlined.CloudQueue,
+                    contentDescription = null,
+                    modifier = Modifier.size(21.dp),
+                    tint = if (present) StatusBlue else Muted,
+                )
+            }
+        }
+    }
+    confirmation?.let { add ->
+        AlertDialog(
+            onDismissRequest = { confirmation = null },
+            title = { Text(if (add) "加入账号收藏" else "取消账号收藏") },
+            icon = { Icon(if (add) Icons.Outlined.CloudQueue else Icons.Outlined.CloudDone, null, tint = AccentInk) },
+            text = { Text("${if (add) "将《${card.title}》加入" else "将《${card.title}》移出"}红果账号「${state.profile?.nickname.orEmpty()}」的收藏。本机收藏单独保留。", fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmation = null
+                        if (owner != null && owner == model.ownerKey) model.setFavorite(card, add, expectedOwner = owner)
+                    },
+                    modifier = Modifier.testTag("confirm_account_favorite"),
+                ) { Text("确认") }
+            },
+            dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } },
+        )
     }
 }
 

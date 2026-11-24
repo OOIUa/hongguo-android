@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Apk = 'app/build/outputs/apk/debug/app-debug.apk',
     [string]$OutputDirectory = '../dist',
     [string]$Repository = 'OOIUa/hongguo-android'
@@ -51,7 +51,7 @@ try {
         sha256 = (Get-FileHash -LiteralPath (Join-Path $output $apkName) -Algorithm SHA256).Hash.ToLowerInvariant()
         sizeBytes = (Get-Item -LiteralPath (Join-Path $output $apkName)).Length
         minSdk = $minimum
-        notes = '新增官网访客片源回退，正片、推荐预览和下一集预加载均可使用。修复播放接口返回空响应并伴随临时断线或备用请求过慢时，已向访客开放的分集仍无法起播的问题。'
+        notes = "### 新增`n- 新增「软件设置 › 账号设置」页面，支持集中管理登录状态、观看进度同步开关、待上报进度和云端片单刷新。`n- 新增「软件设置 › 存储设置」页面，支持查看并清理视频、封面和更新安装包缓存。`n- 新增短剧详情页海报原图查看，支持选集正序 / 倒序切换和简介展开。`n- 新增 2.5× 和 3× 播放倍速。`n`n### 优化`n- 优化「我的」「软件设置」「关于软件」页面布局，精简主菜单入口。`n- 优化在线更新弹窗为底部抽屉样式，下载进度与操作按钮合并展示。`n- 优化短剧详情页为柔焦背景与居中完整竖版海报，海报不再被裁切或遮挡。`n- 优化追剧页为续播卡与三列海报墙布局。`n`n### 修复`n- 修复播放接口变更后正片与推荐流无法取到片源的问题。`n- 修复短剧详情页下滑时顶部状态栏变成黑条遮挡海报的问题。"
         publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $utf8 = New-Object System.Text.UTF8Encoding($false)
