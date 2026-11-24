@@ -52,7 +52,13 @@ public final class ProgressiveMedia {
     private static final Pattern CONTENT_RANGE = Pattern.compile("bytes ([0-9]+)-([0-9]+)/([0-9]+)");
     private static final Pattern REPR_DIGEST = Pattern.compile("(sha-256|sha-512)=:([A-Za-z0-9+/]+={0,2}):");
     // Documented redirects from the model's media CDN. These receive only ordinary Range requests.
-    private static final String[] REDIRECT_DOMAINS = {"vegslb.com", "idouyinvod.com", "smtcdns.com"};
+    /**
+     * 302 落地域白名单。CDN 直链经常先 302 到真正的文件域，各省/各边缘节点用的域不一样；
+     * 名单过窄会把正常播放判成「不受支持的媒体地址」（v0.7.34 起出现）。
+     * 每条都对应一次真机观测（bdcgslb.com 为 2026-11-24 实测的调度落地域），仍然要求 https + 443。
+     */
+    private static final String[] REDIRECT_DOMAINS = {
+            "vegslb.com", "idouyinvod.com", "smtcdns.com", "bdcgslb.com"};
     private static final Object CACHE_GUARD = new Object();
     private static final LinkedHashMap<Path, CacheBlock> CACHE = new LinkedHashMap<>(16, .75f, true);
     private static final Set<Path> LIVE_DIRS = new HashSet<>();
@@ -415,8 +421,16 @@ public final class ProgressiveMedia {
                     if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
                         String location = connection.getHeaderField("Location");
                         if (location == null || redirect == 5) throw new TerminalFailure("媒体重定向异常");
-                        try { next = trustedMediaUri(checkedUri(next.resolve(location).toString()), true); }
+                        URI target = checkedUri(next.resolve(location).toString());
+                        try { next = trustedMediaUri(target, true); }
                         catch (IllegalArgumentException failure) { throw new TerminalFailure("媒体重定向异常"); }
+                        catch (TerminalFailure rejected) {
+                            // 落地域不在白名单，但地址形状正常（https + 443）：这是 CDN 按省份/边缘
+                            // 调度的常见情况，按抖动处理交给重试换一条源，而不是整集判失败。
+                            // 形状不正常的跳转（明文、怪端口、带 fragment）仍然终态，绝不转向镜像。
+                            if (sources.size() > 1 && wellFormedRedirect(target)) throw new CdnUnavailable();
+                            throw rejected;
+                        }
                         continue;
                     }
                     if (code == 500 || code == 502 || code == 503 || code == 504) throw new CdnUnavailable();
@@ -597,7 +611,31 @@ public final class ProgressiveMedia {
                 }
             }
         }
+        reject(uri, redirect);
         throw new TerminalFailure("不受支持的媒体地址");
+    }
+
+    /** 被拒样本：只在 logcat 留一行（连线时可抓），不含路径与 query（可能带签名）。 */
+    private static void reject(URI uri, boolean redirect) {
+        android.util.Log.w("HGMEDIA", "rejected media address " + describe(uri) + " redirect=" + redirect);
+    }
+
+    /** 302 目标的形状是否正常：https 且端口为 443（或未写）。用于区分「调度域没列进白名单」与「恶意跳转」。 */
+    private static boolean wellFormedRedirect(URI target) {
+        return "https".equalsIgnoreCase(target.getScheme())
+                && (target.getPort() == -1 || target.getPort() == 443);
+    }
+
+    /** 把被拒地址压缩成可诊断的最小形态：`https:smtcdns.net:-1` / `http:example.com:8080 #fragment`。 */
+    private static String describe(URI uri) {
+        String host = uri.getHost();
+        if (host == null) host = "(none)";
+        int last = host.lastIndexOf('.');
+        if (last > 0) {
+            int previous = host.lastIndexOf('.', last - 1);
+            if (previous >= 0) host = host.substring(previous + 1);
+        }
+        return uri.getScheme() + ":" + host + ":" + uri.getPort() + (uri.getFragment() == null ? "" : " #fragment");
     }
     private static URI checkedUri(String raw) throws IOException {
         try {
@@ -605,7 +643,10 @@ public final class ProgressiveMedia {
             if (!("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))
                     || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null) throw new IllegalArgumentException();
             return uri;
-        } catch (IllegalArgumentException ex) { throw new TerminalFailure("媒体地址无效"); }
+        } catch (IllegalArgumentException ex) {
+            try { reject(URI.create(raw), false); } catch (Exception unparsable) { /* 连 URI 都解析不了，没有可记录的信息 */ }
+            throw new TerminalFailure("媒体地址无效");
+        }
     }
     private static long u32(byte[] bytes, int at) {
         return ((long) (bytes[at] & 255) << 24) | ((long) (bytes[at + 1] & 255) << 16)
