@@ -377,8 +377,11 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                         BoxWithConstraints(Modifier.fillMaxSize()) {
                             // 播放页是满屏绘制（含状态栏区域），顶栏「第 N 集 / 共 M 集」大约占到 88dp，
                             // 弹幕带从它下方起步：竖屏横向视频时正好落进上方黑边里，竖屏竖视频则贴着标题下方。
-                            val headerPad = if (landscape) 0.dp else 88.dp
-                            val bandHeight = ((maxHeight - headerPad) *
+                            val headerPad = if (landscape) 5.dp else 88.dp
+                            // 竖屏底部是标题、收藏、进度条和操作行；弹幕带不能压到它们上面。
+                            // 标题顶边距屏幕底部约 124dp，最后一行还可能顶出半行，这里留到 160dp。
+                            val footerPad = if (landscape) 0.dp else 160.dp
+                            val bandHeight = ((maxHeight - headerPad - footerPad) *
                                 DanmakuPrefs.coverageFraction(state.danmaku.coverage)).coerceAtLeast(0.dp)
                             if (bandHeight > 0.dp) {
                                 // 行距固定，最后一行可能多顶出半行，所以视图要比带子再高 0.6 行，

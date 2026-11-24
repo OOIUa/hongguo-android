@@ -54,12 +54,14 @@ internal fun DanmakuOverlay(
         factory = { context ->
             DanmakuView(context).also {
                 it.setBandHeight(bandHeightPx)
-                it.applyPrefs(settings.opacity, settings.font, settings.speed, settings.effect)
+                it.applyPrefs(settings.opacity, settings.font, settings.speed, settings.effect,
+                    settings.density)
             }
         },
         update = { view ->
             view.setBandHeight(bandHeightPx)
-            view.applyPrefs(settings.opacity, settings.font, settings.speed, settings.effect)
+            view.applyPrefs(settings.opacity, settings.font, settings.speed, settings.effect,
+                settings.density)
             val active = player
             if (active == null) {
                 if (boundPlayer[0] != null) {
