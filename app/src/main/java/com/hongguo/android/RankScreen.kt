@@ -48,8 +48,29 @@ internal fun RankEntryButton(model: HongguoViewModel, tag: String) {
 @Composable
 internal fun RankScreen(state: HongguoUiState, model: HongguoViewModel) {
     BackHandler(enabled = LocalPageActive.current, onBack = model::closeRank)
+    if (isWideLayout()) {
+        // 横屏：标题与榜单类型在左，榜单条目在右。
+        Box(Modifier.fillMaxSize().testTag("rank_screen")) {
+        WarmTwoPane(
+            left = {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) { RankHeader(state, model) }
+            },
+            right = { RankList(state, model, Modifier.fillMaxSize()) },
+        )
+        }
+        return
+    }
     Column(Modifier.fillMaxSize().testTag("rank_screen")) {
-        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        RankHeader(state, model)
+        RankList(state, model, Modifier.fillMaxWidth().weight(1f))
+    }
+}
+
+@Composable
+private fun RankHeader(state: HongguoUiState, model: HongguoViewModel) {
+    Column {
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 2.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = model::closeRank, modifier = Modifier.testTag("rank_back")) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = Ink)
             }
@@ -62,16 +83,23 @@ internal fun RankScreen(state: HongguoUiState, model: HongguoViewModel) {
                     text = { Text(board.label, fontSize = 15.sp, maxLines = 1) })
             }
         }
-        LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("rank_list"), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp).plusNavClearance(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(state.rankEntries, key = { it.series.id }) { entry -> RankRow(entry) { model.openDrama(entry.toCard()) } }
-            when {
-                state.rankError != null -> item { FailurePanel(state.rankError, model::retryRank) }
-                state.rankLoading -> item {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) }
+    }
+}
+
+@Composable
+private fun RankList(state: HongguoUiState, model: HongguoViewModel, modifier: Modifier) {
+    LazyColumn(modifier.testTag("rank_list"),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp).plusNavClearance(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(state.rankEntries, key = { it.series.id }) { entry -> RankRow(entry) { model.openDrama(entry.toCard()) } }
+        when {
+            state.rankError != null -> item { FailurePanel(state.rankError, model::retryRank) }
+            state.rankLoading -> item {
+                Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 }
-                state.rankPage < state.rankTotalPages -> item { LaunchedEffect(state.rankPage) { model.loadMoreRank() } }
             }
+            state.rankPage < state.rankTotalPages -> item { LaunchedEffect(state.rankPage) { model.loadMoreRank() } }
         }
     }
 }
