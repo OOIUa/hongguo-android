@@ -1,5 +1,6 @@
 package com.hongguo.android
 
+import android.view.Surface
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -25,5 +26,15 @@ class PlayerWindowModesTest {
         assertEquals(9 to 16, pictureInPictureRatio(0, 0))
         assertEquals(239 to 100, pictureInPictureRatio(3000, 1000))
         assertEquals(100 to 239, pictureInPictureRatio(400, 1000))
+    }
+
+    @Test fun backReturnsToPortraitOnlyWithAPortraitRotationLock() {
+        // Locked to portrait: 全屏观看 is the only way into a landscape player, so back goes to portrait playback.
+        assertTrue(backReturnsToPortrait(autoRotate = false, userRotation = Surface.ROTATION_0))
+        assertTrue(backReturnsToPortrait(autoRotate = false, userRotation = Surface.ROTATION_180))
+        // Auto-rotate on, or locked sideways: the phone itself is sideways, so back leaves the player.
+        assertFalse(backReturnsToPortrait(autoRotate = true, userRotation = Surface.ROTATION_0))
+        assertFalse(backReturnsToPortrait(autoRotate = false, userRotation = Surface.ROTATION_90))
+        assertFalse(backReturnsToPortrait(autoRotate = false, userRotation = Surface.ROTATION_270))
     }
 }
