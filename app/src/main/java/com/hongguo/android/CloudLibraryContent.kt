@@ -60,17 +60,35 @@ internal fun CloudLibraryContent(
         if (owner != null && state.sessionStatus == AccountSessionStatus.LOGGED_IN && !state.busy) accountModel.refresh()
     }
     var removeTarget by remember(owner, state.sessionStatus) { mutableStateOf<LibraryEntry?>(null) }
+    if (isWideLayout() && state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
+        // 横屏：账号信息与分节 Tab 在左，条目在右。
+        WarmTwoPane(
+            left = {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    CloudAccountRow(state, onSignIn)
+                    CloudSectionHeader(state, accountModel, showTitle = true)
+                }
+            },
+            right = {
+                LazyColumn(Modifier.fillMaxSize().testTag("cloud_library"),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp).plusNavClearance(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    cloudLibraryItems(state, accountModel, onOpenLibrary, { removeTarget = it },
+                        showTitle = false, showHeader = false)
+                }
+            },
+        )
+        AccountConfirmationDialogs(false, {}, {}, removeTarget, { removeTarget = null }, { entry ->
+            removeTarget = null
+            accountModel.setFavorite(entry.card, false, owner)
+        })
+        return
+    }
     LazyColumn(Modifier.fillMaxSize().testTag("cloud_library"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         state.message?.let { message -> item { AccountNotice(message, "知道了", accountModel::consumeMessage, tag = "cloud_message") } }
         if (state.sessionStatus == AccountSessionStatus.LOGGED_IN && state.profile != null) {
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(state.profile?.nickname?.ifBlank { "红果账号" }.orEmpty(), color = Muted, fontSize = 12.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onSignIn) { Text("账号管理", fontSize = 14.sp) }
-                }
-            }
+            item { CloudAccountRow(state, onSignIn) }
             cloudLibraryItems(state, accountModel, onOpenLibrary, { removeTarget = it }, showTitle = false)
         } else {
             item {
@@ -136,28 +154,9 @@ internal fun LazyListScope.cloudLibraryItems(
     onOpenLibrary: (LibraryEntry) -> Unit,
     onRemove: (LibraryEntry) -> Unit,
     showTitle: Boolean = true,
+    showHeader: Boolean = true,
 ) {
-    item {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (showTitle) "账号片单" else "红果账号记录", color = Ink, fontWeight = FontWeight.SemiBold,
-                fontSize = if (showTitle) 18.sp else 14.sp, modifier = Modifier.weight(1f))
-            if (state.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            TextButton(onClick = accountModel::refresh, enabled = !state.busy, modifier = Modifier.testTag("account_refresh")) {
-                Text("刷新", fontSize = 14.sp)
-            }
-        }
-        TabRow(selectedTabIndex = state.selectedSection.ordinal, containerColor = Canvas, contentColor = AccentInk,
-            divider = { HorizontalDivider(color = Cream) }) {
-            listOf(AccountSection.HISTORY to "历史", AccountSection.FAVORITES to "收藏", AccountSection.LIKES to "点赞", AccountSection.RESERVATIONS to "预约").forEach { (section, title) ->
-                Tab(selected = state.selectedSection == section, onClick = { accountModel.selectSection(section) },
-                    modifier = Modifier.testTag("account_section_${section.name.lowercase(Locale.ROOT)}"),
-                    selectedContentColor = AccentInk, unselectedContentColor = Muted,
-                    text = { Text(title, fontSize = 16.sp, fontWeight = if (state.selectedSection == section) FontWeight.SemiBold else FontWeight.Normal) })
-            }
-        }
-        // The account page shows these in its header.
-        if (!showTitle) accountStatsLine(state)?.let { Text(it, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp).testTag("account_stats")) }
-    }
+    if (showHeader) item { CloudSectionHeader(state, accountModel, showTitle) }
     val entries = when (state.selectedSection) {
         AccountSection.HISTORY -> state.history
         AccountSection.FAVORITES -> state.favorites
@@ -238,4 +237,48 @@ internal fun AccountNotice(message: String, action: String? = null, onAction: ()
 private fun accountPosition(positionMs: Long): String {
     val seconds = positionMs.coerceAtLeast(0) / 1000
     return String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
+}
+
+/** 红果账号片单的分节头部：标题、刷新、历史 / 收藏 / 点赞 / 预约；横屏时整块进左栏。 */
+@Composable
+internal fun CloudSectionHeader(
+    state: AccountState,
+    accountModel: AccountViewModel,
+    showTitle: Boolean,
+    showStats: Boolean = !showTitle,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (showTitle) "账号片单" else "红果账号记录", color = Ink, fontWeight = FontWeight.SemiBold,
+                fontSize = if (showTitle) 18.sp else 14.sp, modifier = Modifier.weight(1f))
+            if (state.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            TextButton(onClick = accountModel::refresh, enabled = !state.busy, modifier = Modifier.testTag("account_refresh")) {
+                Text("刷新", fontSize = 14.sp)
+            }
+        }
+        TabRow(selectedTabIndex = state.selectedSection.ordinal, containerColor = Canvas, contentColor = AccentInk,
+            divider = { HorizontalDivider(color = Cream) }) {
+            listOf(AccountSection.HISTORY to "历史", AccountSection.FAVORITES to "收藏", AccountSection.LIKES to "点赞", AccountSection.RESERVATIONS to "预约")
+                .forEach { (section, title) ->
+                    Tab(selected = state.selectedSection == section, onClick = { accountModel.selectSection(section) },
+                        modifier = Modifier.testTag("account_section_${section.name.lowercase(Locale.ROOT)}"),
+                        selectedContentColor = AccentInk, unselectedContentColor = Muted,
+                        text = { Text(title, fontSize = 16.sp, fontWeight = if (state.selectedSection == section) FontWeight.SemiBold else FontWeight.Normal) })
+                }
+        }
+        if (showStats) {
+            accountStatsLine(state)?.let {
+                Text(it, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp).testTag("account_stats"))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudAccountRow(state: AccountState, onSignIn: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(state.profile?.nickname?.ifBlank { "红果账号" }.orEmpty(), color = Muted, fontSize = 12.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        TextButton(onClick = onSignIn) { Text("账号管理", fontSize = 14.sp) }
+    }
 }

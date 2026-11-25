@@ -83,13 +83,17 @@ internal fun CinemaChaseScreen(
     LaunchedEffect(canManage) { if (!canManage) managing = false }
 
     val historyById = state.history.associateBy { it.card.id }
+    val wide = isWideLayout()
+    // 海报墙列数：横屏一行 6 个，竖屏仍是 3 个。
+    val columns = if (wide) 6 else 3
 
     Column(Modifier.fillMaxSize().testTag(rootTag)) {
         // Bold borderless typographic top switcher: 追剧 / 历史 / 云片单
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 6.dp),
+                // 横屏顶部留白更紧（上 0dp / 下 4dp），竖屏保持原来的 8dp / 6dp。
+                .padding(start = 16.dp, end = 8.dp, top = if (wide) 0.dp else 8.dp, bottom = if (wide) 4.dp else 6.dp),
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
@@ -276,8 +280,8 @@ internal fun CinemaChaseScreen(
                     }
                 }
 
-                // High-density 3-column large-radius poster wall
-                itemsIndexed(activeEntries.chunked(3), key = { _, row -> "${kind}_row_${row.first().card.id}" }) { rowIndex, row ->
+                // High-density poster wall: 横屏一行 6 个，竖屏仍是 3 个
+                itemsIndexed(activeEntries.chunked(columns), key = { _, row -> "${kind}_row_${row.first().card.id}" }) { rowIndex, row ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -286,7 +290,7 @@ internal fun CinemaChaseScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         row.forEachIndexed { column, entry ->
-                            val index = rowIndex * 3 + column
+                            val index = rowIndex * columns + column
                             val progressEntry = if (history) entry else historyById[entry.card.id] ?: entry
                             CinemaPosterTile(
                                 entry = entry,
@@ -303,7 +307,7 @@ internal fun CinemaChaseScreen(
                                 },
                             )
                         }
-                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
