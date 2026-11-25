@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -114,7 +115,29 @@ internal fun CinemaDetailScreen(
     val episodeLabel = detail?.episodes?.getOrNull(state.episodePosition)?.index
         ?: detail?.episodes?.firstOrNull()?.index
 
-    Box(Modifier.fillMaxSize().background(Canvas)) {
+    if (isWideLayout()) {
+        DetailWidePane(
+            state = state,
+            model = model,
+            accountModel = accountModel,
+            card = card,
+            detail = detail,
+            coverUrl = coverUrl,
+            title = title,
+            totalEpisodes = totalEpisodes,
+            episodeLabel = episodeLabel,
+            favorite = favorite,
+            posterRatio = posterRatio,
+            onPreviewPoster = { posterPreviewOpen = true },
+            range = range,
+            reverseOrder = reverseOrder,
+            onRange = { range = it },
+            onToggleSort = { reverseOrder = !reverseOrder; range = -1 },
+            summaryExpanded = summaryExpanded,
+            onToggleSummary = { summaryExpanded = !summaryExpanded },
+            onBack = model::closeDetail,
+        )
+    } else Box(Modifier.fillMaxSize().background(Canvas)) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -295,68 +318,15 @@ internal fun CinemaDetailScreen(
                         }
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Button(
-                            onClick = model::openPlayer,
-                            enabled = detail != null && detail.episodes.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Orange,
-                                contentColor = OnOrange,
-                            ),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .testTag("open_player"),
-                        ) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = when {
-                                    episodeLabel != null -> "立即播放 第 $episodeLabel 集"
-                                    detail != null -> "暂无可播放剧集"
-                                    state.loadingDetail -> "正在读取选集…"
-                                    else -> "暂时无法播放"
-                                },
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-
-                        // Compact Local Favorite Square Button
-                        Surface(
-                            onClick = { model.toggleFavorite(card) },
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (favorite) SoftOrange else CardSurface,
-                            border = BorderStroke(1.dp, if (favorite) AccentBorder else Line),
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("favorite_toggle")
-                                .semantics { contentDescription = if (favorite) "取消本机收藏" else "加入本机收藏" },
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(22.dp),
-                                    tint = if (favorite) AccentInk else Ink,
-                                )
-                            }
-                        }
-
-                        // Compact Cloud Favorite Square Button
-                        AccountFavoriteIconButton(
-                            card = card,
-                            model = accountModel,
-                            onSignIn = { model.selectTab(AppTab.ACCOUNT) },
-                        )
-                    }
+                    DetailActions(
+                        card = card,
+                        detail = detail,
+                        favorite = favorite,
+                        episodeLabel = episodeLabel,
+                        loading = state.loadingDetail,
+                        model = model,
+                        accountModel = accountModel,
+                    )
                 }
             }
 
@@ -383,140 +353,25 @@ internal fun CinemaDetailScreen(
 
             if (detail != null) {
                 // 3. Episode Selector right near the top for fast access
-                if (detail.episodes.isNotEmpty()) {
-                    val orderedIndices = if (reverseOrder) detail.episodes.indices.reversed() else detail.episodes.indices.toList()
-                    val ranges = orderedIndices.chunked(30)
-                    val currentRange = if (range in ranges.indices) range
-                    else ranges.indexOfFirst { state.episodePosition in it }.coerceAtLeast(0)
-
-                    item(key = "episode_header") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text("选集", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                            Row(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (ranges.size > 1) {
-                                    ranges.forEachIndexed { i, indices ->
-                                        val firstEp = detail.episodes[indices.first()].index
-                                        val lastEp = detail.episodes[indices.last()].index
-                                        val selected = i == currentRange
-                                        Text(
-                                            text = "$firstEp-$lastEp",
-                                            color = if (selected) AccentInk else Muted,
-                                            fontSize = 13.sp,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                            modifier = Modifier
-                                                .quietSelectable(selected) { range = i }
-                                                .heightIn(min = 36.dp)
-                                                .wrapContentHeight()
-                                                .testTag("episode_range_$i"),
-                                        )
-                                    }
-                                }
-                            }
-                            if (detail.episodes.size > 1) {
-                                Row(
-                                    modifier = Modifier
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            reverseOrder = !reverseOrder
-                                            range = -1
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                        .testTag("detail_episode_sort"),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                ) {
-                                    Icon(Icons.Outlined.SwapVert, null, Modifier.size(14.dp), tint = Muted)
-                                    Text(if (reverseOrder) "倒序" else "正序", color = Muted, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    val activeIndices = ranges.getOrElse(currentRange) { emptyList() }
-                    items(activeIndices.chunked(6), key = { "ep_row_${it.first()}_${reverseOrder}" }) { row ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            row.forEach { index ->
-                                val selected = state.episodePosition == index
-                                Surface(
-                                    onClick = { model.playEpisode(index) },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = if (selected) Orange else Cream,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 44.dp)
-                                        .testTag("episode_$index"),
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = "${detail.episodes[index].index}",
-                                            color = if (selected) OnOrange else Ink,
-                                            fontSize = 14.sp,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                            modifier = Modifier.padding(vertical = 10.dp),
-                                        )
-                                    }
-                                }
-                            }
-                            repeat(6 - row.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
-                }
+                detailEpisodes(
+                    detail = detail,
+                    episodePosition = state.episodePosition,
+                    range = range,
+                    reverseOrder = reverseOrder,
+                    onRange = { range = it },
+                    onToggleSort = { reverseOrder = !reverseOrder; range = -1 },
+                    onPlay = model::playEpisode,
+                )
 
                 // 4. Clean Borderless Expandable Synopsis
                 if (detail.summary.isNotBlank()) {
                     item(key = "summary") {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text("简介", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                if (detail.summary.length > 68) {
-                                    Text(
-                                        text = if (summaryExpanded) "收起" else "展开",
-                                        color = AccentInk,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .clickable { summaryExpanded = !summaryExpanded }
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            .testTag("detail_summary_toggle"),
-                                    )
-                                }
-                            }
-                            Text(
-                                text = detail.summary,
-                                color = Muted,
-                                fontSize = 14.sp,
-                                lineHeight = 22.sp,
-                                maxLines = if (summaryExpanded) Int.MAX_VALUE else 3,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                        DetailSummary(
+                            summary = detail.summary,
+                            expanded = summaryExpanded,
+                            onToggle = { summaryExpanded = !summaryExpanded },
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
                     }
                 }
 
@@ -564,6 +419,364 @@ internal fun CinemaDetailScreen(
             onDismiss = { posterPreviewOpen = false },
         )
     }
+}
+
+/** 播放 / 本机收藏 / 账号收藏三个按钮；竖屏在标题下居中一行，横屏放在左栏。 */
+@Composable
+private fun DetailActions(
+    card: DramaCard,
+    detail: DramaDetail?,
+    favorite: Boolean,
+    episodeLabel: Int?,
+    loading: Boolean,
+    model: HongguoViewModel,
+    accountModel: AccountViewModel,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = model::openPlayer,
+            enabled = detail != null && detail.episodes.isNotEmpty(),
+            colors = ButtonDefaults.buttonColors(containerColor = Orange, contentColor = OnOrange),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("open_player"),
+        ) {
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = when {
+                    episodeLabel != null -> "立即播放 第 $episodeLabel 集"
+                    detail != null -> "暂无可播放剧集"
+                    loading -> "正在读取选集…"
+                    else -> "暂时无法播放"
+                },
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        // Compact Local Favorite Square Button
+        Surface(
+            onClick = { model.toggleFavorite(card) },
+            shape = RoundedCornerShape(14.dp),
+            color = if (favorite) SoftOrange else CardSurface,
+            border = BorderStroke(1.dp, if (favorite) AccentBorder else Line),
+            modifier = Modifier
+                .size(48.dp)
+                .testTag("favorite_toggle")
+                .semantics { contentDescription = if (favorite) "取消本机收藏" else "加入本机收藏" },
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = if (favorite) AccentInk else Ink,
+                )
+            }
+        }
+
+        // Compact Cloud Favorite Square Button
+        AccountFavoriteIconButton(
+            card = card,
+            model = accountModel,
+            onSignIn = { model.selectTab(AppTab.ACCOUNT) },
+        )
+    }
+}
+
+/** 简介：三行折叠，超过 68 字给「展开 / 收起」。 */
+@Composable
+private fun DetailSummary(
+    summary: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("简介", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            if (summary.length > 68) {
+                Text(
+                    text = if (expanded) "收起" else "展开",
+                    color = AccentInk,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onToggle)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .testTag("detail_summary_toggle"),
+                )
+            }
+        }
+        Text(
+            text = summary,
+            color = Muted,
+            fontSize = 14.sp,
+            lineHeight = 22.sp,
+            maxLines = if (expanded) Int.MAX_VALUE else 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * 选集：范围 Tab、正序 / 倒序与 6 列网格。竖屏作为主列表的分节，横屏放进右栏列表，
+ * 两种布局共用这一份实现（避免复制两份选集网格）。
+ */
+private fun LazyListScope.detailEpisodes(
+    detail: DramaDetail,
+    episodePosition: Int,
+    range: Int,
+    reverseOrder: Boolean,
+    onRange: (Int) -> Unit,
+    onToggleSort: () -> Unit,
+    onPlay: (Int) -> Unit,
+) {
+    if (detail.episodes.isEmpty()) return
+    val orderedIndices = if (reverseOrder) detail.episodes.indices.reversed() else detail.episodes.indices.toList()
+    val ranges = orderedIndices.chunked(30)
+    val currentRange = if (range in ranges.indices) range
+    else ranges.indexOfFirst { episodePosition in it }.coerceAtLeast(0)
+
+    item(key = "episode_header") {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("选集", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (ranges.size > 1) {
+                    ranges.forEachIndexed { i, indices ->
+                        val selected = i == currentRange
+                        Text(
+                            text = "${detail.episodes[indices.first()].index}-${detail.episodes[indices.last()].index}",
+                            color = if (selected) AccentInk else Muted,
+                            fontSize = 13.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            modifier = Modifier
+                                .quietSelectable(selected) { onRange(i) }
+                                .heightIn(min = 36.dp)
+                                .wrapContentHeight()
+                                .testTag("episode_range_$i"),
+                        )
+                    }
+                }
+            }
+            if (detail.episodes.size > 1) {
+                Row(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onToggleSort)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .testTag("detail_episode_sort"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Icon(Icons.Outlined.SwapVert, null, Modifier.size(14.dp), tint = Muted)
+                    Text(if (reverseOrder) "倒序" else "正序", color = Muted, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+
+    val activeIndices = ranges.getOrElse(currentRange) { emptyList() }
+    items(activeIndices.chunked(6), key = { "ep_row_${it.first()}_$reverseOrder" }) { row ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            row.forEach { index ->
+                val selected = episodePosition == index
+                Surface(
+                    onClick = { onPlay(index) },
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (selected) Orange else Cream,
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("episode_$index"),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "${detail.episodes[index].index}",
+                            color = if (selected) OnOrange else Ink,
+                            fontSize = 14.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            modifier = Modifier.padding(vertical = 10.dp),
+                        )
+                    }
+                }
+            }
+            repeat(6 - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/**
+ * 横屏详情：左栏是压缩版头图 + 标题 + 操作 + 简介 + 演员表 + 相关作品，右栏整列选集。
+ * 0.8 竖屏那套整页大 hero（模糊背景 + 居中完整海报）在横屏装不下，横屏改成左栏里的小海报，
+ * 点击仍可看原图。
+ */
+@Composable
+private fun DetailWidePane(
+    state: HongguoUiState,
+    model: HongguoViewModel,
+    accountModel: AccountViewModel,
+    card: DramaCard,
+    detail: DramaDetail?,
+    coverUrl: String,
+    title: String,
+    totalEpisodes: Int,
+    episodeLabel: Int?,
+    favorite: Boolean,
+    posterRatio: Float,
+    onPreviewPoster: () -> Unit,
+    range: Int,
+    reverseOrder: Boolean,
+    onRange: (Int) -> Unit,
+    onToggleSort: () -> Unit,
+    summaryExpanded: Boolean,
+    onToggleSummary: () -> Unit,
+    onBack: () -> Unit,
+) {
+    // 左右两栏共用一个顶部留白：0.6 倍状态栏 + 10dp 呼吸间距。
+    val topPad = warmStatusBarTop() + 10.dp
+    WarmTwoPane(
+        left = {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = topPad), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.width(120.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(posterRatio)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFF1C1715))
+                                .testTag("detail_poster")
+                                .clickable(enabled = coverUrl.isNotBlank(), onClick = onPreviewPoster),
+                        ) {
+                            if (coverUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current).data(coverUrl).crossfade(true).build(),
+                                    contentDescription = "$title 完整海报",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                Cover("", title, Modifier.fillMaxSize())
+                            }
+                        }
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(4.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = .36f))
+                                .testTag("detail_back"),
+                        ) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回", tint = Color.White,
+                                modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = title,
+                            color = Ink,
+                            fontSize = 19.sp,
+                            lineHeight = 26.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = when {
+                                    totalEpisodes > 0 -> "全 $totalEpisodes 集"
+                                    state.loadingDetail -> "正在读取剧集"
+                                    else -> "短剧详情"
+                                },
+                                color = Muted,
+                                fontSize = 12.sp,
+                            )
+                            if (episodeLabel != null) {
+                                Text("·", color = Muted, fontSize = 12.sp)
+                                Text("看至第 $episodeLabel 集", color = AccentInk, fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+                DetailActions(
+                    card = card,
+                    detail = detail,
+                    favorite = favorite,
+                    episodeLabel = episodeLabel,
+                    loading = state.loadingDetail,
+                    model = model,
+                    accountModel = accountModel,
+                )
+                detail?.summary?.takeIf { it.isNotBlank() }?.let {
+                    DetailSummary(it, summaryExpanded, onToggleSummary)
+                }
+                detail?.cast?.takeIf { it.isNotEmpty() }?.let { CastSection(it) }
+                if (state.related.isNotEmpty()) {
+                    RelatedWorksSection(state, model, accountModel, horizontalPadding = 0)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        },
+        right = {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = topPad, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (state.loadingDetail) {
+                    item(key = "loading") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = AccentInk)
+                            Text("正在获取完整选集…", Modifier.padding(start = 10.dp), color = Muted, fontSize = 14.sp)
+                        }
+                    }
+                }
+                state.detailError?.let { error ->
+                    item(key = "error") {
+                        Box(Modifier.padding(horizontal = 16.dp)) { FailurePanel(error, model::retryDetails) }
+                    }
+                }
+                if (detail != null) {
+                    detailEpisodes(
+                        detail = detail,
+                        episodePosition = state.episodePosition,
+                        range = range,
+                        reverseOrder = reverseOrder,
+                        onRange = onRange,
+                        onToggleSort = onToggleSort,
+                        onPlay = model::playEpisode,
+                    )
+                }
+            }
+        },
+    )
 }
 
 @Composable
