@@ -8,6 +8,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -65,10 +66,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hongguo.account.AccountViewModel
@@ -89,80 +92,20 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
     // Staggered columns lay out independently, so the last visible entry is not always the highest index.
     LoadAheadEffect(state.home, { grid.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1 },
         { grid.layoutInfo.totalItemsCount }, onLoad = model::loadMoreHome)
-    LazyVerticalStaggeredGrid(columns = StaggeredGridCells.Fixed(2), state = grid, modifier = Modifier.fillMaxSize().testTag("cards_home"),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp).plusNavClearance(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalItemSpacing = 8.dp) {
-        item(span = StaggeredGridItemSpan.FullLine) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(Modifier.weight(1f).clip(RoundedCornerShape(50)).background(CardSurface)
-                    .clickable(role = Role.Button) { model.selectTab(AppTab.SEARCH) }.heightIn(min = 40.dp)
-                    .padding(horizontal = 14.dp).testTag("cards_search"),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.Search, null, tint = Muted, modifier = Modifier.size(20.dp))
-                    Text(ranked.firstOrNull()?.title ?: "搜索剧名或关键词", color = Muted, fontSize = 14.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+    /** 横屏时搜索、频道、继续看与榜单都在左栏，瀑布流只剩海报（[headerInLeft]）。 */
+    @Composable
+    fun Feed(headerInLeft: Boolean) {
+        LazyVerticalStaggeredGrid(columns = StaggeredGridCells.Fixed(2), state = grid, modifier = Modifier.fillMaxSize().testTag("cards_home"),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp).plusNavClearance(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalItemSpacing = 8.dp) {
+            if (!headerInLeft) {
+                item(span = StaggeredGridItemSpan.FullLine) { CardsHomeSearch(ranked.firstOrNull(), model) }
+                item(span = StaggeredGridItemSpan.FullLine) { CardsHomeChannels(state, model) }
+                state.history.firstOrNull()?.let { entry ->
+                    item(span = StaggeredGridItemSpan.FullLine) { CardsHomeContinue(entry, model) }
                 }
-                IconButton(onClick = { model.openPlayHistory() }, modifier = Modifier.testTag("cards_history")) {
-                    Icon(Icons.Outlined.History, "观看历史", tint = Ink)
-                }
+                if (ranked.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) { CardsHomeRanking(state, ranked, model) }
             }
-        }
-        item(span = StaggeredGridItemSpan.FullLine) {
-            // 分类 used to sit at the end of this row as a fifth "channel", but it only opened the 发现 tab that the
-            // bottom bar already offers, and looked selectable like the feeds beside it.
-            val tabs = rememberTabIndicator()
-            // 推荐 is the default and sits last, so the row opens scrolled to its end.
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(Int.MAX_VALUE)).padding(horizontal = 4.dp)
-                .slidingIndicator(tabs, state.homeFeed, Orange, width = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
-                listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧", HomeFeed.GUESS to "推荐").forEach { (feed, label) ->
-                    val selected = state.homeFeed == feed
-                    val color by animatedTabColor(selected, Ink, Muted)
-                    Column(Modifier.tabAnchor(tabs, feed).quietSelectable(selected) { model.selectHomeFeed(feed) }
-                        .heightIn(min = 48.dp).testTag("cards_feed_${feed.name.lowercase()}"),
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom)) {
-                        Text(label, color = color, fontSize = animatedTabSize(selected, 19.sp, 15.sp),
-                            fontWeight = if (selected) FontWeight.Black else FontWeight.Medium)
-                        Spacer(Modifier.height(3.dp))
-                    }
-                }
-            }
-        }
-        state.history.firstOrNull()?.let { entry ->
-            item(span = StaggeredGridItemSpan.FullLine) {
-                Surface(onClick = { model.openLibrary(entry) }, color = CardSurface, shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.testTag("cards_continue")) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Outlined.PlayArrow, null, tint = AccentInk, modifier = Modifier.size(20.dp))
-                        Text("继续看", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("${entry.card.title} · 第 ${entry.episodeIndex.coerceAtLeast(1)} 集", color = Muted, fontSize = 13.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Icon(Icons.Outlined.ChevronRight, null, tint = Muted, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-        }
-        if (ranked.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) {
-            Surface(color = CardSurface, shape = RoundedCornerShape(14.dp), modifier = Modifier.testTag("cards_ranking")) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(when (state.homeFeed) { HomeFeed.LATEST -> "新剧榜"; HomeFeed.COMIC -> "漫剧榜"; HomeFeed.GUESS -> "为你推荐"; else -> "热度榜" },
-                        color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 2.dp))
-                    ranked.forEachIndexed { index, card ->
-                        Row(Modifier.fillMaxWidth().clickable { model.openDrama(card) }.heightIn(min = 52.dp)
-                            .padding(vertical = 4.dp).testTag("cards_rank_$index"),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("${index + 1}", color = if (index < 3) AccentInk else Muted, fontSize = 18.sp,
-                                fontWeight = FontWeight.Black, modifier = Modifier.width(20.dp))
-                            Cover(card.cover, card.title, Modifier.width(40.dp).height(52.dp))
-                            Text(card.title, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            if (card.episodeCount > 0) Text("${card.episodeCount} 集", color = Muted, fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-        }
         if (state.home.loading && items.isEmpty()) item(span = StaggeredGridItemSpan.FullLine) { CardsLoading("正在读取剧集…") }
         if (state.home.loaded && !state.home.loading && items.isEmpty() && state.home.error == null)
             item(span = StaggeredGridItemSpan.FullLine) { EmptyPrompt("这一页暂时没有剧集", "可以刷新，或切换上方频道。") }
@@ -181,6 +124,99 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
         }
         if (!state.home.loading && !state.home.hasMore && items.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) {
             Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
+        }
+        }
+    }
+    if (isWideLayout()) {
+        WarmTwoPane(
+            left = {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CardsHomeSearch(ranked.firstOrNull(), model)
+                    CardsHomeChannels(state, model)
+                    state.history.firstOrNull()?.let { entry -> CardsHomeContinue(entry, model) }
+                    if (ranked.isNotEmpty()) CardsHomeRanking(state, ranked, model)
+                }
+            },
+            right = { Feed(headerInLeft = true) },
+        )
+        return
+    }
+    Feed(headerInLeft = false)
+}
+
+@Composable
+private fun CardsHomeSearch(ranked: DramaCard?, model: HongguoViewModel) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.weight(1f).clip(RoundedCornerShape(50)).background(CardSurface)
+            .clickable(role = Role.Button) { model.selectTab(AppTab.SEARCH) }.heightIn(min = 40.dp)
+            .padding(horizontal = 14.dp).testTag("cards_search"),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.Search, null, tint = Muted, modifier = Modifier.size(20.dp))
+            Text(ranked?.title ?: "搜索剧名或关键词", color = Muted, fontSize = 14.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        IconButton(onClick = { model.openPlayHistory() }, modifier = Modifier.testTag("cards_history")) {
+            Icon(Icons.Outlined.History, "观看历史", tint = Ink)
+        }
+    }
+}
+
+@Composable
+private fun CardsHomeChannels(state: HongguoUiState, model: HongguoViewModel) {
+    // 分类 used to sit at the end of this row as a fifth "channel", but it only opened the 发现 tab that the
+    // bottom bar already offers, and looked selectable like the feeds beside it.
+    val tabs = rememberTabIndicator()
+    // 推荐 is the default and sits last, so the row opens scrolled to its end.
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(Int.MAX_VALUE)).padding(horizontal = 4.dp)
+        .slidingIndicator(tabs, state.homeFeed, Orange, width = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
+        listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧", HomeFeed.GUESS to "推荐").forEach { (feed, label) ->
+            val selected = state.homeFeed == feed
+            val color by animatedTabColor(selected, Ink, Muted)
+            Column(Modifier.tabAnchor(tabs, feed).quietSelectable(selected) { model.selectHomeFeed(feed) }
+                .heightIn(min = 48.dp).testTag("cards_feed_${feed.name.lowercase()}"),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom)) {
+                Text(label, color = color, fontSize = animatedTabSize(selected, 19.sp, 15.sp),
+                    fontWeight = if (selected) FontWeight.Black else FontWeight.Medium)
+                Spacer(Modifier.height(3.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardsHomeContinue(entry: LibraryEntry, model: HongguoViewModel) {
+    Surface(onClick = { model.openLibrary(entry) }, color = CardSurface, shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.testTag("cards_continue")) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Outlined.PlayArrow, null, tint = AccentInk, modifier = Modifier.size(20.dp))
+            Text("继续看", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text("${entry.card.title} · 第 ${entry.episodeIndex.coerceAtLeast(1)} 集", color = Muted, fontSize = 13.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Icon(Icons.Outlined.ChevronRight, null, tint = Muted, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun CardsHomeRanking(state: HongguoUiState, ranked: List<DramaCard>, model: HongguoViewModel) {
+    Surface(color = CardSurface, shape = RoundedCornerShape(14.dp), modifier = Modifier.testTag("cards_ranking")) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(when (state.homeFeed) { HomeFeed.LATEST -> "新剧榜"; HomeFeed.COMIC -> "漫剧榜"; HomeFeed.GUESS -> "为你推荐"; else -> "热度榜" },
+                color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 2.dp))
+            ranked.forEachIndexed { index, card ->
+                Row(Modifier.fillMaxWidth().clickable { model.openDrama(card) }.heightIn(min = 52.dp)
+                    .padding(vertical = 4.dp).testTag("cards_rank_$index"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("${index + 1}", color = if (index < 3) AccentInk else Muted, fontSize = 18.sp,
+                        fontWeight = FontWeight.Black, modifier = Modifier.width(20.dp))
+                    Cover(card.cover, card.title, Modifier.width(40.dp).height(52.dp))
+                    Text(card.title, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (card.episodeCount > 0) Text("${card.episodeCount} 集", color = Muted, fontSize = 12.sp)
+                }
+            }
         }
     }
 }
@@ -216,50 +252,17 @@ internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
     val list = rememberLazyListState()
     LoadAheadEffect(state.category, { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
         { list.layoutInfo.totalItemsCount }, state.browseDraft == state.browseApplied, model::loadMoreBrowse)
-    LazyColumn(Modifier.fillMaxSize().testTag("cards_discover"), state = list,
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp).plusNavClearance(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("发现", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f).padding(start = 4.dp))
-                RankEntryButton(model, "cards_discover_rank")
-                IconButton(onClick = { model.selectTab(AppTab.SEARCH) }, modifier = Modifier.testTag("cards_discover_search")) {
-                    Icon(Icons.Outlined.Search, "搜索", tint = Ink)
-                }
+    /** 横屏时标题、剧种与筛选都在左栏，列表里不再画一遍（[headerInLeft]）。 */
+    @Composable
+    fun Results(headerInLeft: Boolean) {
+        LazyColumn(Modifier.fillMaxSize().testTag("cards_discover"), state = list,
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp).plusNavClearance(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (!headerInLeft) {
+                item { CardsDiscoverTitleBar(state, model) }
+                item { CardsDiscoverGenres(state, model) }
+                item { CardsDiscoverFilters(state, model, stacked = false) { showFilters = true } }
             }
-        }
-        item {
-            val tabs = rememberTabIndicator()
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardSurface).padding(4.dp)
-                .slidingPill(tabs, state.browseDraft.genre, Ink, corner = 9.dp)) {
-                listOf("short_play" to "短剧", "comic_series" to "漫剧", "ai_series" to "AI 剧").forEach { (genre, label) ->
-                    val selected = state.browseDraft.genre == genre
-                    val color by animatedTabColor(selected, Canvas, Muted)
-                    Box(Modifier.weight(1f).tabAnchor(tabs, genre).clip(RoundedCornerShape(9.dp))
-                        .quietSelectable(selected) { model.changeGenre(genre) }.heightIn(min = 38.dp)
-                        .testTag("cards_genre_$genre"), contentAlignment = Alignment.Center) {
-                        Text(label, color = color, fontSize = 14.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
-                    }
-                }
-            }
-        }
-        item {
-            // The first filter group stays visible as one-tap chips; the rest live in the sheet.
-            val group = state.filterGroups.firstOrNull { it.key == "theme" } ?: state.filterGroups.firstOrNull()
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                val count = state.browseApplied.options.values.count { it.isNotBlank() }
-                DarkChip(if (count > 0) "筛选 · $count" else "全部筛选", count > 0, "cards_filters", Icons.Outlined.Tune) { showFilters = true }
-                group?.options?.filter { it.id.isNotBlank() }?.take(12)?.forEach { option ->
-                    val on = state.browseApplied.options[group.key] == option.id
-                    DarkChip(option.label, on, "cards_quick_${group.key}_${option.id}") {
-                        model.selectFilter(group.key, option.id)
-                        model.applyBrowse()
-                    }
-                }
-            }
-        }
         if (state.category.loading && items.isEmpty()) item { CardsLoading("正在读取剧集…") }
         if (state.category.loaded && !state.category.loading && items.isEmpty() && state.category.error == null)
             item { EmptyPrompt("没有符合条件的剧集", "试试减少筛选条件，或切换类型。") }
@@ -296,12 +299,90 @@ internal fun CardsDiscover(state: HongguoUiState, model: HongguoViewModel) {
         if (!state.category.loading && !state.category.hasMore && items.isNotEmpty()) item {
             Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
         }
+        }
+    }
+    if (isWideLayout()) {
+        WarmTwoPane(
+            left = {
+                Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CardsDiscoverTitleBar(state, model)
+                    CardsDiscoverGenres(state, model)
+                    CardsDiscoverFilters(state, model, stacked = true) { showFilters = true }
+                }
+            },
+            right = { Results(headerInLeft = true) },
+        )
+    } else {
+        Results(headerInLeft = false)
     }
     // Swiping the sheet away discards unapplied choices, so quick chips and auto-loading keep working on what is shown.
     if (showFilters) ModalBottomSheet(onDismissRequest = { model.discardBrowseDraft(); showFilters = false }, containerColor = CardSurface) {
         FilterSheetContent(state, model) { showFilters = false }
     }
 }
+
+@Composable
+private fun CardsDiscoverTitleBar(state: HongguoUiState, model: HongguoViewModel) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("发现", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f).padding(start = 4.dp))
+        RankEntryButton(model, "cards_discover_rank")
+        IconButton(onClick = { model.selectTab(AppTab.SEARCH) }, modifier = Modifier.testTag("cards_discover_search")) {
+            Icon(Icons.Outlined.Search, "搜索", tint = Ink)
+        }
+    }
+}
+
+@Composable
+private fun CardsDiscoverGenres(state: HongguoUiState, model: HongguoViewModel) {
+    val tabs = rememberTabIndicator()
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardSurface).padding(4.dp)
+        .slidingPill(tabs, state.browseDraft.genre, Ink, corner = 9.dp)) {
+        listOf("short_play" to "短剧", "comic_series" to "漫剧", "ai_series" to "AI 剧").forEach { (genre, label) ->
+            val selected = state.browseDraft.genre == genre
+            val color by animatedTabColor(selected, Canvas, Muted)
+            Box(Modifier.weight(1f).tabAnchor(tabs, genre).clip(RoundedCornerShape(9.dp))
+                .quietSelectable(selected) { model.changeGenre(genre) }.heightIn(min = 38.dp)
+                .testTag("cards_genre_$genre"), contentAlignment = Alignment.Center) {
+                Text(label, color = color, fontSize = 14.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+            }
+        }
+    }
+}
+
+/** The first filter group stays visible as one-tap chips; the rest live in the sheet. */
+@Composable
+private fun CardsDiscoverFilters(state: HongguoUiState, model: HongguoViewModel, stacked: Boolean, onMore: () -> Unit) {
+    val group = state.filterGroups.firstOrNull { it.key == "theme" } ?: state.filterGroups.firstOrNull()
+    val count = state.browseApplied.options.values.count { it.isNotBlank() }
+    val chips = buildList {
+        add(DiscoverChip(if (count > 0) "筛选 · $count" else "全部筛选", count > 0, "cards_filters", Icons.Outlined.Tune, onMore))
+        group?.options?.filter { it.id.isNotBlank() }?.take(12)?.forEach { option ->
+            val on = state.browseApplied.options[group.key] == option.id
+            add(DiscoverChip(option.label, on, "cards_quick_${group.key}_${option.id}", null) {
+                model.selectFilter(group.key, option.id)
+                model.applyBrowse()
+            })
+        }
+    }
+    if (stacked) {
+        // 半宽左栏里横向滚动看不全后面的 chip，改成换行排布。
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            chips.forEach { chip -> DarkChip(chip.label, chip.selected, chip.tag, chip.icon, chip.onClick) }
+        }
+    } else {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            chips.forEach { chip -> DarkChip(chip.label, chip.selected, chip.tag, chip.icon, chip.onClick) }
+        }
+    }
+}
+
+private class DiscoverChip(
+    val label: String, val selected: Boolean, val tag: String,
+    val icon: ImageVector?, val onClick: () -> Unit,
+)
 
 @Composable
 internal fun CardsLibrary(state: HongguoUiState, model: HongguoViewModel, accountModel: AccountViewModel) {
@@ -312,7 +393,6 @@ internal fun CardsLibrary(state: HongguoUiState, model: HongguoViewModel, accoun
 internal fun CardsDetail(state: HongguoUiState, model: HongguoViewModel, accountModel: AccountViewModel) {
     CinemaDetailScreen(state = state, model = model, accountModel = accountModel, rootTag = "cards_detail")
 }
-
 /** Ranked list shown in the search page (C) before the user searches. */
 @Composable
 internal fun TrendingList(cards: List<DramaCard>, onOpen: (DramaCard) -> Unit) {
