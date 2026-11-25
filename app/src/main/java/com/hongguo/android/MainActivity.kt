@@ -70,7 +70,8 @@ class MainActivity : ComponentActivity() {
             val feedDark = layout == AppThemeStyle.IMMERSIVE && state.tab == AppTab.HOME && state.selectedCard == null
             // A detail page's blurred header runs behind the transparent status bar in every theme.
             var detailPictureUnderBar by remember(state.selectedCard?.id) { mutableStateOf(true) }
-            val statusBarOverPicture = state.selectedCard != null && detailPictureUnderBar
+            // 横屏时左侧导航栏占住了状态栏下面那一条，图标落在栏上而不是头图上，跟随主题颜色更清楚。
+            val statusBarOverPicture = state.selectedCard != null && detailPictureUnderBar && !isWideLayout()
             // The player owns the system bars while open; the theme re-applies them when it closes.
             HongguoTheme(layout, dark = dark, windowDark = dark || feedDark, statusBarOverPicture = statusBarOverPicture, applyToWindow = !state.playerOpen) {
                 CompositionLocalProvider(LocalDetailPictureUnderBar provides { detailPictureUnderBar = it }) {
@@ -118,10 +119,19 @@ class MainActivity : ComponentActivity() {
                     val floatingNav = showNav && state.navBarStyle == NavBarStyle.GLASS
                     val backdrop = rememberGlassBackdrop()
                     val navClearance = if (floatingNav) floatingNavClearance() else 0.dp
+                    // 横屏把底部 Tab 栏竖到左侧，页面内容只占剩下的宽度；悬浮玻璃栏保持原样不动。
+                    val wide = isWideLayout()
+                    Row(Modifier.fillMaxSize()) {
+                    if (wide && showNav && !floatingNav) {
+                        HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
+                            AppNavigationRail(state.tab, model::selectTab, layout)
+                        }
+                    }
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
                     Scaffold(containerColor = Canvas,
                         snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")
                             .padding(bottom = if (floatingNav) 76.dp else 0.dp)) }, bottomBar = {
-                        if (showNav && !floatingNav) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
+                        if (showNav && !floatingNav && !wide) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
                             AppNavigation(state.tab, model::selectTab, style = layout)
                         }
                     }) { insets ->
@@ -238,6 +248,8 @@ class MainActivity : ComponentActivity() {
                                 style = layout, backdrop = backdrop)
                         }
                         }
+                    }
+                    }
                     }
                 }
                 }
