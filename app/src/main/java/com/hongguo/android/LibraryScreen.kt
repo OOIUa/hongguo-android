@@ -572,6 +572,8 @@ internal fun LocalLibraryList(
 ) {
     val kind = if (history) "history" else "favorites"
     val itemPrefix = if (history) "history" else "favorite"
+    // 横屏一行 6 个，竖屏仍是 3 个。
+    val columns = if (isWideLayout()) 6 else 3
     LazyColumn(
         modifier.testTag("${kind}_list"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp).plusNavClearance(),
@@ -583,10 +585,10 @@ internal fun LocalLibraryList(
                 if (history) "开始播放后，这里会记住集数和进度。" else "在剧集详情或播放器中收藏，喜欢的故事就会留在这里。",
             )
         }
-        itemsIndexed(entries.chunked(3), key = { _, row -> row.first().card.id }) { rowIndex, row ->
+        itemsIndexed(entries.chunked(columns), key = { _, row -> row.first().card.id }) { rowIndex, row ->
             Row(Modifier.fillMaxWidth().animateItem().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEachIndexed { column, entry ->
-                    val index = rowIndex * 3 + column
+                    val index = rowIndex * columns + column
                     LibraryPosterCell(
                         entry = entry,
                         caption = entryCaption(entry),
@@ -604,7 +606,7 @@ internal fun LocalLibraryList(
                         },
                     )
                 }
-                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }

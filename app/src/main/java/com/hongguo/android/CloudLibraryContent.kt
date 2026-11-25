@@ -112,18 +112,20 @@ internal fun AccountHistoryList(accountModel: AccountViewModel, onOpenLibrary: (
     LaunchedEffect(owner, state.sessionStatus) {
         if (owner != null && state.sessionStatus == AccountSessionStatus.LOGGED_IN && !state.busy) accountModel.refresh()
     }
+    // 横屏一行 6 个，竖屏仍是 3 个。
+    val columns = if (isWideLayout()) 6 else 3
     LazyColumn(modifier.testTag("play_history_account"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp).plusNavClearance(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         state.historyError?.let { item { AccountNotice(it, "重试", accountModel::refresh, !state.busy, "account_list_error") } }
         if (state.history.isEmpty() && state.historyError == null) item {
             AccountNotice(if (state.busy) "正在读取观看记录…" else "暂时没有读取到观看记录", tag = "account_empty")
         }
-        items(state.history.chunked(3), key = { row -> row.first().card.id }) { row ->
+        items(state.history.chunked(columns), key = { row -> row.first().card.id }) { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { entry ->
                     AccountLibraryCell(entry, AccountSection.HISTORY, true, false, false, Modifier.weight(1f), { onOpenLibrary(entry) }, {}, {})
                 }
-                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
