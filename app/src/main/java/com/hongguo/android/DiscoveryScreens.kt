@@ -75,46 +75,55 @@ import java.util.Locale
 
 @Composable
 internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
+    if (isWideLayout()) {
+        WarmTwoPane(
+            left = {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) { HomeHeader(state, model, showTabs = false) }
+            },
+            right = {
+                Column(Modifier.fillMaxSize()) {
+                    // 内容类型跟着被它过滤的海报墙走：放在右栏顶部，滚动时保持不动。
+                    Box(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp)) {
+                        HomeFeedTabs(state, model)
+                    }
+                    Box(Modifier.weight(1f)) {
+                        // 右列只剩海报墙：列数交给 CatalogGrid 的 Adaptive 规则，避免用整屏宽度算列。
+                        CatalogGrid(
+                            feed = state.home, tagPrefix = "home", emptyTitle = "这一页暂时没有剧集", columns = 2,
+                            emptyHint = "可以刷新，或切换内容类型。", onOpen = model::openDrama,
+                            onRefresh = model::refreshHome, onMore = model::loadMoreHome, skipLeading = 1,
+                            header = {},
+                        )
+                    }
+                }
+            },
+        )
+        return
+    }
     CatalogGrid(
         feed = state.home, tagPrefix = "home", emptyTitle = "这一页暂时没有剧集", columns = warmColumns(),
         emptyHint = "可以刷新，或切换上方内容类型。", onOpen = model::openDrama,
         onRefresh = model::refreshHome, onMore = model::loadMoreHome, skipLeading = 1,
         header = {
-            item(key = "home_search", span = { GridItemSpan(maxLineSpan) }) {
-                CatalogSearchEntry("搜索剧名，发现好故事", "home_search") { model.selectTab(AppTab.SEARCH) }
-            }
-            state.home.items.firstOrNull()?.let { featured ->
-                item(key = "home_featured", span = { GridItemSpan(maxLineSpan) }) {
-                    WarmFeaturedBanner(featured, onOpen = { model.openDrama(featured) }, onPlay = { model.playDrama(featured) })
-                }
-            }
-            if (state.history.isNotEmpty()) {
-                item(key = "home_continue", span = { GridItemSpan(maxLineSpan) }) {
-                    WarmContinueRail(state.history, onOpen = model::openLibrary,
-                        onHistory = { model.openPlayHistory(local = true) })
-                }
-            }
-            item(key = "home_feeds", span = { GridItemSpan(maxLineSpan) }) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    val tabs = rememberTabIndicator()
-                    // 推荐 is the default and sits last, so the row opens scrolled to its end.
-                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState(Int.MAX_VALUE))
-                        .slidingIndicator(tabs, state.homeFeed, Orange, width = 32.dp, height = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                        listOf(HomeFeed.RECOMMEND to "热度精选", HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单", HomeFeed.GUESS to "推荐")
-                            .forEach { (feed, label) ->
-                                CatalogTextTab(label, state.homeFeed == feed, "home_feed_${feed.name.lowercase(Locale.ROOT)}",
-                                    Modifier.tabAnchor(tabs, feed)) { model.selectHomeFeed(feed) }
-                            }
-                    }
-                    IconButton(onClick = model::refreshHome, enabled = !state.home.loading,
-                        modifier = Modifier.size(36.dp).testTag("home_refresh")) {
-                        Icon(Icons.Outlined.Refresh, "刷新首页", tint = Muted)
-                    }
-                }
-            }
+            item(key = "home_header", span = { GridItemSpan(maxLineSpan) }) { HomeHeader(state, model) }
         },
     )
+}
+
+/** 首页在截断点之前的部分：搜索、今日推荐、继续观看、内容类型（横屏时内容类型移到右栏）。 */
+@Composable
+private fun HomeHeader(state: HongguoUiState, model: HongguoViewModel, showTabs: Boolean = true) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        CatalogSearchEntry("搜索剧名，发现好故事", "home_search") { model.selectTab(AppTab.SEARCH) }
+        state.home.items.firstOrNull()?.let { featured ->
+            WarmFeaturedBanner(featured, onOpen = { model.openDrama(featured) }, onPlay = { model.playDrama(featured) })
+        }
+        if (state.history.isNotEmpty()) {
+            WarmContinueRail(state.history, onOpen = model::openLibrary,
+                onHistory = { model.openPlayHistory(local = true) })
+        }
+        if (showTabs) HomeFeedTabs(state, model)
+    }
 }
 
 /** 3 columns like the A design; falls back to 2 on narrow screens or large text so titles stay readable. */
@@ -198,90 +207,113 @@ internal fun CategoryScreen(state: HongguoUiState, model: HongguoViewModel) {
     var expanded by rememberSaveable(state.browseDraft.genre) { mutableStateOf(false) }
     val dirty = state.browseDraft != state.browseApplied
     val filterHeight = (LocalConfiguration.current.screenHeightDp * .34f).coerceIn(150f, 320f).dp
+    if (isWideLayout()) {
+        WarmTwoPane(
+            left = {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                    CategoryHeader(state, model, expanded, dirty, filterHeight) { expanded = it }
+                }
+            },
+            right = {
+                CatalogGrid(
+                    feed = state.category, tagPrefix = "category", emptyTitle = "没有符合条件的剧集",
+                    emptyHint = "试试减少筛选条件，或切换内容类型。", onOpen = model::openDrama,
+                    onRefresh = model::applyBrowse, onMore = model::loadMoreBrowse, canLoadMore = !dirty,
+                    columns = 2, header = {},
+                )
+            },
+        )
+        return
+    }
     CatalogGrid(
         feed = state.category, tagPrefix = "category", emptyTitle = "没有符合条件的剧集",
         emptyHint = "试试减少筛选条件，或切换内容类型。", onOpen = model::openDrama,
         onRefresh = model::applyBrowse, onMore = model::loadMoreBrowse, canLoadMore = !dirty,
         header = {
-            item(key = "category_title", span = { GridItemSpan(maxLineSpan) }) {
-                Text("发现", color = Ink, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 8.dp))
-            }
-            item(key = "category_search", span = { GridItemSpan(maxLineSpan) }) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.weight(1f)) { CatalogSearchEntry("搜索剧名或关键词", "category_search") { model.selectTab(AppTab.SEARCH) } }
-                    RankEntryButton(model, "category_rank")
-                }
-            }
-            item(key = "category_genres", span = { GridItemSpan(maxLineSpan) }) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    listOf("short_play" to "短剧", "comic_series" to "漫剧", "ai_series" to "AI 剧").forEach { (genre, label) ->
-                        SelectorChip(label, state.browseDraft.genre == genre, "genre_$genre") { model.changeGenre(genre) }
-                    }
-                }
-            }
-            item(key = "category_filters", span = { GridItemSpan(maxLineSpan) }) {
-                Surface(color = CardSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Tune, null, tint = Muted, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(if (dirty) "筛选已更改，尚未应用" else "筛选条件", fontSize = 14.sp, lineHeight = 21.sp,
-                                    fontWeight = FontWeight.Medium, color = if (dirty) AccentInk else Ink)
-                                val selectedCount = state.browseDraft.options.values.count { it.isNotBlank() }
-                                Text(if (state.filtersLoading) "正在读取可选条件…"
-                                    else if (selectedCount > 0) "已选 $selectedCount 项条件" else "按题材、排序等条件查找",
-                                    fontSize = 12.sp, lineHeight = 18.sp, color = Muted)
-                            }
-                            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("toggle_filters")) {
-                                Text(if (expanded) "收起" else "筛选", fontSize = 14.sp)
-                                Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                        if (expanded) {
-                            Column(Modifier.fillMaxWidth().heightIn(max = filterHeight).verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                if (state.filtersLoading) CatalogLoading("正在加载筛选…")
-                                state.filterGroups.forEach { group ->
-                                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                        Text(group.label, fontSize = 13.sp, lineHeight = 20.sp, color = Muted)
-                                        val selected = state.browseDraft.options[group.key].orEmpty()
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            item {
-                                                SelectorChip("全部", selected.isBlank(), "filter_${group.key}_") { model.selectFilter(group.key, "") }
-                                            }
-                                            items(group.options.filter { it.id.isNotBlank() }, key = { it.id }) { option ->
-                                                SelectorChip(option.label, selected == option.id, "filter_${group.key}_${option.id}") {
-                                                    model.selectFilter(group.key, option.id)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                if (!state.filtersLoading && state.filterGroups.isEmpty() && state.filtersError == null) {
-                                    Text("当前类型暂无更多筛选条件。", fontSize = 13.sp, lineHeight = 20.sp, color = Muted)
-                                }
-                            }
-                        }
-                        state.filtersError?.let { FailurePanel(it, model::reloadFilters, "retry_filters") }
-                        if (expanded || dirty) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                OutlinedButton(onClick = model::resetBrowse,
-                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("reset_filters"),
-                                    shape = RoundedCornerShape(12.dp)) { Text("重置", fontSize = 14.sp) }
-                                Button(onClick = model::applyBrowse, enabled = !state.category.loading,
-                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("apply_filters"),
-                                    shape = RoundedCornerShape(12.dp)) {
-                                    Text(if (dirty) "应用筛选" else "重新查询", fontSize = 14.sp)
-                                }
-                            }
-                        }
-                    }
-                }
+            item(key = "category_header", span = { GridItemSpan(maxLineSpan) }) {
+                CategoryHeader(state, model, expanded, dirty, filterHeight) { expanded = it }
             }
         },
     )
+}
+
+/** 发现页在截断点之前的部分：标题、搜索、内容类型、筛选条件。 */
+@Composable
+private fun CategoryHeader(
+    state: HongguoUiState, model: HongguoViewModel, expanded: Boolean, dirty: Boolean,
+    filterHeight: androidx.compose.ui.unit.Dp, onExpanded: (Boolean) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("发现", color = Ink, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(Modifier.weight(1f)) { CatalogSearchEntry("搜索剧名或关键词", "category_search") { model.selectTab(AppTab.SEARCH) } }
+            RankEntryButton(model, "category_rank")
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf("short_play" to "短剧", "comic_series" to "漫剧", "ai_series" to "AI 剧").forEach { (genre, label) ->
+                SelectorChip(label, state.browseDraft.genre == genre, "genre_$genre") { model.changeGenre(genre) }
+            }
+        }
+        Surface(color = CardSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Tune, null, tint = Muted, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(if (dirty) "筛选已更改，尚未应用" else "筛选条件", fontSize = 14.sp, lineHeight = 21.sp,
+                            fontWeight = FontWeight.Medium, color = if (dirty) AccentInk else Ink)
+                        val selectedCount = state.browseDraft.options.values.count { it.isNotBlank() }
+                        Text(if (state.filtersLoading) "正在读取可选条件…"
+                            else if (selectedCount > 0) "已选 $selectedCount 项条件" else "按题材、排序等条件查找",
+                            fontSize = 12.sp, lineHeight = 18.sp, color = Muted)
+                    }
+                    TextButton(onClick = { onExpanded(!expanded) }, modifier = Modifier.testTag("toggle_filters")) {
+                        Text(if (expanded) "收起" else "筛选", fontSize = 14.sp)
+                        Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, modifier = Modifier.size(20.dp))
+                    }
+                }
+                if (expanded) {
+                    Column(Modifier.fillMaxWidth().heightIn(max = filterHeight).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (state.filtersLoading) CatalogLoading("正在加载筛选…")
+                        state.filterGroups.forEach { group ->
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text(group.label, fontSize = 13.sp, lineHeight = 20.sp, color = Muted)
+                                val selected = state.browseDraft.options[group.key].orEmpty()
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    item {
+                                        SelectorChip("全部", selected.isBlank(), "filter_${group.key}_") { model.selectFilter(group.key, "") }
+                                    }
+                                    items(group.options.filter { it.id.isNotBlank() }, key = { it.id }) { option ->
+                                        SelectorChip(option.label, selected == option.id, "filter_${group.key}_${option.id}") {
+                                            model.selectFilter(group.key, option.id)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (!state.filtersLoading && state.filterGroups.isEmpty() && state.filtersError == null) {
+                            Text("当前类型暂无更多筛选条件。", fontSize = 13.sp, lineHeight = 20.sp, color = Muted)
+                        }
+                    }
+                }
+                state.filtersError?.let { FailurePanel(it, model::reloadFilters, "retry_filters") }
+                if (expanded || dirty) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = model::resetBrowse,
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("reset_filters"),
+                            shape = RoundedCornerShape(12.dp)) { Text("重置", fontSize = 14.sp) }
+                        Button(onClick = model::applyBrowse, enabled = !state.category.loading,
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("apply_filters"),
+                            shape = RoundedCornerShape(12.dp)) {
+                            Text(if (dirty) "应用筛选" else "重新查询", fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -378,4 +410,26 @@ private fun CatalogLoading(label: String) {
 private fun catalogPosition(positionMs: Long): String {
     val seconds = positionMs.coerceAtLeast(0) / 1000
     return String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60)
+}
+
+/** 首页内容类型：横屏时放在右栏的网格顶部。 */
+@Composable
+private fun HomeFeedTabs(state: HongguoUiState, model: HongguoViewModel) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val tabs = rememberTabIndicator()
+            // 推荐 is the default and sits last, so the row opens scrolled to its end.
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState(Int.MAX_VALUE))
+                .slidingIndicator(tabs, state.homeFeed, Orange, width = 32.dp, height = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                listOf(HomeFeed.RECOMMEND to "热度精选", HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单", HomeFeed.GUESS to "推荐")
+                    .forEach { (feed, label) ->
+                        CatalogTextTab(label, state.homeFeed == feed, "home_feed_${feed.name.lowercase(Locale.ROOT)}",
+                            Modifier.tabAnchor(tabs, feed)) { model.selectHomeFeed(feed) }
+                    }
+            }
+            IconButton(onClick = model::refreshHome, enabled = !state.home.loading,
+                modifier = Modifier.size(36.dp).testTag("home_refresh")) {
+                Icon(Icons.Outlined.Refresh, "刷新首页", tint = Muted)
+            }
+        }
 }
