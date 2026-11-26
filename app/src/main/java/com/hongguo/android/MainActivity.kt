@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
             // A detail page's blurred header and the account page's cinema hero run behind the transparent status bar.
             var detailPictureUnderBar by remember(state.selectedCard?.id) { mutableStateOf(true) }
             var accountHeroUnderBar by remember(state.tab, state.accountPageVisit) { mutableStateOf(true) }
-            val statusBarOverPicture = (state.selectedCard != null && detailPictureUnderBar) ||
+            val statusBarOverPicture = (state.selectedCard != null && !isWideLayout() && detailPictureUnderBar) ||
                 (state.selectedCard == null && state.tab == AppTab.ACCOUNT && accountHeroUnderBar)
             // The player owns the system bars while open; the theme re-applies them when it closes.
             HongguoTheme(layout, dark = dark, windowDark = dark || feedDark, statusBarOverPicture = statusBarOverPicture, applyToWindow = !state.playerOpen) {
