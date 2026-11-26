@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -96,6 +97,22 @@ internal fun CinemaDetailScreen(
     accountModel: AccountViewModel,
     rootTag: String = "detail_screen",
 ) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // During rotation the new window bounds can arrive before the orientation changes.
+        // A portrait-height measurement would clamp both landscape scroll positions.
+        val wide = isWideLayout() && maxWidth >= maxHeight
+        CinemaDetailContent(state, model, accountModel, rootTag, wide)
+    }
+}
+
+@Composable
+private fun CinemaDetailContent(
+    state: HongguoUiState,
+    model: HongguoViewModel,
+    accountModel: AccountViewModel,
+    rootTag: String,
+    wide: Boolean,
+) {
     val card = state.selectedCard ?: return
     val detail = state.detail
     val coverUrl = detail?.cover?.takeIf { it.isNotBlank() } ?: card.cover
@@ -135,7 +152,7 @@ internal fun CinemaDetailScreen(
     }
     val wideInfoScroll = rememberScrollState()
     val wideEpisodeList = rememberLazyListState()
-    if (isWideLayout()) {
+    if (wide) {
         Box(Modifier.fillMaxSize().background(Canvas).testTag(rootTag).statusBarsPadding()) {
             WarmTwoPane(
                 leftScrollState = wideInfoScroll,
