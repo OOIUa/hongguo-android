@@ -28,6 +28,8 @@ import com.hongguo.api.service.ProgressiveMedia
 import com.hongguo.account.AccountSessionStatus
 import com.hongguo.android.danmaku.DanmakuPrefs
 import com.hongguo.android.danmaku.DanmakuSettings
+import com.hongguo.android.comments.SeriesReviewApi
+import com.hongguo.android.comments.SeriesReviewPage
 
 private val mediaCleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -75,6 +77,10 @@ data class HongguoUiState(
     val detail: DramaDetail? = null,
     val loadingDetail: Boolean = false,
     val detailError: String? = null,
+    /** Series review count from the App comment endpoint; null until the first page arrives. */
+    val reviewCount: Int? = null,
+    /** First review page, reused by the dialog so opening it does not request page 0 again. */
+    val reviewFirstPage: SeriesReviewPage? = null,
     /** Other seasons and same-IP works of the selected drama; empty when unavailable. */
     val related: List<RelatedWork> = emptyList(),
     val suggestions: List<String> = emptyList(),
@@ -143,6 +149,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     val state = mutableState.asStateFlow()
     private var searchJob: Job? = null
     private var detailJob: Job? = null
+    private var reviewsJob: Job? = null
     private var mediaJob: Job? = null
     private var prefetchJob: Job? = null
     private class WarmSlot(val episodeId: String) {
@@ -620,10 +627,13 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val version = ++detailVersion
         mutableState.update {
             it.copy(selectedCard = card, detail = null, loadingDetail = true, detailError = null, related = emptyList(),
+                reviewCount = null, reviewFirstPage = null,
                 video = null, preparing = false, preparationStage = "", playbackError = null,
                 episodePosition = -1, playbackStatus = "", firstFrameRendered = false, resumePositionMs = 0, playerOpen = false,
                 detailReturnsToPlayer = false)
         }
+        reviewsJob?.cancel()
+        loadReviewSummary(card, version)
         relatedJob?.cancel()
         relatedJob = viewModelScope.launch {
             // Secondary content: a failure leaves the section out without affecting the drama itself.
@@ -662,6 +672,25 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
                 if (version == detailVersion) mutableState.update {
                     it.copy(loadingDetail = false, detailError = readableFailure(error, "获取剧集"))
                 }
+            }
+        }
+    }
+
+    /**
+     * The stats row needs the review count before the dialog is opened; the first page is also
+     * reused by the dialog. A failure only leaves the count out.
+     */
+    private fun loadReviewSummary(card: DramaCard, version: Int) {
+        reviewsJob = viewModelScope.launch {
+            val page = try {
+                SeriesReviewApi.repository.page(card.id, 0)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                return@launch
+            }
+            if (version == detailVersion) {
+                mutableState.update { it.copy(reviewCount = page.total, reviewFirstPage = page) }
             }
         }
     }
@@ -925,6 +954,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         pendingAutoPlay = false
         cancelDetailAndMedia()
         mutableState.update { it.copy(selectedCard = null, detail = null, loadingDetail = false, detailError = null,
+            reviewCount = null, reviewFirstPage = null,
             preparing = false, video = null, playbackError = null, episodePosition = -1, playbackStatus = "", firstFrameRendered = false, playerOpen = false,
             detailReturnsToPlayer = false) }
     }
@@ -933,6 +963,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         ++detailVersion
         ++mediaVersion
         detailJob?.cancel()
+        reviewsJob?.cancel()
         mediaJob?.cancel()
         takePrefetch(null)
         resumePreparationOnForeground = false

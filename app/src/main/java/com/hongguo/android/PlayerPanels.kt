@@ -62,7 +62,8 @@ internal val PlayerPanelColor = Color(0xFF211E1B)
  */
 @Composable
 internal fun PlayerSidePanel(visible: Boolean, onDismiss: () -> Unit, tag: String, fromStart: Boolean = false,
-                             dim: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+                             dim: Boolean = true, containerColor: Color = PlayerPanelColor,
+                             contentColor: Color = Color.White, content: @Composable ColumnScope.() -> Unit) {
     BackHandler(enabled = visible, onBack = onDismiss)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val panelWidth = maxOf(maxWidth * .5f, 340.dp).coerceAtMost(maxWidth)
@@ -78,13 +79,13 @@ internal fun PlayerSidePanel(visible: Boolean, onDismiss: () -> Unit, tag: Strin
             Column(Modifier.width(panelWidth).fillMaxHeight().testTag(tag)
                 .clip(if (fromStart) RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp)
                     else RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
-                .background(PlayerPanelColor.copy(alpha = .97f))
+                .background(containerColor.copy(alpha = .97f))
                 // Taps on the panel's own blank space must not reach the dimmed picture behind it.
                 .pointerInput(Unit) { detectTapGestures { } }
                 .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.navigationBars)
                     .only((if (fromStart) WindowInsetsSides.Start else WindowInsetsSides.End) + WindowInsetsSides.Vertical))
                 .padding(start = if (fromStart) 20.dp else 22.dp, end = if (fromStart) 22.dp else 20.dp, top = 22.dp, bottom = 16.dp)) {
-                CompositionLocalProvider(LocalContentColor provides Color.White) { content() }
+                CompositionLocalProvider(LocalContentColor provides contentColor) { content() }
             }
         }
     }

@@ -51,6 +51,12 @@ data class DramaDetail(
     val episodes: List<Episode>,
     /** Empty when the platform returns no cast data; the detail page hides the section then. */
     val cast: List<CastMember> = emptyList(),
+    /** Official heat text from the detail payload, e.g. "红果热度值8480万". */
+    val heatText: String = "",
+    /** Numeric heat, shown when the text is absent. */
+    val hotScore: Long = 0,
+    /** Followers/favorites count from the detail payload. */
+    val favorites: Long = 0,
 )
 
 data class DramaPage(val items: List<DramaCard>, val hasMore: Boolean, val nextOffset: Int)
@@ -161,6 +167,9 @@ class DramaRepository {
             summary = Json.optStr(meta["abstract"], card.summary),
             episodes = episodes,
             cast = cast,
+            heatText = Json.optStr(meta["heat_text"], "").trim(),
+            hotScore = Json.optLong(meta["hot_score"], 0),
+            favorites = Json.optLong(meta["followed_cnt"], 0),
         )
     }
 

@@ -107,6 +107,7 @@ internal fun CinemaDetailScreen(
     var reverseOrder by rememberSaveable(card.id) { mutableStateOf(false) }
     var summaryExpanded by rememberSaveable(card.id) { mutableStateOf(false) }
     var posterPreviewOpen by rememberSaveable(card.id) { mutableStateOf(false) }
+    var reviewsOpen by rememberSaveable(card.id) { mutableStateOf(false) }
     // Adaptive portrait ratio matching the poster's intrinsic ratio (defaults to 3:4 = 0.75f).
     var posterRatio by remember(coverUrl) { mutableFloatStateOf(0.75f) }
 
@@ -116,6 +117,7 @@ internal fun CinemaDetailScreen(
         ?: detail?.episodes?.firstOrNull()?.index
 
     if (isWideLayout()) {
+        Box(Modifier.fillMaxSize()) {
         DetailWidePane(
             state = state,
             model = model,
@@ -136,7 +138,19 @@ internal fun CinemaDetailScreen(
             summaryExpanded = summaryExpanded,
             onToggleSummary = { summaryExpanded = !summaryExpanded },
             onBack = model::closeDetail,
+            onReviews = { reviewsOpen = true },
+            reviewCount = state.reviewCount,
         )
+        if (detail != null) {
+            SeriesReviewsOverlay(
+                seriesId = detail.id,
+                seriesTitle = title,
+                visible = reviewsOpen,
+                onDismiss = { reviewsOpen = false },
+                initialPage = state.reviewFirstPage,
+            )
+        }
+        }
     } else Box(Modifier.fillMaxSize().background(Canvas)) {
         LazyColumn(
             modifier = Modifier
@@ -270,7 +284,7 @@ internal fun CinemaDetailScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -317,6 +331,17 @@ internal fun CinemaDetailScreen(
                             )
                         }
                     }
+
+                    Spacer(Modifier.height(2.dp))
+
+                    SeriesReviewStats(
+                        detail = detail,
+                        reviewCount = state.reviewCount,
+                        onReviews = { reviewsOpen = true },
+                        landscape = false,
+                    )
+
+                    Spacer(Modifier.height(12.dp))
 
                     DetailActions(
                         card = card,
@@ -410,6 +435,16 @@ internal fun CinemaDetailScreen(
 
         // Keep light status-bar icons while the blurred backdrop is visibly behind the transparent bar
         DetailStatusBar(list, 260.dp + statusTop)
+
+        if (detail != null) {
+            SeriesReviewsOverlay(
+                seriesId = detail.id,
+                seriesTitle = title,
+                visible = reviewsOpen,
+                onDismiss = { reviewsOpen = false },
+                initialPage = state.reviewFirstPage,
+            )
+        }
     }
 
     if (posterPreviewOpen && coverUrl.isNotBlank()) {
@@ -651,6 +686,8 @@ private fun DetailWidePane(
     summaryExpanded: Boolean,
     onToggleSummary: () -> Unit,
     onBack: () -> Unit,
+    onReviews: () -> Unit,
+    reviewCount: Int?,
 ) {
     // 左右两栏共用一个顶部留白：0.6 倍状态栏 + 10dp 呼吸间距。
     val topPad = warmStatusBarTop() + 10.dp
@@ -719,6 +756,12 @@ private fun DetailWidePane(
                                     fontWeight = FontWeight.SemiBold)
                             }
                         }
+                        SeriesReviewStats(
+                            detail = detail,
+                            reviewCount = reviewCount,
+                            onReviews = onReviews,
+                            landscape = true,
+                        )
                     }
                 }
                 DetailActions(
