@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -72,6 +73,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -101,7 +103,8 @@ internal fun CinemaDetailScreen(
         // During rotation the new window bounds can arrive before the orientation changes.
         // A portrait-height measurement would clamp both landscape scroll positions.
         val wide = isWideLayout() && maxWidth >= maxHeight
-        CinemaDetailContent(state, model, accountModel, rootTag, wide)
+        val posterWidth = if (wide) (maxHeight * .30f).coerceIn(84.dp, 156.dp) else 156.dp
+        CinemaDetailContent(state, model, accountModel, rootTag, wide, posterWidth)
     }
 }
 
@@ -112,6 +115,7 @@ private fun CinemaDetailContent(
     accountModel: AccountViewModel,
     rootTag: String,
     wide: Boolean,
+    posterWidth: Dp,
 ) {
     val card = state.selectedCard ?: return
     val detail = state.detail
@@ -127,17 +131,16 @@ private fun CinemaDetailContent(
     // Adaptive portrait ratio matching the poster's intrinsic ratio (defaults to 3:4 = 0.75f).
     var posterRatio by remember(coverUrl) { mutableFloatStateOf(0.75f) }
 
-    val list = rememberLazyListState()
+    val portraitList = rememberLazyListState()
+    val wideInfoList = rememberLazyListState()
+    val wideEpisodeList = rememberLazyListState()
+    val infoList = if (wide) wideInfoList else portraitList
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val posterWidth = 156.dp
-    val posterTop = statusTop + 44.dp
+    val posterTop = if (wide) 10.dp else statusTop + 44.dp
     val backdropHeight = posterTop + posterWidth / posterRatio + 12.dp
     val episodeLabel = detail?.episodes?.getOrNull(state.episodePosition)?.index
         ?: detail?.episodes?.firstOrNull()?.index
 
-    val actions: @Composable () -> Unit = {
-        DetailActions(card, detail, favorite, episodeLabel, state.loadingDetail, model, accountModel)
-    }
     val episodes: LazyListScope.() -> Unit = {
         if (detail != null) {
             detailEpisodes(detail, state.episodePosition, range, reverseOrder,
@@ -150,282 +153,258 @@ private fun CinemaDetailContent(
             )
         }
     }
-    val wideInfoScroll = rememberScrollState()
-    val wideEpisodeList = rememberLazyListState()
-    if (wide) {
-        Box(Modifier.fillMaxSize().background(Canvas).testTag(rootTag).statusBarsPadding()) {
-            WarmTwoPane(
-                leftScrollState = wideInfoScroll,
-                left = {
-                    Column(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        DetailWideHeader(coverUrl, title, totalEpisodes, episodeLabel, state) {
-                            posterPreviewOpen = true
-                        }
-                        actions()
-                        if (detail != null && detail.summary.isNotBlank()) {
-                            DetailSummary(detail.summary, summaryExpanded, { summaryExpanded = !summaryExpanded })
-                        }
-                        if (detail != null && detail.cast.isNotEmpty()) CastSection(detail.cast)
-                        if (state.related.isNotEmpty()) {
-                            RelatedWorksSection(state, model, accountModel, horizontalPadding = 0)
-                        }
-                    }
-                },
-                right = {
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        state = wideEpisodeList,
-                        contentPadding = PaddingValues(top = 10.dp, bottom = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        detailLoadState(state, model)
-                        episodes()
-                    }
-                },
-            )
-            IconButton(
-                onClick = model::closeDetail,
-                modifier = Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 12.dp)
-                    .size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .48f)).testTag("detail_back"),
+    val infoPane: @Composable () -> Unit = {
+        Box(Modifier.fillMaxSize().background(Canvas)) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (wide) Modifier else Modifier.testTag(rootTag)),
+                state = infoList,
+                contentPadding = PaddingValues(bottom = 36.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回", tint = Color.White)
-            }
-        }
-    } else Box(Modifier.fillMaxSize().background(Canvas)) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag(rootTag),
-            state = list,
-            contentPadding = PaddingValues(bottom = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            // 1. C1 Hero: Full-bleed blurred ambient backdrop + Centered uncut 3:4 framed poster
-            item(key = "hero") {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    // Ambient blurred backdrop running edge-to-edge under the transparent status bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(backdropHeight)
-                            .clip(RoundedCornerShape(0.dp)),
-                    ) {
-                        val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    scaleX = 1.24f
-                                    scaleY = 1.24f
-                                }
-                                .blur(28.dp)
-                        } else {
-                            Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    scaleX = 1.18f
-                                    scaleY = 1.18f
-                                    alpha = 0.55f
-                                }
-                        }
-                        if (coverUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current).data(coverUrl).crossfade(true).build(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = blurModifier,
-                            )
-                        } else {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .background(Brush.verticalGradient(listOf(Color(0xFF4A251D), Canvas))),
-                            )
-                        }
-                        // Soft ambient vignette & seamless bottom melt into current theme Canvas
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        0.0f to Color.Black.copy(alpha = 0.36f),
-                                        0.48f to Color.Black.copy(alpha = 0.16f),
-                                        1.0f to Canvas,
-                                    ),
-                                ),
-                        )
-                    }
-
-                    // Foreground centered uncut vertical poster card
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = posterTop, bottom = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        val posterShape = RoundedCornerShape(18.dp)
+                // 1. C1 Hero: Full-bleed blurred ambient backdrop + Centered uncut 3:4 framed poster
+                item(key = "hero") {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        // Ambient blurred backdrop running edge-to-edge under the transparent status bar
                         Box(
                             modifier = Modifier
-                                .width(posterWidth)
-                                .aspectRatio(posterRatio)
-                                .shadow(
-                                    elevation = 18.dp,
-                                    shape = posterShape,
-                                    ambientColor = Color.Black.copy(alpha = 0.42f),
-                                    spotColor = Color.Black.copy(alpha = 0.42f),
-                                )
-                                .clip(posterShape)
-                                .background(Color(0xFF1C1715))
-                                .border(1.dp, Color.White.copy(alpha = 0.24f), posterShape)
-                                .testTag("detail_poster")
-                                .clickable(enabled = coverUrl.isNotBlank()) { posterPreviewOpen = true },
-                            contentAlignment = Alignment.Center,
+                                .fillMaxWidth()
+                                .height(backdropHeight)
+                                .clip(RoundedCornerShape(0.dp)),
                         ) {
+                            val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        scaleX = 1.24f
+                                        scaleY = 1.24f
+                                    }
+                                    .blur(28.dp)
+                            } else {
+                                Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        scaleX = 1.18f
+                                        scaleY = 1.18f
+                                        alpha = 0.55f
+                                    }
+                            }
                             if (coverUrl.isNotBlank()) {
                                 AsyncImage(
                                     model = ImageRequest.Builder(LocalContext.current).data(coverUrl).crossfade(true).build(),
-                                    contentDescription = "$title 完整海报",
-                                    contentScale = ContentScale.Fit,
-                                    onSuccess = { result ->
-                                        val w = result.painter.intrinsicSize.width
-                                        val h = result.painter.intrinsicSize.height
-                                        if (w > 0f && h > 0f && w.isFinite() && h.isFinite()) {
-                                            posterRatio = (w / h).coerceIn(0.62f, 0.85f)
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxSize(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = blurModifier,
                                 )
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color.Black.copy(alpha = 0.52f),
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(8.dp),
-                                ) {
-                                    Text(
-                                        text = "看原图",
-                                        color = Color.White.copy(alpha = 0.92f),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                    )
-                                }
                             } else {
-                                Cover("", title, Modifier.fillMaxSize())
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .background(Brush.verticalGradient(listOf(Color(0xFF4A251D), Canvas))),
+                                )
+                            }
+                            // Soft ambient vignette & seamless bottom melt into current theme Canvas
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            0.0f to Color.Black.copy(alpha = 0.36f),
+                                            0.48f to Color.Black.copy(alpha = 0.16f),
+                                            1.0f to Canvas,
+                                        ),
+                                    ),
+                            )
+                        }
+
+                        // Foreground centered uncut vertical poster card
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = posterTop, bottom = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            val posterShape = RoundedCornerShape(18.dp)
+                            Box(
+                                modifier = Modifier
+                                    .width(posterWidth)
+                                    .aspectRatio(posterRatio)
+                                    .shadow(
+                                        elevation = 18.dp,
+                                        shape = posterShape,
+                                        ambientColor = Color.Black.copy(alpha = 0.42f),
+                                        spotColor = Color.Black.copy(alpha = 0.42f),
+                                    )
+                                    .clip(posterShape)
+                                    .background(Color(0xFF1C1715))
+                                    .border(1.dp, Color.White.copy(alpha = 0.24f), posterShape)
+                                    .testTag("detail_poster")
+                                    .clickable(enabled = coverUrl.isNotBlank()) { posterPreviewOpen = true },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (coverUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current).data(coverUrl).crossfade(true).build(),
+                                        contentDescription = "$title 完整海报",
+                                        contentScale = ContentScale.Fit,
+                                        onSuccess = { result ->
+                                            val w = result.painter.intrinsicSize.width
+                                            val h = result.painter.intrinsicSize.height
+                                            if (w > 0f && h > 0f && w.isFinite() && h.isFinite()) {
+                                                posterRatio = (w / h).coerceIn(0.62f, 0.85f)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.52f),
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(8.dp),
+                                    ) {
+                                        Text(
+                                            text = "看原图",
+                                            color = Color.White.copy(alpha = 0.92f),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        )
+                                    }
+                                } else {
+                                    Cover("", title, Modifier.fillMaxSize())
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            // 2. Centered Title, Meta & Action Row cleanly BELOW the poster
-            item(key = "title_and_actions") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+                // 2. Centered Title, Meta & Action Row cleanly BELOW the poster
+                item(key = "title_and_actions") {
                     Column(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(
-                            text = title,
-                            color = Ink,
-                            fontSize = 21.sp,
-                            lineHeight = 29.sp,
-                            fontWeight = FontWeight.Black,
-                            textAlign = TextAlign.Center,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Text(
-                                text = when {
-                                    totalEpisodes > 0 -> "全 $totalEpisodes 集"
-                                    state.loadingDetail -> "正在读取剧集"
-                                    else -> "短剧详情"
-                                },
-                                color = Muted,
-                                fontSize = 12.sp,
+                                text = title,
+                                color = Ink,
+                                fontSize = 21.sp,
+                                lineHeight = 29.sp,
+                                fontWeight = FontWeight.Black,
+                                textAlign = TextAlign.Center,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                            if (episodeLabel != null) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = when {
+                                        totalEpisodes > 0 -> "全 $totalEpisodes 集"
+                                        state.loadingDetail -> "正在读取剧集"
+                                        else -> "短剧详情"
+                                    },
+                                    color = Muted,
+                                    fontSize = 12.sp,
+                                )
+                                if (episodeLabel != null) {
+                                    Text("·", color = Muted, fontSize = 12.sp)
+                                    Text(
+                                        text = "看至第 $episodeLabel 集",
+                                        color = AccentInk,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                                 Text("·", color = Muted, fontSize = 12.sp)
                                 Text(
-                                    text = "看至第 $episodeLabel 集",
-                                    color = AccentInk,
+                                    text = if (state.autoPlayNext) "自动连播" else "单集播放",
+                                    color = Muted,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
                                 )
                             }
-                            Text("·", color = Muted, fontSize = 12.sp)
-                            Text(
-                                text = if (state.autoPlayNext) "自动连播" else "单集播放",
-                                color = Muted,
-                                fontSize = 12.sp,
+                        }
+
+                        DetailActions(card, detail, favorite, episodeLabel, state.loadingDetail, model, accountModel)
+                    }
+                }
+
+                if (!wide) detailLoadState(state, model)
+
+                if (detail != null) {
+                    if (detail.summary.isNotBlank()) {
+                        item(key = "summary") {
+                            DetailSummary(
+                                detail.summary, summaryExpanded, { summaryExpanded = !summaryExpanded },
+                                modifier = Modifier.padding(horizontal = 16.dp),
                             )
                         }
                     }
 
-                    actions()
+                    if (state.related.isNotEmpty()) {
+                        item(key = "related") {
+                            RelatedWorksSection(state, model, accountModel, horizontalPadding = 16)
+                        }
+                    }
+
+                    if (detail.cast.isNotEmpty()) {
+                        item(key = "cast") {
+                            Box(Modifier.padding(horizontal = 16.dp)) {
+                                CastSection(detail.cast)
+                            }
+                        }
+                    }
+
+                    if (!wide) episodes()
                 }
             }
 
-            detailLoadState(state, model)
+            // Pinned frosted back button over the transparent status bar
+            IconButton(
+                onClick = model::closeDetail,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .then(if (wide) Modifier else Modifier.statusBarsPadding())
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.36f))
+                    .testTag("detail_back"),
+            ) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回", tint = Color.White)
+            }
 
-            if (detail != null) {
-                if (detail.summary.isNotBlank()) {
-                    item(key = "summary") {
-                        DetailSummary(
-                            detail.summary, summaryExpanded, { summaryExpanded = !summaryExpanded },
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-                    }
-                }
+            // Keep light status-bar icons while the blurred backdrop is visibly behind the transparent bar
+            if (!wide) DetailStatusBar(infoList, backdropHeight - 48.dp)
+        }
+    }
 
-                if (state.related.isNotEmpty()) {
-                    item(key = "related") {
-                        RelatedWorksSection(state, model, accountModel, horizontalPadding = 16)
-                    }
-                }
-
-                if (detail.cast.isNotEmpty()) {
-                    item(key = "cast") {
-                        Box(Modifier.padding(horizontal = 16.dp)) {
-                            CastSection(detail.cast)
-                        }
-                    }
-                }
-
+    if (wide) {
+        Row(Modifier.fillMaxSize().background(Canvas).testTag(rootTag).statusBarsPadding()) {
+            Box(Modifier.weight(1f).fillMaxHeight()) { infoPane() }
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Muted.copy(alpha = .16f)))
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                state = wideEpisodeList,
+                contentPadding = PaddingValues(top = 10.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                detailLoadState(state, model)
                 episodes()
             }
         }
-
-        // Pinned frosted back button over the transparent status bar
-        IconButton(
-            onClick = model::closeDetail,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(horizontal = 10.dp, vertical = 6.dp)
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.36f))
-                .testTag("detail_back"),
-        ) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回", tint = Color.White)
-        }
-
-        // Keep light status-bar icons while the blurred backdrop is visibly behind the transparent bar
-        DetailStatusBar(list, backdropHeight - 48.dp)
+    } else {
+        infoPane()
     }
 
     if (posterPreviewOpen && coverUrl.isNotBlank()) {
@@ -434,49 +413,6 @@ private fun CinemaDetailContent(
             title = title,
             onDismiss = { posterPreviewOpen = false },
         )
-    }
-}
-
-@Composable
-private fun DetailWideHeader(
-    coverUrl: String,
-    title: String,
-    totalEpisodes: Int,
-    episodeLabel: Int?,
-    state: HongguoUiState,
-    onPreviewPoster: () -> Unit,
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Box(
-            Modifier.width(120.dp).aspectRatio(DramaPosterRatio)
-                .clip(RoundedCornerShape(14.dp)).background(Cream)
-                .testTag("detail_poster").clickable(enabled = coverUrl.isNotBlank(), onClick = onPreviewPoster),
-        ) {
-            if (coverUrl.isNotBlank()) {
-                AsyncImage(
-                    model = coverUrl,
-                    contentDescription = "$title 完整海报",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Cover("", title, Modifier.fillMaxSize())
-            }
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, color = Ink, fontSize = 19.sp, lineHeight = 26.sp, fontWeight = FontWeight.Black,
-                maxLines = 3, overflow = TextOverflow.Ellipsis)
-            val count = when {
-                totalEpisodes > 0 -> "全 $totalEpisodes 集"
-                state.loadingDetail -> "正在读取剧集"
-                else -> "短剧详情"
-            }
-            Text(count, color = Muted, fontSize = 12.sp)
-            if (episodeLabel != null) {
-                Text("看至第 $episodeLabel 集", color = AccentInk, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Text(if (state.autoPlayNext) "自动连播" else "单集播放", color = Muted, fontSize = 12.sp)
-        }
     }
 }
 

@@ -2,7 +2,6 @@
 package com.hongguo.android
 
 import android.content.res.Configuration
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,11 +60,10 @@ internal fun WarmTwoPane(
     left: @Composable ColumnScope.() -> Unit,
     rightScroll: Boolean = false,
     dividerColor: Color = Muted.copy(alpha = .16f),
-    leftScrollState: ScrollState = rememberScrollState(),
     right: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(leftScrollState)) {
+        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
             left()
         }
         Box(Modifier.width(1.dp).fillMaxHeight().background(dividerColor))
