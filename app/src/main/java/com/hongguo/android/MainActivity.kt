@@ -122,10 +122,19 @@ class MainActivity : ComponentActivity() {
                     val floatingNav = showNav && state.navBarStyle == NavBarStyle.GLASS
                     val backdrop = rememberGlassBackdrop()
                     val navClearance = if (floatingNav) floatingNavClearance() else 0.dp
+                    // 横屏把底部 Tab 栏竖到左侧，页面内容只占剩下的宽度；悬浮玻璃栏保持原样不动。
+                    val wide = isWideLayout()
+                    Row(Modifier.fillMaxSize()) {
+                    if (wide && showNav && !floatingNav) {
+                        HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
+                            AppNavigationRail(state.tab, model::selectTab, layout)
+                        }
+                    }
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
                     Scaffold(containerColor = Canvas,
                         snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")
                             .padding(bottom = if (floatingNav) 76.dp else 0.dp)) }, bottomBar = {
-                        if (showNav && !floatingNav) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
+                        if (showNav && !floatingNav && !wide) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
                             AppNavigation(state.tab, model::selectTab, style = layout)
                         }
                     }) { insets ->
@@ -244,6 +253,8 @@ class MainActivity : ComponentActivity() {
                                 style = layout, backdrop = backdrop)
                         }
                         }
+                    }
+                    }
                     }
                 }
                 }

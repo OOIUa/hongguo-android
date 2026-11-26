@@ -70,24 +70,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
         AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE, AppTab.PLAYBACK_SETTINGS, AppTab.ACCOUNT_SETTINGS, AppTab.STORAGE_SETTINGS, AppTab.ABOUT, AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES -> AppTab.MINE
         else -> selected
     }
-    // Same four destinations in every theme; labels, icons and the selection mark differ per layout.
-    val tabs = when (style) {
-        AppThemeStyle.IMMERSIVE -> listOf(
-            AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Filled.Home),
-            AppNavTab(AppTab.CATEGORY, "剧场", Icons.Outlined.LiveTv, Icons.Filled.LiveTv),
-            AppNavTab(AppTab.FAVORITES, "追剧", Icons.Outlined.StarBorder, Icons.Filled.Star),
-            AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Filled.Person))
-        AppThemeStyle.CARDS -> listOf(
-            AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Filled.Home),
-            AppNavTab(AppTab.CATEGORY, "发现", Icons.Outlined.Explore, Icons.Filled.Explore),
-            AppNavTab(AppTab.FAVORITES, "片单", Icons.Outlined.VideoLibrary, Icons.Filled.VideoLibrary),
-            AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Filled.Person))
-        AppThemeStyle.WARM -> listOf(
-            AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Outlined.Home),
-            AppNavTab(AppTab.CATEGORY, "发现", Icons.Outlined.Explore, Icons.Outlined.Explore),
-            AppNavTab(AppTab.FAVORITES, "片单", Icons.Outlined.VideoLibrary, Icons.Outlined.VideoLibrary),
-            AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Outlined.PersonOutline))
-    }
+    val tabs = navTabs(style)
     // 悬浮玻璃 (设置 › 底栏样式): a liquid-glass capsule over the page. The caller passes [backdrop] only when it has
     // laid the page out underneath the capsule; otherwise the themed classic bar below is used.
     if (backdrop != null) {
@@ -179,6 +162,72 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
                             })
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/** Same four destinations in every theme; labels, icons and the selection mark differ per layout. */
+internal fun navTabs(style: AppThemeStyle): List<AppNavTab> = when (style) {
+    AppThemeStyle.IMMERSIVE -> listOf(
+        AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Filled.Home),
+        AppNavTab(AppTab.CATEGORY, "剧场", Icons.Outlined.LiveTv, Icons.Filled.LiveTv),
+        AppNavTab(AppTab.FAVORITES, "追剧", Icons.Outlined.StarBorder, Icons.Filled.Star),
+        AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Filled.Person))
+    AppThemeStyle.CARDS -> listOf(
+        AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Filled.Home),
+        AppNavTab(AppTab.CATEGORY, "发现", Icons.Outlined.Explore, Icons.Filled.Explore),
+        AppNavTab(AppTab.FAVORITES, "片单", Icons.Outlined.VideoLibrary, Icons.Filled.VideoLibrary),
+        AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Filled.Person))
+    AppThemeStyle.WARM -> listOf(
+        AppNavTab(AppTab.HOME, "首页", Icons.Outlined.Home, Icons.Outlined.Home),
+        AppNavTab(AppTab.CATEGORY, "发现", Icons.Outlined.Explore, Icons.Outlined.Explore),
+        AppNavTab(AppTab.FAVORITES, "片单", Icons.Outlined.VideoLibrary, Icons.Outlined.VideoLibrary),
+        AppNavTab(AppTab.MINE, "我的", Icons.Outlined.PersonOutline, Icons.Outlined.PersonOutline))
+}
+
+/**
+ * 横屏把底部 Tab 栏竖到左侧，节省高度；交互与底部栏一致（点选，不含拖动切换）。
+ * 只在 `showNav && !floatingNav` 的宽屏页面出现，其余情况仍走底栏。
+ */
+@Composable
+internal fun AppNavigationRail(selected: AppTab, onSelect: (AppTab) -> Unit, style: AppThemeStyle,
+                               modifier: Modifier = Modifier) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    val tabs = navTabs(style)
+    val active = when (selected) {
+        AppTab.HISTORY -> AppTab.FAVORITES
+        AppTab.ACCOUNT, AppTab.SETTINGS, AppTab.THEME_STYLE, AppTab.PLAYBACK_SETTINGS, AppTab.ACCOUNT_SETTINGS,
+        AppTab.STORAGE_SETTINGS, AppTab.ABOUT, AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES -> AppTab.MINE
+        else -> selected
+    }
+    // 沉浸暗场也有浅色版本，白色未选中项在浅色画布上看不见；两种模式都用随主题变化的次要色。
+    val secondary = Muted
+    Surface(color = if (style == AppThemeStyle.CARDS) CardSurface else Canvas, tonalElevation = 0.dp,
+        shadowElevation = 0.dp, modifier = modifier.fillMaxHeight()) {
+        Column(Modifier.width(84.dp).fillMaxHeight().navigationBarsPadding().padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            tabs.forEach { item ->
+                val tab = item.tab
+                val isSelected = active == tab
+                val color by animateColorAsState(when {
+                    !isSelected -> secondary
+                    style == AppThemeStyle.WARM -> AccentInk
+                    else -> Ink
+                }, tween(180), label = "rail_color_${tab.name}")
+                Column(Modifier.fillMaxWidth().weight(1f).heightIn(min = 56.dp)
+                    .selectable(selected = isSelected, role = Role.Tab, onClick = {
+                        keyboard?.hide()
+                        focus.clearFocus()
+                        onSelect(tab)
+                    }).testTag("nav_rail_${tab.name.lowercase(Locale.ROOT)}").padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Icon(if (isSelected) item.selectedIcon else item.icon, contentDescription = item.label,
+                        tint = color, modifier = Modifier.size(23.dp))
+                    Spacer(Modifier.height(4.dp))
+                    Text(item.label, color = color, fontSize = 11.sp, maxLines = 1)
                 }
             }
         }
