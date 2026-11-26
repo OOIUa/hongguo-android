@@ -73,6 +73,8 @@ import androidx.compose.material.icons.outlined.FastForward
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
@@ -84,6 +86,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -95,6 +98,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -296,19 +300,21 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     // Landscape is full-screen viewing, whether 全屏观看 turned the screen or the user did: a tap shows or hides
     // the controls, and episodes change from the controls, the episode list or autoplay rather than by swiping.
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var lockRequested by rememberSaveable(detail.id, landscape) { mutableStateOf(false) }
+    val touchLocked = landscape && lockRequested
     val pip = rememberPlayerPictureInPicture(enabled = active && activeVideo != null && !sheetOpen,
         playing = playback.isPlaying, videoWidth = playback.videoWidth, videoHeight = playback.videoHeight,
         onTogglePlay = togglePlayback)
     // The small window shows only the picture.
     val inPip = pip.active
-    val chromeHidden = cleanScreen || temporaryDoubleSpeed || inPip
+    val chromeHidden = cleanScreen || temporaryDoubleSpeed || inPip || touchLocked
     BackHandler(enabled = cleanScreen) { cleanScreen = false }
     // Back leaves full screen before it leaves the player; declared later, so it wins while in landscape.
-    BackHandler(enabled = landscape) { activity?.requestPlayerFullScreen(false) }
+    BackHandler(enabled = landscape && !touchLocked) { activity?.requestPlayerFullScreen(false) }
     LaunchedEffect(landscape) { cleanScreen = false }
     // In full screen the controls step aside after a few seconds of playback.
-    LaunchedEffect(landscape, cleanScreen, playback.isPlaying, seeking, sheetOpen) {
-        if (landscape && !cleanScreen && playback.isPlaying && !seeking && !sheetOpen) {
+    LaunchedEffect(landscape, cleanScreen, playback.isPlaying, seeking, sheetOpen, touchLocked) {
+        if (landscape && !touchLocked && !cleanScreen && playback.isPlaying && !seeking && !sheetOpen) {
             delay(FullScreenControlsMillis)
             cleanScreen = true
         }
@@ -402,7 +408,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                     }
                     // A tap shows or hides the controls and a double tap anywhere plays or pauses. The progress moves
                     // only by holding until 2× and then dragging sideways (no side double-tap skips, issue #3).
-                    PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),
+                    if (!touchLocked) PlayerInteractionLayer(modifier = Modifier.fillMaxSize().testTag("player_toggle"),
                         enabled = !sheetOpen && !inPip, onTap = { cleanScreen = !cleanScreen },
                         onDoubleTap = { togglePlayback() },
                         onHoldSpeedChange = { holding ->
@@ -429,14 +435,14 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                         verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(state.playbackError, color = Color.White, fontSize = 14.sp, lineHeight = 23.sp,
                             modifier = Modifier.testTag("media_status"))
-                        Button(onClick = model::retryPlayback, modifier = Modifier.testTag("retry_playback"), shape = RoundedCornerShape(13.dp)) { Text("重新播放") }
+                        if (!touchLocked) Button(onClick = model::retryPlayback, modifier = Modifier.testTag("retry_playback"), shape = RoundedCornerShape(13.dp)) { Text("重新播放") }
                     }
                     state.preparing || (activeVideo != null && playback.player == null) || (playback.isBuffering && playback.playWhenReady) -> {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(13.dp)) {
                             CircularProgressIndicator(Modifier.size(32.dp), color = Color.White, strokeWidth = 2.dp)
                             Text(if (state.preparing) preparationLabel(state.preparationStage) else "正在缓冲", color = Color.White.copy(alpha = .85f), fontSize = 12.sp,
                                 modifier = Modifier.testTag("media_status"))
-                            if (state.preparing) TextButton(onClick = model::closePlayer) { Text("返回详情", color = Color.White.copy(alpha = .75f)) }
+                            if (state.preparing && !touchLocked) TextButton(onClick = model::closePlayer) { Text("返回详情", color = Color.White.copy(alpha = .75f)) }
                         }
                     }
                     playback.player != null && (!playback.playWhenReady || playback.ended) -> {
@@ -469,7 +475,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
             }
         }
 
-        AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.TopCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
+        if (!touchLocked) AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.TopCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
             PlayerTopBar(episodeIndex = visibleEpisode.index, episodeCount = detail.episodes.size,
                 // Full screen hides the status bar; keeping its height there pushed the title down. A bar swiped in
                 // for a moment draws over the top edge instead.
@@ -498,7 +504,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         }
 
         // Keep the middle and subtitle area clear. Controls occupy only the lower edge of the frame.
-        AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.BottomCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
+        if (!touchLocked) AnimatedVisibility(!chromeHidden, Modifier.align(Alignment.BottomCenter), enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .74f))))
             // Full screen lines up with the top bar's edges and keeps clear of a camera cutout at either side.
@@ -610,6 +616,17 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         PlayerSidePanel(visible = landscape && showDanmaku, onDismiss = { showDanmaku = false },
             tag = "player_danmaku_side", dim = false) {
             DanmakuSettingsPanel(state.danmaku, model::setDanmaku)
+        }
+
+        if (active && landscape && !inPip && !sheetOpen) {
+            if (touchLocked) {
+                LockedPlayerOverlay(onUnlock = {
+                    lockRequested = false
+                    cleanScreen = false
+                })
+            } else if (!chromeHidden && !seeking) {
+                PlayerLockButton(locked = false, modifier = Modifier.align(Alignment.CenterStart), onClick = { lockRequested = true })
+            }
         }
     }
 
@@ -830,6 +847,53 @@ private fun applyPlayerSystemBars(controller: WindowInsetsControllerCompat, full
 private fun ComponentActivity.applyPlayerBarStyle() {
     val transparent = android.graphics.Color.TRANSPARENT
     enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(transparent), navigationBarStyle = SystemBarStyle.dark(transparent))
+}
+
+/** While locked, tapping the video or pressing Back reveals the one control that can unlock it. */
+@Composable
+private fun LockedPlayerOverlay(onUnlock: () -> Unit) {
+    var revealCount by remember { mutableIntStateOf(0) }
+    var showUnlock by remember(revealCount) { mutableStateOf(true) }
+    val timeout = LocalAccessibilityManager.current?.calculateRecommendedTimeoutMillis(
+        FullScreenControlsMillis, containsIcons = true, containsText = true, containsControls = true,
+    ) ?: FullScreenControlsMillis
+    LaunchedEffect(revealCount, timeout) {
+        delay(timeout)
+        showUnlock = false
+    }
+    BackHandler { revealCount++ }
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.matchParentSize().testTag("player_locked_surface").clickable(
+            interactionSource = null,
+            indication = null,
+            onClickLabel = "显示解锁按钮",
+            onClick = { revealCount++ },
+        ))
+        if (showUnlock) {
+            PlayerLockButton(locked = true, modifier = Modifier.align(Alignment.CenterStart), onClick = onUnlock)
+        }
+    }
+}
+
+@Composable
+private fun PlayerLockButton(locked: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val label = if (locked) "解锁" else "锁屏"
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal))
+            .padding(start = 12.dp)
+            .testTag(if (locked) "player_touch_unlock" else "player_touch_lock"),
+        color = Color.Black.copy(alpha = .54f),
+        contentColor = Color.White,
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Column(Modifier.size(width = 48.dp, height = 54.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center) {
+            Icon(if (locked) Icons.Rounded.Lock else Icons.Rounded.LockOpen, null, Modifier.size(21.dp))
+            Text(label, fontSize = 12.sp)
+        }
+    }
 }
 
 private const val EpisodeSlideMillis = 320
