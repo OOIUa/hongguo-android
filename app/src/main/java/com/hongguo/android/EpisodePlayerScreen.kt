@@ -307,15 +307,18 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         onTogglePlay = togglePlayback)
     // The small window shows only the picture.
     val inPip = pip.active
+    val controlsTimeout = LocalAccessibilityManager.current?.calculateRecommendedTimeoutMillis(
+        FullScreenControlsMillis, containsIcons = true, containsText = true, containsControls = true,
+    ) ?: FullScreenControlsMillis
     val chromeHidden = cleanScreen || temporaryDoubleSpeed || inPip || touchLocked
     BackHandler(enabled = cleanScreen) { cleanScreen = false }
     // Back leaves full screen before it leaves the player; declared later, so it wins while in landscape.
     BackHandler(enabled = landscape && !touchLocked) { activity?.requestPlayerFullScreen(false) }
     LaunchedEffect(landscape) { cleanScreen = false }
     // In full screen the controls step aside after a few seconds of playback.
-    LaunchedEffect(landscape, cleanScreen, playback.isPlaying, seeking, sheetOpen, touchLocked) {
+    LaunchedEffect(landscape, cleanScreen, playback.isPlaying, seeking, sheetOpen, touchLocked, controlsTimeout) {
         if (landscape && !touchLocked && !cleanScreen && playback.isPlaying && !seeking && !sheetOpen) {
-            delay(FullScreenControlsMillis)
+            delay(controlsTimeout)
             cleanScreen = true
         }
     }
@@ -620,7 +623,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
 
         if (active && landscape && !inPip && !sheetOpen) {
             if (touchLocked) {
-                LockedPlayerOverlay(onUnlock = {
+                LockedPlayerOverlay(controlsTimeout, onUnlock = {
                     lockRequested = false
                     cleanScreen = false
                 })
@@ -851,12 +854,9 @@ private fun ComponentActivity.applyPlayerBarStyle() {
 
 /** While locked, tapping the video or pressing Back reveals the one control that can unlock it. */
 @Composable
-private fun LockedPlayerOverlay(onUnlock: () -> Unit) {
+private fun LockedPlayerOverlay(timeout: Long, onUnlock: () -> Unit) {
     var revealCount by remember { mutableIntStateOf(0) }
     var showUnlock by remember(revealCount) { mutableStateOf(true) }
-    val timeout = LocalAccessibilityManager.current?.calculateRecommendedTimeoutMillis(
-        FullScreenControlsMillis, containsIcons = true, containsText = true, containsControls = true,
-    ) ?: FullScreenControlsMillis
     LaunchedEffect(revealCount, timeout) {
         delay(timeout)
         showUnlock = false
