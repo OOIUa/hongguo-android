@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -108,14 +109,7 @@ internal fun MyScreen(
     val openLocalFavorites = { model.selectTab(AppTab.LOCAL_FAVORITES) }
 
     val navClearance = LocalNavClearance.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("my_screen")
-            .verticalScroll(rememberScrollState())
-            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp + navClearance),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    val accountCard: @Composable () -> Unit = {
         RefinedAccountCard(
             accountName = accountName,
             accountStatus = accountStatus,
@@ -124,6 +118,8 @@ internal fun MyScreen(
             onAccount = { onOpenAccountSection(AccountSection.FAVORITES) },
             onOpenAccountSection = onOpenAccountSection,
         )
+    }
+    val bento: @Composable () -> Unit = {
         MyBentoSection(
             latest = state.history.firstOrNull(),
             favoriteCount = state.favorites.size,
@@ -134,13 +130,60 @@ internal fun MyScreen(
             onFavorites = openLocalFavorites,
             onHistory = model::openPlayHistory,
         )
+    }
+    val menu: @Composable (Modifier) -> Unit = { menuModifier ->
         MyMainMenuCard(
             themeLabel = state.themeStyle.label,
             updateState = updateState,
             onSettings = openSettings,
             onAbout = openAbout,
             onQuickUpdate = updateModel::checkForUpdates,
+            modifier = menuModifier,
         )
+    }
+
+    // 横屏：账号卡与快捷数据在左，设置菜单在右；竖屏仍是原来的一整列。
+    if (isWideLayout()) {
+        val density = LocalDensity.current
+        // 右栏只有一张菜单卡，跟左栏的账号卡保持同高。
+        var accountCardHeight by remember { mutableStateOf(0.dp) }
+        Box(Modifier.fillMaxSize().testTag("my_screen")) {
+        WarmTwoPane(
+            left = {
+                Column(
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Box(Modifier.onSizeChanged { accountCardHeight = with(density) { it.height.toDp() } }) {
+                        accountCard()
+                    }
+                    bento()
+                }
+            },
+            rightScroll = true,
+            right = {
+                Column(
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp + navClearance),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    menu(if (accountCardHeight > 0.dp) Modifier.heightIn(min = accountCardHeight) else Modifier)
+                }
+            },
+        )
+        }
+    } else {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("my_screen")
+            .verticalScroll(rememberScrollState())
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp + navClearance),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        accountCard()
+        bento()
+        menu(Modifier)
+    }
     }
 }
 
@@ -428,13 +471,14 @@ private fun MyMainMenuCard(
     onSettings: () -> Unit,
     onAbout: () -> Unit,
     onQuickUpdate: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(22.dp)
     val update = updateState.update
     Surface(
         shape = shape,
         color = CardSurface,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .border(1.dp, Line, shape),
     ) {
