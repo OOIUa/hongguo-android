@@ -54,7 +54,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -134,47 +133,48 @@ internal fun CinemaDetailScreen(
             )
         }
     }
-    val wideState = rememberSaveableStateHolder()
+    val wideInfoScroll = rememberScrollState()
+    val wideEpisodeList = rememberLazyListState()
     if (isWideLayout()) {
-        wideState.SaveableStateProvider(card.id) {
-            Box(Modifier.fillMaxSize().background(Canvas).testTag(rootTag).statusBarsPadding()) {
-                WarmTwoPane(
-                    left = {
-                        Column(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            DetailWideHeader(coverUrl, title, totalEpisodes, episodeLabel, state) {
-                                posterPreviewOpen = true
-                            }
-                            actions()
-                            if (detail != null && detail.summary.isNotBlank()) {
-                                DetailSummary(detail.summary, summaryExpanded, { summaryExpanded = !summaryExpanded })
-                            }
-                            if (detail != null && detail.cast.isNotEmpty()) CastSection(detail.cast)
-                            if (state.related.isNotEmpty()) {
-                                RelatedWorksSection(state, model, accountModel, horizontalPadding = 0)
-                            }
+        Box(Modifier.fillMaxSize().background(Canvas).testTag(rootTag).statusBarsPadding()) {
+            WarmTwoPane(
+                leftScrollState = wideInfoScroll,
+                left = {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        DetailWideHeader(coverUrl, title, totalEpisodes, episodeLabel, state) {
+                            posterPreviewOpen = true
                         }
-                    },
-                    right = {
-                        LazyColumn(
-                            Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(top = 10.dp, bottom = 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            detailLoadState(state, model)
-                            episodes()
+                        actions()
+                        if (detail != null && detail.summary.isNotBlank()) {
+                            DetailSummary(detail.summary, summaryExpanded, { summaryExpanded = !summaryExpanded })
                         }
-                    },
-                )
-                IconButton(
-                    onClick = model::closeDetail,
-                    modifier = Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 12.dp)
-                        .size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .48f)).testTag("detail_back"),
-                ) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回", tint = Color.White)
-                }
+                        if (detail != null && detail.cast.isNotEmpty()) CastSection(detail.cast)
+                        if (state.related.isNotEmpty()) {
+                            RelatedWorksSection(state, model, accountModel, horizontalPadding = 0)
+                        }
+                    }
+                },
+                right = {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        state = wideEpisodeList,
+                        contentPadding = PaddingValues(top = 10.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        detailLoadState(state, model)
+                        episodes()
+                    }
+                },
+            )
+            IconButton(
+                onClick = model::closeDetail,
+                modifier = Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 12.dp)
+                    .size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .48f)).testTag("detail_back"),
+            ) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回", tint = Color.White)
             }
         }
     } else Box(Modifier.fillMaxSize().background(Canvas)) {
