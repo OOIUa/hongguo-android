@@ -74,11 +74,13 @@ internal fun formatAccountSyncTime(epochMs: Long): String {
 
 /**
  * 软件设置 › 账号设置:
- * 账号状态概览、同步此后观看进度开关、待上报进度与手动刷新、云片单入口及退出账号管理。
+ * 账号状态概览、同步此后观看进度开关、待上报进度与手动刷新、账号主页入口及退出账号管理。
  */
 @Composable
 internal fun AccountSettingsScreen(
     accountModel: AccountViewModel,
+    historyCount: Int,
+    onOpenHistory: () -> Unit,
     onOpenAccount: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -179,6 +181,8 @@ internal fun AccountSettingsScreen(
         // 1. Account Identity & Status Card
         AccountSettingsIdentityCard(
             state = state,
+            historyCount = historyCount,
+            onOpenHistory = onOpenHistory,
             signedIn = signedIn,
             onOpenAccount = onOpenAccount,
             onOpenSection = { section ->
@@ -337,7 +341,7 @@ internal fun AccountSettingsScreen(
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(
-                            text = if (sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION) "重新验证并刷新账号" else "立即刷新云端片单",
+                            text = if (sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION) "重新验证并刷新账号" else "刷新账号数据",
                             color = if (canRefresh || state.busy) Ink else Ink.copy(alpha = 0.55f),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -345,9 +349,9 @@ internal fun AccountSettingsScreen(
                         Text(
                             text = when {
                                 state.busy -> "正在与红果云端同步数据…"
-                                signedIn -> "手动拉取最新云端历史、收藏、点赞与预约"
-                                sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION -> "恢复网络后重新验证登录态并刷新片单"
-                                else -> "登录红果账号后可手动刷新云端片单"
+                                signedIn -> "更新观看历史、收藏、点赞和预约"
+                                sessionStatus == AccountSessionStatus.NEEDS_VERIFICATION -> "恢复网络后可重新验证账号并刷新数据"
+                                else -> "登录红果账号后可手动刷新"
                             },
                             color = Muted,
                             fontSize = 12.sp,
@@ -400,13 +404,13 @@ internal fun AccountSettingsScreen(
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(
-                            text = if (signedIn) "查看云片单与账号主页" else "登录与连接方式",
+                            text = if (signedIn) "我的账号" else "登录与连接方式",
                             color = Ink,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = if (signedIn) "管理云端历史、收藏、点赞与预约作品" else "支持手机验证码、官网登录、扫码与导入登录态",
+                            text = if (signedIn) "查看账号的收藏、点赞和预约" else "支持手机验证码和扫码登录",
                             color = Muted,
                             fontSize = 12.sp,
                             maxLines = 1,
@@ -486,7 +490,7 @@ internal fun AccountSettingsScreen(
                     tint = StatusOk,
                 )
                 Text(
-                    text = "本机收藏与观看记录同账号云片单相互独立；账号凭据仅加密保存在当前设备。开启观看进度同步后，只会上报此后实际播放的进度，不会上传本机旧记录。",
+                    text = "观看历史会合并本机记录和当前账号记录。开启同步后，只上传此后的观看进度。账号凭据加密保存在本机。",
                     color = Muted,
                     fontSize = 12.sp,
                     lineHeight = 19.sp,
@@ -519,6 +523,8 @@ internal fun AccountSettingsScreen(
 @Composable
 private fun AccountSettingsIdentityCard(
     state: AccountState,
+    historyCount: Int,
+    onOpenHistory: () -> Unit,
     signedIn: Boolean,
     onOpenAccount: () -> Unit,
     onOpenSection: (AccountSection) -> Unit,
@@ -536,11 +542,11 @@ private fun AccountSettingsIdentityCard(
         AccountSessionStatus.SIGNED_OUT -> "未登录红果账号"
     }
     val statusSubtitle = when (status) {
-        AccountSessionStatus.LOGGED_IN -> "红果号 ${state.profile?.id.orEmpty()} · 云片单已连通"
+        AccountSessionStatus.LOGGED_IN -> "红果号 ${state.profile?.id.orEmpty()} · 账号已连接"
         AccountSessionStatus.WEBSITE_ONLY -> "官网已登录，手机云账号待连接"
         AccountSessionStatus.NEEDS_VERIFICATION -> "登录态需要重新验证后继续同步"
         AccountSessionStatus.RESTORING -> "正在读取本机加密登录态…"
-        AccountSessionStatus.SIGNED_OUT -> "登录后可查看云片单并开启进度同步"
+        AccountSessionStatus.SIGNED_OUT -> "登录后可查看账号收藏并开启进度同步"
     }
     val dotColor = when (status) {
         AccountSessionStatus.LOGGED_IN -> StatusOk
@@ -614,7 +620,7 @@ private fun AccountSettingsIdentityCard(
                 ) {
                     Text(
                         text = when (status) {
-                            AccountSessionStatus.LOGGED_IN -> "云片单"
+                            AccountSessionStatus.LOGGED_IN -> "我的账号"
                             AccountSessionStatus.SIGNED_OUT -> "去登录"
                             else -> "管理"
                         },
@@ -637,10 +643,10 @@ private fun AccountSettingsIdentityCard(
                         .padding(horizontal = 8.dp, vertical = 11.dp),
                 ) {
                     AccountQuickStat(
-                        value = state.history.size.toString(),
-                        label = "云历史",
+                        value = historyCount.toString(),
+                        label = "观看历史",
                         modifier = Modifier.weight(1f),
-                        onClick = { onOpenSection(AccountSection.HISTORY) },
+                        onClick = onOpenHistory,
                     )
                     AccountQuickStat(
                         value = state.favorites.size.toString(),

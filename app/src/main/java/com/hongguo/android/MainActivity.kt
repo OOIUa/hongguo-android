@@ -68,19 +68,23 @@ class MainActivity : ComponentActivity() {
             val dark = resolveDark(state.themeMode, layout, isSystemInDarkTheme())
             // 沉浸暗场's video feed stays dark in every mode, with its status bar and bottom bar.
             val feedDark = layout == AppThemeStyle.IMMERSIVE && state.tab == AppTab.HOME && state.selectedCard == null
-            // A detail page's blurred header runs behind the transparent status bar in every theme.
+            // A detail page's blurred header and the account page's cinema hero run behind the transparent status bar.
             var detailPictureUnderBar by remember(state.selectedCard?.id) { mutableStateOf(true) }
-            val statusBarOverPicture = state.selectedCard != null && detailPictureUnderBar
+            var accountHeroUnderBar by remember(state.tab, state.accountPageVisit) { mutableStateOf(true) }
+            val statusBarOverPicture = (state.selectedCard != null && detailPictureUnderBar) ||
+                (state.selectedCard == null && state.tab == AppTab.ACCOUNT && accountHeroUnderBar)
             // The player owns the system bars while open; the theme re-applies them when it closes.
             HongguoTheme(layout, dark = dark, windowDark = dark || feedDark, statusBarOverPicture = statusBarOverPicture, applyToWindow = !state.playerOpen) {
-                CompositionLocalProvider(LocalDetailPictureUnderBar provides { detailPictureUnderBar = it }) {
+                CompositionLocalProvider(
+                    LocalDetailPictureUnderBar provides { detailPictureUnderBar = it },
+                    LocalAccountHeroUnderBar provides { accountHeroUnderBar = it },
+                ) {
                 val pageStates = rememberSaveableStateHolder()
                 val accountModel: AccountViewModel = viewModel()
                 val accountState by accountModel.state.collectAsStateWithLifecycle()
                 val updateModel: UpdateViewModel = viewModel()
                 val updateState by updateModel.state.collectAsStateWithLifecycle()
                 val signedIn = accountState.sessionStatus == AccountSessionStatus.LOGGED_IN
-                LaunchedEffect(signedIn) { model.onAccountSession(signedIn) }
                 BackHandler(enabled = state.playerOpen || state.selectedCard != null || state.tab != AppTab.HOME) {
                     when {
                         state.playerOpen -> model.closePlayer()
@@ -193,17 +197,18 @@ class MainActivity : ComponentActivity() {
                                         accountState.websiteProfile?.avatarUrl else accountState.profile?.avatarUrl,
                                     accountStatus = when (accountState.sessionStatus) {
                                         AccountSessionStatus.WEBSITE_ONLY -> "官网已登录，手机云账号未接通"
-                                        AccountSessionStatus.LOGGED_IN -> if (accountState.syncEnabled) "进度同步已开启 · 云片单已连通"
-                                            else "云片单已连通 · 进度同步已关闭"
+                                        AccountSessionStatus.LOGGED_IN -> if (accountState.syncEnabled) "观看进度同步已开启" else "观看进度同步已关闭"
                                         AccountSessionStatus.NEEDS_VERIFICATION -> "已保存账号，等待重新验证"
-                                        else -> "登录后同步收藏、历史与预约"
+                                        else -> "登录后查看收藏、历史与预约"
                                     },
                                     accountSignedIn = signedIn,
-                                    cloudLibraryCount = if (signedIn) accountState.favorites.size else null,
-                                    cloudReservationCount = if (signedIn) accountState.reservations.size else null)
-                                AppTab.ACCOUNT -> AccountScreen(accountModel, onBack = model::closeAccount,
+                                    onOpenAccountSection = model::openAccountSection)
+                                AppTab.ACCOUNT -> AccountScreen(accountModel, onBack = model::closeAccount, accountPageVisit = state.accountPageVisit,
+                                    onOpenHistory = model::openPlayHistory,
                                     onOpenLibrary = model::openLibrary,
-                                    onAccountSettings = { model.selectTab(AppTab.ACCOUNT_SETTINGS) })
+                                    onAccountSettings = { model.selectTab(AppTab.ACCOUNT_SETTINGS) },
+                                    latestHistory = state.history.firstOrNull(),
+                                    historyCount = state.history.size)
                                 AppTab.SETTINGS -> SystemSettingsScreen(tabState,
                                     accountState = accountState,
                                     onAppearance = { model.selectTab(AppTab.THEME_STYLE) },
@@ -214,11 +219,12 @@ class MainActivity : ComponentActivity() {
                                 AppTab.THEME_STYLE -> ThemeStyleScreen(tabState, model, model::closeThemeStyle)
                                 AppTab.PLAYBACK_SETTINGS -> PlaybackSettingsScreen(tabState, model, model::closePlaybackSettings)
                                 AppTab.ACCOUNT_SETTINGS -> AccountSettingsScreen(accountModel,
+                                    historyCount = state.history.size, onOpenHistory = model::openPlayHistory,
                                     onOpenAccount = { model.selectTab(AppTab.ACCOUNT) },
                                     onBack = model::closeAccountSettings)
                                 AppTab.STORAGE_SETTINGS -> StorageSettingsScreen(updateState, updateModel, model::closeStorageSettings)
                                 AppTab.ABOUT -> AboutSoftwareScreen(updateState, updateModel, model::closeAbout)
-                                AppTab.PLAY_HISTORY -> PlayHistoryScreen(tabState, model, accountModel)
+                                AppTab.PLAY_HISTORY -> PlayHistoryScreen(tabState, model)
                                 AppTab.LOCAL_FAVORITES -> LocalFavoritesScreen(tabState, model)
                             }
                             }
@@ -313,9 +319,10 @@ private fun AnimatedContentTransitionScope<String>.pageTransition(from: String, 
     }
 }
 
-/** Pages whose own picture fills the area behind the status bar (they pad their top controls themselves). */
+/** Pages whose own picture or hero fills the area behind the status bar (they pad their top controls themselves). */
 private fun drawsUnderStatusBar(key: String, layout: AppThemeStyle): Boolean =
-    key.startsWith("detail_") || (layout == AppThemeStyle.IMMERSIVE && key == "tab_${AppTab.HOME.name}")
+    key.startsWith("detail_") || key == "tab_${AppTab.ACCOUNT.name}" ||
+        (layout == AppThemeStyle.IMMERSIVE && key == "tab_${AppTab.HOME.name}")
 
 /** False while a page is animating out, so its back handlers and taps stand down. */
 internal val LocalPageActive = compositionLocalOf { true }

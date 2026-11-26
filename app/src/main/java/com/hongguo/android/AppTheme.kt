@@ -44,10 +44,10 @@ import androidx.core.graphics.drawable.toDrawable
 enum class AppThemeStyle(val key: String, val label: String, val summary: String) {
     WARM("warm", "暖白精修", "温暖留白的经典布局：推荐位、继续观看横滑和三列封面，适合日常找剧。"),
     IMMERSIVE("immersive", "沉浸暗场", "竖屏沉浸布局：首页上下滑动刷剧，剧场看榜单，追剧页接着看。"),
-    CARDS("cards", "内容卡片", "卡片式布局：频道切换、热度榜和双列瀑布流，信息更紧凑。");
+    CARDS("cards", "内容卡片", "切换推荐、新剧和漫剧频道，用双列卡片浏览剧集。");
 
     companion object {
-        fun fromKey(key: String?): AppThemeStyle = entries.firstOrNull { it.key == key } ?: WARM
+        fun fromKey(key: String?): AppThemeStyle = entries.firstOrNull { it.key == key } ?: IMMERSIVE
     }
 }
 
@@ -62,8 +62,8 @@ enum class ThemeMode(val key: String, val label: String) {
     }
 }
 
-/** The mode in effect: without a choice 沉浸暗场 is dark and the other layouts are light. */
-internal fun ThemeMode?.orDefaultFor(style: AppThemeStyle): ThemeMode = this ?: if (style == AppThemeStyle.IMMERSIVE) ThemeMode.DARK else ThemeMode.LIGHT
+/** The mode in effect: without an explicit choice, follow the system light/dark setting. */
+internal fun ThemeMode?.orDefaultFor(style: AppThemeStyle): ThemeMode = this ?: ThemeMode.SYSTEM
 
 internal fun resolveDark(mode: ThemeMode?, style: AppThemeStyle, systemDark: Boolean): Boolean = when (mode.orDefaultFor(style)) {
     ThemeMode.SYSTEM -> systemDark
@@ -123,6 +123,9 @@ internal data class HongguoPalette(
     val accountCardEnd: Color,
     val accountCardBorder: Color,
     val accountCardGlow: Color,
+    val accountHeroStart: Color,
+    val accountHeroEnd: Color,
+    val accountHeroGlow: Color,
     val statusOk: Color,
     val statusOkSoft: Color,
     val statusWarn: Color,
@@ -141,6 +144,7 @@ internal val WarmPalette = HongguoPalette(
     noticeBackground = Color(0xFFFFEFE7), noticeText = Color(0xFF96492F),
     accountCardStart = Color(0xFFFFFFFF), accountCardEnd = Color(0xFFFAF2EA),
     accountCardBorder = Color(0xFFE9DDD3), accountCardGlow = Color(0x17C94426),
+    accountHeroStart = Color(0xFFB9371E), accountHeroEnd = Color(0xFF8D2616), accountHeroGlow = Color(0x47FFD6B2),
     statusOk = Color(0xFF1E8E5A), statusOkSoft = Color(0xFFE6F6EE),
     statusWarn = Color(0xFFC77700), statusWarnSoft = Color(0xFFFFF4E0),
     statusBlue = Color(0xFF2F6FD6), statusBlueSoft = Color(0xFFEAF1FD),
@@ -156,6 +160,7 @@ internal val WarmDarkPalette = HongguoPalette(
     noticeBackground = Color(0xFF33221B), noticeText = Color(0xFFFFB8A0),
     accountCardStart = Color(0xFF2B231E), accountCardEnd = Color(0xFF221C18),
     accountCardBorder = Color(0xFF3F342D), accountCardGlow = Color(0x1CFF9B7A),
+    accountHeroStart = Color(0xFF5B2317), accountHeroEnd = Color(0xFF331712), accountHeroGlow = Color(0x3DFF9B7A),
     statusOk = Color(0xFF4FD18B), statusOkSoft = Color(0xFF1B3326),
     statusWarn = Color(0xFFF6B94E), statusWarnSoft = Color(0xFF362A16),
     statusBlue = Color(0xFF74A8FF), statusBlueSoft = Color(0xFF1C293D),
@@ -171,6 +176,7 @@ internal val ImmersiveLightPalette = HongguoPalette(
     noticeBackground = Color(0xFFFDEDE9), noticeText = Color(0xFF9A2E1E),
     accountCardStart = Color(0xFFFFFFFF), accountCardEnd = Color(0xFFF4F4F8),
     accountCardBorder = Color(0xFFE2E2E9), accountCardGlow = Color(0x14D63A24),
+    accountHeroStart = Color(0xFFB82F1B), accountHeroEnd = Color(0xFF7A1D12), accountHeroGlow = Color(0x42FFCDB4),
     statusOk = Color(0xFF1E8E5A), statusOkSoft = Color(0xFFE6F6EE),
     statusWarn = Color(0xFFC77700), statusWarnSoft = Color(0xFFFFF4E0),
     statusBlue = Color(0xFF2F6FD6), statusBlueSoft = Color(0xFFEAF1FD),
@@ -186,6 +192,7 @@ internal val CardsDarkPalette = HongguoPalette(
     noticeBackground = Color(0xFF2C1A18), noticeText = Color(0xFFFFB4AB),
     accountCardStart = Color(0xFF212329), accountCardEnd = Color(0xFF18191E),
     accountCardBorder = Color(0xFF30333B), accountCardGlow = Color(0x21D42E24),
+    accountHeroStart = Color(0xFF541A18), accountHeroEnd = Color(0xFF211214), accountHeroGlow = Color(0x3DFF8A80),
     statusOk = Color(0xFF4FD18B), statusOkSoft = Color(0xFF183124),
     statusWarn = Color(0xFFF6B94E), statusWarnSoft = Color(0xFF332714),
     statusBlue = Color(0xFF76A9FF), statusBlueSoft = Color(0xFF1B273B),
@@ -201,6 +208,7 @@ internal val ImmersivePalette = HongguoPalette(
     noticeBackground = Color(0xFF2A1A16), noticeText = Color(0xFFFFB4A2),
     accountCardStart = Color(0xFF212128), accountCardEnd = Color(0xFF17171C),
     accountCardBorder = Color(0xFF31313A), accountCardGlow = Color(0x24D63A24),
+    accountHeroStart = Color(0xFF541D15), accountHeroEnd = Color(0xFF221213), accountHeroGlow = Color(0x3DFF8B74),
     statusOk = Color(0xFF4FD18B), statusOkSoft = Color(0xFF173024),
     statusWarn = Color(0xFFF6B94E), statusWarnSoft = Color(0xFF332714),
     statusBlue = Color(0xFF76A9FF), statusBlueSoft = Color(0xFF1A263C),
@@ -216,6 +224,7 @@ internal val CardsPalette = HongguoPalette(
     noticeBackground = Color(0xFFFDEDEB), noticeText = Color(0xFF9A2A21),
     accountCardStart = Color(0xFFFFFFFF), accountCardEnd = Color(0xFFF5F6F8),
     accountCardBorder = Color(0xFFE0E3E8), accountCardGlow = Color(0x12D42E24),
+    accountHeroStart = Color(0xFFB6261D), accountHeroEnd = Color(0xFF7E1A15), accountHeroGlow = Color(0x42FFC8C0),
     statusOk = Color(0xFF1E8E5A), statusOkSoft = Color(0xFFE6F6EE),
     statusWarn = Color(0xFFC77700), statusWarnSoft = Color(0xFFFFF4E0),
     statusBlue = Color(0xFF2F6FD6), statusBlueSoft = Color(0xFFEAF1FD),
@@ -251,6 +260,9 @@ internal val AccountCardStart: Color @Composable @ReadOnlyComposable get() = Loc
 internal val AccountCardEnd: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountCardEnd
 internal val AccountCardBorder: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountCardBorder
 internal val AccountCardGlow: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountCardGlow
+internal val AccountHeroStart: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountHeroStart
+internal val AccountHeroEnd: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountHeroEnd
+internal val AccountHeroGlow: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.accountHeroGlow
 internal val StatusOk: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusOk
 internal val StatusOkSoft: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusOkSoft
 internal val StatusWarn: Color @Composable @ReadOnlyComposable get() = LocalHongguoPalette.current.statusWarn

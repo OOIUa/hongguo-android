@@ -73,14 +73,14 @@ class WebLogin internal constructor(http: OkHttpClient, private val base: HttpUr
         if (reply.optString("message") != "success") {
             val code = data.optInt("error_code", -1)
             val needsWebsite = data.has("verify_center_decision_conf") || code == 1105
-            val message = if (data.has("verify_center_decision_conf")) "红果要求完成滑块验证，请到官网登录页面完成"
+            val message = if (data.has("verify_center_decision_conf")) "红果要求完成滑块验证，本次登录未完成"
                 else when (code) {
                     13, 1003 -> "登录会话已失效，请重新扫码或重新获取验证码"
                     1102 -> "验证码有误，请检查后重新输入"
                     1103, 1104 -> "验证码已失效，请重新获取后再试"
-                    1105 -> "红果要求额外验证，请到官网登录页面完成"
+                    1105 -> "红果要求额外验证，本次登录未完成"
                     1106, 1107 -> "请求过于频繁，请稍后再试"
-                    else -> "官网登录失败，请稍后重试"
+                    else -> "登录失败，请稍后重试"
                 }
             throw PhoneLogin.Failure("$message（错误码 $code）", code, code == 1102 && !needsWebsite, needsWebsite)
         }

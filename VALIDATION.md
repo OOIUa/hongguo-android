@@ -1,3 +1,12 @@
+# 0.8.1 / versionCode 47（2026-11-26）
+
+本版包含官方弹幕增强（PR #16）、「我的账号」影院氛围通栏重构与登录精简、统一追剧与观看历史体验（含完播续看状态与账号隔离）、全站 7:10 完整海报，以及默认「沉浸暗场」主题与「跟随系统」明暗外观。TV 模块不在本次发布范围内。
+
+- `:app:assembleDebug`、`:app:testDebugUnitTest`、`:app:lintDebug` 全部通过：501 项 JVM 测试 0 失败，Android Lint 0 个错误、42 个警告和 1 项提示。
+- 应用 APK 为 26,708,613 字节，SHA-256 为 `bbdcded4fc343b43cea2750fb2c16099030ae7aa0843feabf6960b306902f287`。`aapt` 核对包名 `com.hongguo.android`、versionCode 47、versionName 0.8.1、minSdk 26；`apksigner` 证书 SHA-256 与 `release-signing.sha256` 一致。
+- Android API 37 arm64 模拟器安装 0.8.1 实测：`AccountUiFlowTest`、`ThemeOnboardingFlowTest`、`ThemeSettingsFlowTest`、`NavigationFlowTest`、`MyPageFlowTest`（10/10）及独立进程 `AccountWebsiteSessionDeviceTest`（1/1）全部通过；实机截图确认首次启动默认选中「沉浸暗场」并自适应系统浅色、账号登录页仅保留 Logo 与「登录红果账号」及手机验证码 / 扫码双登录方式。
+- 未连接实体手机；本轮未做个人账号真实登录与云端同步验收。
+
 # 0.8.0 / versionCode 46（2026-11-24）
 
 本版包含 PR #19 的 App 级片源恢复，以及「我的 / 软件设置 / 账号设置 / 存储设置 / 关于软件」、底部抽屉在线更新弹窗、详情页完整竖版海报、追剧页海报墙重构和 2.5× / 3× 倍速。TV 模块不在本次发布范围内。

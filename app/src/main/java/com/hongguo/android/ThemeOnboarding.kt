@@ -1,5 +1,6 @@
 package com.hongguo.android
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,9 +47,10 @@ internal fun themeAppliedMessage(style: AppThemeStyle, chosen: Boolean): String 
 @Composable
 internal fun ThemeOnboardingDialog(current: AppThemeStyle, onConfirm: (AppThemeStyle) -> Unit, onSkip: () -> Unit) {
     var pending by rememberSaveable { mutableStateOf(current) }
+    val systemDark = isSystemInDarkTheme()
     Dialog(onDismissRequest = onSkip,
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, dismissOnBackPress = true)) {
-        HongguoTheme(pending, applyToWindow = false) {
+        HongguoTheme(pending, dark = systemDark, applyToWindow = false) {
             Surface(shape = RoundedCornerShape(24.dp), color = Canvas,
                 modifier = Modifier.padding(16.dp).widthIn(max = 440.dp).fillMaxWidth().testTag("theme_onboarding")) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 20.dp),

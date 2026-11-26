@@ -169,12 +169,21 @@ internal fun DramaResult(card: DramaCard, index: Int, tag: String = "result_$ind
     }
 }
 
+internal const val DramaPosterRatio = 7f / 10f
+
+@Composable
+internal fun PosterImage(url: String, modifier: Modifier) {
+    if (url.isNotBlank()) {
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(),
+            contentDescription = null, modifier = modifier, contentScale = ContentScale.Fit)
+    }
+}
+
 @Composable
 internal fun Cover(url: String, title: String, modifier: Modifier) {
     Box(modifier.clip(RoundedCornerShape(12.dp)).background(Cream), Alignment.Center) {
         Icon(Icons.Outlined.Movie, null, tint = Muted.copy(alpha = .45f), modifier = Modifier.size(28.dp))
-        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(),
-            contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        PosterImage(url, Modifier.fillMaxSize())
     }
 }
 

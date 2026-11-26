@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hongguo.account.AccountViewModel
 import java.util.Locale
 
@@ -62,10 +64,7 @@ internal fun LibraryScreen(state: HongguoUiState, model: HongguoViewModel, accou
     CinemaChaseScreen(state = state, model = model, accountModel = accountModel, rootTag = "library_screen")
 }
 
-/**
- * 方案 C 追剧 / 片单页（全 3 套主题 × 深浅 6 色板统一适配）：
- * 顶部大字重无框三栏切换（追剧 / 历史 / 云片单）+ 宽幅「接着看」横滑剧场卡 + 高密度 3 列大圆角海报墙。
- */
+/** 三套手机主题共用的追剧和观看历史页。 */
 @Composable
 internal fun CinemaChaseScreen(
     state: HongguoUiState,
@@ -75,17 +74,23 @@ internal fun CinemaChaseScreen(
 ) {
     val history = state.tab == AppTab.HISTORY
     val kind = if (history) "history" else "favorites"
-    val activeEntries = if (history) state.history else state.favorites
-    val canManage = !state.libraryCloud && (activeEntries.isNotEmpty() || (!history && state.history.isNotEmpty()))
+    val activeEntries = if (history) state.history else state.chaseFavorites.map { it.entry }
+    val canManage = activeEntries.isNotEmpty() || (!history && state.history.isNotEmpty())
 
-    var managing by rememberSaveable(state.tab, state.libraryCloud) { mutableStateOf(false) }
-    var confirmClear by rememberSaveable(kind) { mutableStateOf(false) }
+    var managing by rememberSaveable(state.tab, state.historyOwnerId) { mutableStateOf(false) }
+    var confirmClear by rememberSaveable(kind, state.historyOwnerId) { mutableStateOf(false) }
+    val account by accountModel.state.collectAsStateWithLifecycle()
+    val owner = accountModel.ownerKey
+    var removeId by remember(state.tab, state.historyOwnerId, owner) { mutableStateOf<String?>(null) }
+    var accountAction by rememberSaveable(state.tab) { mutableStateOf<Pair<String, String>?>(null) }
     LaunchedEffect(canManage) { if (!canManage) managing = false }
+    LaunchedEffect(owner) {
+        if (owner != null && accountAction?.first != owner) accountAction = null
+    }
 
     val historyById = state.history.associateBy { it.card.id }
 
     Column(Modifier.fillMaxSize().testTag(rootTag)) {
-        // Bold borderless typographic top switcher: 追剧 / 历史 / 云片单
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -93,224 +98,266 @@ internal fun CinemaChaseScreen(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            val chaseSelected = !state.libraryCloud && !history
-            val historySelected = !state.libraryCloud && history
-            val cloudSelected = state.libraryCloud
-
-            val chaseColor by animatedTabColor(chaseSelected, Ink, Muted)
-            val historyColor by animatedTabColor(historySelected, Ink, Muted)
-            val cloudColor by animatedTabColor(cloudSelected, Ink, Muted)
+            val chaseColor by animatedTabColor(!history, Ink, Muted)
+            val historyColor by animatedTabColor(history, Ink, Muted)
 
             Text(
                 text = "追剧",
                 color = chaseColor,
-                fontSize = animatedTabSize(chaseSelected, 24.sp, 15.sp),
-                fontWeight = if (chaseSelected) FontWeight.Black else FontWeight.Medium,
+                fontSize = animatedTabSize(!history, 24.sp, 15.sp),
+                fontWeight = if (!history) FontWeight.Black else FontWeight.Medium,
                 modifier = Modifier
-                    .quietSelectable(chaseSelected) {
-                        model.selectLibrarySource(false)
-                        model.selectTab(AppTab.FAVORITES)
-                    }
+                    .quietSelectable(!history) { model.selectTab(AppTab.FAVORITES) }
                     .heightIn(min = 44.dp)
                     .wrapContentHeight(Alignment.Bottom)
-                    .testTag(if (cloudSelected) "library_source_local" else "library_favorites"),
+                    .testTag("library_favorites"),
             )
             Text(
                 text = "历史",
                 color = historyColor,
-                fontSize = animatedTabSize(historySelected, 24.sp, 15.sp),
-                fontWeight = if (historySelected) FontWeight.Black else FontWeight.Medium,
+                fontSize = animatedTabSize(history, 24.sp, 15.sp),
+                fontWeight = if (history) FontWeight.Black else FontWeight.Medium,
                 modifier = Modifier
-                    .quietSelectable(historySelected) {
-                        model.selectLibrarySource(false)
-                        model.selectTab(AppTab.HISTORY)
-                    }
+                    .quietSelectable(history) { model.selectTab(AppTab.HISTORY) }
                     .heightIn(min = 44.dp)
                     .wrapContentHeight(Alignment.Bottom)
                     .testTag("library_history"),
             )
-            Text(
-                text = "云片单",
-                color = cloudColor,
-                fontSize = animatedTabSize(cloudSelected, 24.sp, 15.sp),
-                fontWeight = if (cloudSelected) FontWeight.Black else FontWeight.Medium,
-                modifier = Modifier
-                    .quietSelectable(cloudSelected) {
-                        model.selectLibrarySource(true)
-                    }
-                    .heightIn(min = 44.dp)
-                    .wrapContentHeight(Alignment.Bottom)
-                    .testTag("library_source_account"),
-            )
-
             Spacer(Modifier.weight(1f))
 
-            if (!state.libraryCloud) {
-                if (managing && activeEntries.isNotEmpty()) {
-                    TextButton(
-                        onClick = { confirmClear = true },
-                        modifier = Modifier.testTag("clear_$kind"),
-                    ) {
-                        Text("清空", color = AccentInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    }
+            if (managing && history && activeEntries.isNotEmpty()) {
+                TextButton(
+                    onClick = { confirmClear = true },
+                    modifier = Modifier.testTag("clear_$kind"),
+                ) {
+                    Text("清空", color = AccentInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
-                if (canManage) {
-                    TextButton(
-                        onClick = { managing = !managing },
-                        modifier = Modifier.testTag("library_manage"),
-                    ) {
-                        Text(
-                            text = if (managing) "完成" else "管理",
-                            color = if (managing) AccentInk else Muted,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
+            }
+            if (canManage) {
+                TextButton(
+                    onClick = { managing = !managing },
+                    modifier = Modifier.testTag("library_manage"),
+                ) {
+                    Text(
+                        text = if (managing) "完成" else "管理",
+                        color = if (managing) AccentInk else Muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
                 }
             }
         }
 
-        if (state.libraryCloud) {
-            Box(Modifier.fillMaxWidth().weight(1f)) {
-                CloudLibraryContent(accountModel, model::openLibrary, onSignIn = { model.selectTab(AppTab.ACCOUNT) })
+        val itemPrefix = if (history) "history" else "favorite"
+        val error = state.libraryError ?: if (history) state.historyError else state.chaseFavoritesError
+        accountAction?.takeIf { owner == null || it.first == owner }?.let { (_, id) ->
+            val busy = id in account.favoriteBusyIds
+            val uncertain = id in account.favoriteUncertainIds
+            val message = when {
+                busy -> "正在核对账号收藏…"
+                uncertain -> account.message ?: "本次收藏变更尚未确认。"
+                else -> account.message
             }
-        } else {
-            val itemPrefix = if (history) "history" else "favorite"
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .testTag("${kind}_list"),
-                contentPadding = PaddingValues(top = 6.dp, bottom = 28.dp).plusNavClearance(),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                if (state.libraryError != null) {
-                    item(key = "storage_error") {
-                        Box(Modifier.padding(horizontal = 16.dp)) {
-                            FailurePanel(state.libraryError, model::reloadLibrary, "${kind}_storage_retry")
-                        }
+            if (message != null) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                AccountNotice(message, when {
+                    busy -> null
+                    uncertain -> "核对状态"
+                    else -> "知道了"
+                }, onAction = {
+                    if (uncertain) {
+                        if (owner != null && owner == accountModel.ownerKey) accountModel.resolveFavorite(id)
+                    } else {
+                        accountAction = null
+                        accountModel.consumeMessage()
+                    }
+                }, enabled = !busy && (!uncertain || owner != null), tag = "chase_favorite_feedback")
+            }
+        }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .testTag("${kind}_list"),
+            contentPadding = PaddingValues(top = 6.dp, bottom = 28.dp).plusNavClearance(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (error != null) {
+                item(key = "storage_error") {
+                    Box(Modifier.padding(horizontal = 16.dp)) {
+                        FailurePanel(error, model::reloadLibrary, "${kind}_storage_retry")
                     }
                 }
+            }
 
-                // Wide Theater Resume Carousel on the 追剧 tab
-                if (!history && state.history.isNotEmpty()) {
-                    item(key = "resume_carousel") {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(state.history.take(8), key = { "resume_${it.card.id}" }) { entry ->
-                                TheaterResumeCard(
-                                    entry = entry,
-                                    managing = managing,
-                                    onOpen = { model.openLibrary(entry) },
-                                    onRemove = { model.removeHistory(entry.card.id) },
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Section header for the 3-column poster wall
-                item(key = "wall_header") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+            // Wide Theater Resume Carousel on the 追剧 tab
+            if (!history && state.history.isNotEmpty()) {
+                item(key = "resume_carousel") {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(
-                            text = if (history) "全部看过（${state.history.size}）" else "全部在追（${state.favorites.size}）",
-                            color = Muted,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        if (managing) {
-                            Text("点右上角 × 移除", color = AccentInk, fontSize = 11.sp)
-                        }
-                    }
-                }
-
-                if (activeEntries.isEmpty() && state.libraryError == null) {
-                    item(key = "empty") {
-                        if (!history && state.history.isNotEmpty()) {
-                            // Compact refined card when user already has continue-watching items above
-                            Surface(
-                                shape = RoundedCornerShape(18.dp),
-                                color = CardSurface,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp)
-                                    .border(1.dp, Line, RoundedCornerShape(18.dp)),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(38.dp)
-                                            .clip(CircleShape)
-                                            .background(SoftOrange),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(Icons.Outlined.StarBorder, null, Modifier.size(20.dp), tint = AccentInk)
-                                    }
-                                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                        Text("还没有收藏的剧集", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                        Text("在短剧详情页点星标收藏，喜欢的故事会留在海报墙中。", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
-                                    }
-                                }
-                            }
-                        } else {
-                            Box(Modifier.padding(horizontal = 16.dp)) {
-                                EmptyPrompt(
-                                    title = if (history) "还没有观看记录" else "还没有收藏的剧集",
-                                    subtitle = if (history) "开始播放后，这里会记住集数和进度。"
-                                    else "在剧集详情或播放器中点收藏，喜欢的故事就会留在这里。",
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // High-density 3-column large-radius poster wall
-                itemsIndexed(activeEntries.chunked(3), key = { _, row -> "${kind}_row_${row.first().card.id}" }) { rowIndex, row ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .animateItem()
-                            .padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        row.forEachIndexed { column, entry ->
-                            val index = rowIndex * 3 + column
-                            val progressEntry = if (history) entry else historyById[entry.card.id] ?: entry
-                            CinemaPosterTile(
+                        items(state.history.take(8), key = { "resume_${it.card.id}" }) { entry ->
+                            TheaterResumeCard(
                                 entry = entry,
-                                progressEntry = progressEntry,
-                                isHistory = history,
                                 managing = managing,
-                                itemTag = "${itemPrefix}_item_$index",
-                                removeTag = "${itemPrefix}_remove_$index",
-                                modifier = Modifier.weight(1f),
                                 onOpen = { model.openLibrary(entry) },
-                                onRemove = {
-                                    if (history) model.removeHistory(entry.card.id)
-                                    else model.toggleFavorite(entry.card)
-                                },
+                                onRemove = { model.removeHistory(entry.card.id) },
                             )
                         }
-                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
+                }
+            }
+
+            // Section header for the 3-column poster wall
+            item(key = "wall_header") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = if (history) "全部看过（${activeEntries.size}）" else "全部在追（${activeEntries.size}）",
+                        color = Muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (managing && history) {
+                        Text("从本设备移除", color = AccentInk, fontSize = 11.sp)
+                    } else if (managing && state.favorites.isNotEmpty()) {
+                        TextButton(onClick = { confirmClear = true }, modifier = Modifier.testTag("clear_favorites")) {
+                            Text("清空本机收藏", color = AccentInk, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            if (activeEntries.isEmpty() && error == null) {
+                item(key = "empty") {
+                    if (!history && account.busy && state.historyOwnerId != null) {
+                        Box(Modifier.padding(horizontal = 16.dp)) {
+                            AccountNotice("正在读取账号收藏…", tag = "chase_favorites_loading")
+                        }
+                    } else if (!history && state.history.isNotEmpty()) {
+                        // Compact refined card when user already has continue-watching items above
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = CardSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .border(1.dp, Line, RoundedCornerShape(18.dp)),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(SoftOrange),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(Icons.Outlined.StarBorder, null, Modifier.size(20.dp), tint = AccentInk)
+                                }
+                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text("还没有收藏的剧集", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("在短剧详情页点星标收藏，喜欢的故事会留在海报墙中。", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+                                }
+                            }
+                        }
+                    } else {
+                        Box(Modifier.padding(horizontal = 16.dp)) {
+                            EmptyPrompt(
+                                title = if (history) "还没有观看记录" else "还没有收藏的剧集",
+                                subtitle = if (history) "开始播放后，这里会记住集数和进度。"
+                                else "在剧集详情或播放器中点收藏，喜欢的故事就会留在这里。",
+                            )
+                        }
+                    }
+                }
+            }
+
+            // High-density 3-column large-radius poster wall
+            itemsIndexed(activeEntries.chunked(3), key = { _, row -> "${kind}_row_${row.first().card.id}" }) { rowIndex, row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    row.forEachIndexed { column, entry ->
+                        val index = rowIndex * 3 + column
+                        val favorite = if (history) null else state.chaseFavorites[index]
+                        val progressEntry = if (history) entry else historyById[entry.card.id] ?: entry
+                        CinemaPosterTile(
+                            entry = entry,
+                            progressEntry = progressEntry,
+                            isHistory = history,
+                            managing = managing,
+                            favorite = favorite,
+                            itemTag = "${itemPrefix}_item_$index",
+                            removeTag = "${itemPrefix}_remove_$index",
+                            modifier = Modifier.weight(1f),
+                            onOpen = { model.openLibrary(entry) },
+                            onRemove = {
+                                when {
+                                    favorite == null -> model.removeHistory(entry.card.id)
+                                    favorite.inAccount -> removeId = entry.card.id
+                                    else -> model.removeLocalFavorite(entry.card.id)
+                                }
+                            },
+                        )
+                    }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
     }
 
     if (confirmClear) LocalClearDialog(history, model) { confirmClear = false }
+    val target = removeId?.let { id -> state.chaseFavorites.firstOrNull { it.entry.card.id == id && it.inAccount } }
+    if (target != null) {
+        val card = target.entry.card
+        val connected = owner != null && state.historyOwnerId == account.profile?.id
+        val uncertain = card.id in account.favoriteUncertainIds
+        AlertDialog(
+            onDismissRequest = { removeId = null },
+            title = { Text("取消收藏？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val accountLabel = account.profile?.nickname?.takeIf { connected && it.isNotBlank() }
+                        ?.let { "红果账号「$it」" } ?: "红果账号"
+                    Text(if (target.onDevice) "《${card.title}》同时收藏在本机和${accountLabel}，请选择要取消的一处。"
+                        else "《${card.title}》收藏在${accountLabel}。")
+                    if (!connected) Text("连接账号后可取消账号收藏。", color = Muted, fontSize = 13.sp)
+                    if (target.onDevice) TextButton(onClick = {
+                        removeId = null
+                        model.removeLocalFavorite(card.id)
+                    }, modifier = Modifier.testTag("chase_remove_local")) { Text("取消本机收藏") }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val expectedOwner = owner ?: return@TextButton
+                    removeId = null
+                    accountModel.consumeMessage()
+                    accountAction = expectedOwner to card.id
+                    if (uncertain) {
+                        if (accountModel.ownerKey == expectedOwner) accountModel.resolveFavorite(card.id)
+                    } else accountModel.setFavorite(card, false, expectedOwner)
+                }, enabled = connected && account.favoriteBusyIds.isEmpty(),
+                    modifier = Modifier.testTag("account_remove_favorite_confirm")) {
+                    Text(if (uncertain) "核对账号收藏" else "取消账号收藏")
+                }
+            },
+            dismissButton = { TextButton(onClick = { removeId = null }) { Text("返回") } },
+        )
+    }
 }
 
 @Composable
@@ -326,32 +373,21 @@ private fun TheaterResumeCard(
     } else null
     val shape = RoundedCornerShape(20.dp)
 
-    Box(
+    Row(
         modifier = Modifier
             .width(264.dp)
-            .height(136.dp)
             .clip(shape)
             .background(Color(0xFF2B1814))
             .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
             .testTag("chase_resume_${entry.card.id}")
-            .clickable(onClick = onOpen),
+            .clickable(role = Role.Button, onClick = onOpen)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Cover(entry.card.cover, entry.card.title, Modifier.fillMaxSize())
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color(0x52120B09),
-                        0.45f to Color(0x66120B09),
-                        1.0f to Color(0xE8100907),
-                    ),
-                ),
-        )
+        Cover(entry.card.cover, entry.card.title, Modifier.width(80.dp).aspectRatio(DramaPosterRatio))
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
+            modifier = Modifier.weight(1f).heightIn(min = 112.dp).padding(vertical = 4.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
@@ -364,7 +400,7 @@ private fun TheaterResumeCard(
                     color = Color.White.copy(alpha = 0.18f),
                 ) {
                     Text(
-                        text = "接着看 · 第 $ep 集",
+                        text = entry.completedCaption ?: "接着看 · 第 $ep 集",
                         color = Color.White,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -378,7 +414,7 @@ private fun TheaterResumeCard(
                             .clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.62f))
                             .clickable(role = Role.Button, onClick = onRemove)
-                            .semantics { contentDescription = "删除${entry.card.title}的记录" },
+                            .semantics { contentDescription = "从本设备移除《${entry.card.title}》的观看记录" },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(Icons.Outlined.Close, null, Modifier.size(15.dp), tint = Color.White)
@@ -404,7 +440,7 @@ private fun TheaterResumeCard(
                         color = Color.White,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
@@ -434,13 +470,14 @@ private fun CinemaPosterTile(
     progressEntry: LibraryEntry,
     isHistory: Boolean,
     managing: Boolean,
+    favorite: ChaseFavorite?,
     itemTag: String,
     removeTag: String,
     modifier: Modifier,
     onOpen: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val badgeText = when {
+    val badgeText = progressEntry.completedCaption ?: when {
         progressEntry.episodeIndex > 0 && entry.card.episodeCount > 0 ->
             "看至 ${progressEntry.episodeIndex}/${entry.card.episodeCount} 集"
         progressEntry.episodeIndex > 0 ->
@@ -460,7 +497,7 @@ private fun CinemaPosterTile(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.75f)
+                .aspectRatio(DramaPosterRatio)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Cream),
         ) {
@@ -499,7 +536,7 @@ private fun CinemaPosterTile(
             }
             if (managing) {
                 RemoveBadge(
-                    description = if (isHistory) "删除${entry.card.title}的记录" else "取消收藏${entry.card.title}",
+                    description = if (isHistory) "从本设备移除《${entry.card.title}》的观看记录" else "取消收藏《${entry.card.title}》",
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .testTag(removeTag),
@@ -516,10 +553,25 @@ private fun CinemaPosterTile(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+        if (managing && favorite != null) {
+            Text(when {
+                favorite.onDevice && favorite.inAccount -> "本机和账号收藏"
+                favorite.inAccount -> "账号收藏"
+                else -> "本机收藏"
+            }, color = Muted, fontSize = 11.sp)
+        }
     }
 }
 
-private fun entryCaption(entry: LibraryEntry) = when {
+internal val LibraryEntry.completedCaption: String?
+    get() = when {
+        seriesCompleted -> "已看完"
+        completed && episodeIndex in 1 until card.episodeCount -> "接着看第 ${episodeIndex + 1} 集"
+        completed && episodeIndex > 0 -> "第 $episodeIndex 集已看完"
+        else -> null
+    }
+
+private fun entryCaption(entry: LibraryEntry) = entry.completedCaption ?: when {
     entry.episodeIndex > 0 -> "第${entry.episodeIndex}集 · ${libraryPositionLabel(entry.positionMs)}"
     entry.card.episodeCount > 0 -> "${entry.card.episodeCount} 集"
     else -> "查看剧集"
@@ -544,7 +596,7 @@ internal fun LibraryPosterCell(
             .testTag(tag),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(.75f).clip(RoundedCornerShape(14.dp))) {
+        Box(Modifier.fillMaxWidth().aspectRatio(DramaPosterRatio).clip(RoundedCornerShape(14.dp))) {
             Cover(entry.card.cover, entry.card.title, Modifier.fillMaxSize())
             if (showProgress) WatchProgress(entry, track = Color.White.copy(alpha = .3f), fill = Orange, modifier = Modifier.align(Alignment.BottomCenter))
             badge()
@@ -560,7 +612,7 @@ internal fun libraryPositionLabel(positionMs: Long): String {
     return String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60)
 }
 
-/** The device's own records in three columns, shared by the pages opened from 我的. */
+/** The unified history and local favorites pages share this three-column grid. */
 @Composable
 internal fun LocalLibraryList(
     entries: List<LibraryEntry>,
@@ -568,7 +620,7 @@ internal fun LocalLibraryList(
     managing: Boolean,
     model: HongguoViewModel,
     modifier: Modifier,
-    storageError: String? = null,
+    error: String? = null,
 ) {
     val kind = if (history) "history" else "favorites"
     val itemPrefix = if (history) "history" else "favorite"
@@ -576,8 +628,11 @@ internal fun LocalLibraryList(
         modifier.testTag("${kind}_list"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp).plusNavClearance(),
     ) {
-        if (storageError != null) item { FailurePanel(storageError, model::reloadLibrary, "${kind}_storage_retry") }
-        if (entries.isEmpty() && storageError == null) item {
+        if (error != null) item { FailurePanel(error, model::reloadLibrary, "${kind}_storage_retry") }
+        if (history && managing && entries.isNotEmpty()) item {
+            Text("从本设备移除", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        if (entries.isEmpty() && error == null) item {
             EmptyPrompt(
                 if (history) "还没有观看记录" else "还没有收藏的剧集",
                 if (history) "开始播放后，这里会记住集数和进度。" else "在剧集详情或播放器中收藏，喜欢的故事就会留在这里。",
@@ -596,7 +651,7 @@ internal fun LocalLibraryList(
                         onOpen = { model.openLibrary(entry) },
                         badge = {
                             if (managing) RemoveBadge(
-                                if (history) "删除${entry.card.title}的记录" else "取消收藏${entry.card.title}",
+                                if (history) "从本设备移除《${entry.card.title}》的观看记录" else "取消收藏${entry.card.title}",
                                 Modifier.align(Alignment.TopEnd).testTag("${itemPrefix}_remove_$index"),
                             ) {
                                 if (history) model.removeHistory(entry.card.id) else model.toggleFavorite(entry.card)
@@ -616,7 +671,7 @@ internal fun LocalClearDialog(history: Boolean, model: HongguoViewModel, onDismi
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (history) "清空观看历史？" else "清空本机收藏？") },
-        text = { Text(if (history) "将移除这台设备上的全部观看记录。" else "将移除这台设备上的全部收藏。") },
+        text = { Text(if (history) "从本设备移除当前列表中的全部观看记录，账号云端记录仍会保留。" else "将移除这台设备上的全部收藏。") },
         confirmButton = {
             TextButton(
                 onClick = {

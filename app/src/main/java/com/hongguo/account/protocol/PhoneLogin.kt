@@ -42,8 +42,7 @@ object PhoneLogin {
 
 /**
  * SMS login over the official App's passport channel; the website channel now demands a slider before sending.
- * One instance is one login attempt. Nothing here solves a platform verification: a slider request is reported as
- * [PhoneLogin.Failure.needsWebsite] so the user can pass it on the official page.
+ * One instance is one login attempt. A slider request stops the attempt with [PhoneLogin.Failure.needsWebsite].
  *
  * The verification tries the passport's login endpoints in order with the same code, because the endpoint that
  * accepts a signed-out session is not declared anywhere. It stops at the first definite answer. The user can never
@@ -118,12 +117,12 @@ internal class AppPhoneLogin(http: OkHttpClient, private val base: HttpUrl = PAS
         val verification = data.has(VERIFY_FIELD)
         val captcha = data.str("captcha").isNotBlank()
         val needsWebsite = verification || captcha || code == 1105
-        val message = if (verification) "红果要求完成滑块验证，请到官网登录页面完成"
-            else if (captcha) "红果要求额外验证，请到官网登录页面完成"
+        val message = if (verification) "红果要求完成滑块验证，本次登录未完成"
+            else if (captcha) "红果要求额外验证，本次登录未完成"
             else when (code) {
                 1102, 1202 -> "验证码有误，请检查后重新输入"
                 1103, 1104 -> "验证码已失效，请重新获取后再试"
-                1105 -> "红果要求额外验证，请到官网登录页面完成"
+                1105 -> "红果要求额外验证，本次登录未完成"
                 1106, 1107 -> "请求过于频繁，请稍后再试"
                 1203 -> "错误次数过多或验证码已过期，请重新获取验证码"
                 else -> "手机号登录失败，请稍后重试"

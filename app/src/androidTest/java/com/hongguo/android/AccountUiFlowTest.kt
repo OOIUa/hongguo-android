@@ -1,6 +1,7 @@
 package com.hongguo.android
 
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -28,8 +29,11 @@ class AccountUiFlowTest {
         compose.onNodeWithTag("nav_mine").performClick()
         compose.onNodeWithTag("my_account_card").performScrollTo().performClick()
         compose.onNodeWithTag("account_screen").assertExists()
-        compose.onNodeWithTag("account_method_web").performScrollTo().performClick()
-        compose.onNodeWithTag("account_web_login").assertExists()
+        compose.onNodeWithTag("account_method_sms").assertIsSelected()
+        compose.onNodeWithTag("account_method_web").assertDoesNotExist()
+        compose.onNodeWithTag("account_cookie_expand").assertDoesNotExist()
+        compose.onNodeWithTag("account_method_qr").performScrollTo().performClick()
+        compose.onNodeWithTag("account_qr_refresh").performScrollTo().assertExists()
         compose.onNodeWithTag("account_method_sms").performScrollTo().performClick()
         compose.onNodeWithTag("account_phone").performScrollTo().performTextInput("123")
         compose.onNodeWithTag("account_sms_send").performScrollTo().assertIsNotEnabled()

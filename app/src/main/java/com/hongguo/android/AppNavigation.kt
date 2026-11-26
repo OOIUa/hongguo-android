@@ -105,7 +105,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
     fun select(tab: AppTab) {
         keyboard?.hide()
         focus.clearFocus()
-        currentOnSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
+        currentOnSelect(tab)
     }
     // Drag along the bar to move the selection between tabs (a tick per tab); lifting the finger switches to it.
     var dragIndex by remember { mutableStateOf<Int?>(null) }

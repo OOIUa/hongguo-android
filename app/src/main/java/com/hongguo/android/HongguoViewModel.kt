@@ -17,19 +17,41 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.concurrent.ConcurrentHashMap
 import com.hongguo.api.service.ProgressiveMedia
+import com.hongguo.account.AccountSection
 import com.hongguo.account.AccountSessionStatus
 import com.hongguo.android.danmaku.DanmakuPrefs
 import com.hongguo.android.danmaku.DanmakuSettings
 
 private val mediaCleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+internal data class HistoryResume(val episodePosition: Int, val positionMs: Long, val seriesEnded: Boolean)
+
+internal fun historyResume(episodes: List<Episode>, entry: LibraryEntry): HistoryResume? {
+    val byId = episodes.indexOfFirst { it.id == entry.episodeId }
+    val position = if (byId >= 0) byId else episodes.indexOfFirst { entry.episodeIndex > 0 && it.index == entry.episodeIndex }
+    if (position < 0) return null
+    if (!entry.completed) return HistoryResume(position, entry.positionMs, false)
+    return HistoryResume((position + 1).coerceAtMost(episodes.lastIndex), 0, position == episodes.lastIndex)
+}
+
+internal enum class EpisodeWatchState {
+    WATCHING, COMPLETED, PLAYING_AGAIN;
+
+    fun onPlaying(): EpisodeWatchState = if (this == COMPLETED) PLAYING_AGAIN else this
+
+    fun canResumeAt(positionMs: Long, durationMs: Long): Boolean =
+        this == PLAYING_AGAIN && positionMs >= 0 && (durationMs <= 0 || positionMs < durationMs)
+}
 
 /** SETTINGS (软件设置), ABOUT (关于软件) and settings sub-pages have no bottom bar and return to their origin. */
 enum class AppTab {
@@ -49,9 +71,8 @@ data class FeedState(
 
 data class HongguoUiState(
     val tab: AppTab = AppTab.HOME,
+    val accountPageVisit: Long = 0,
     val homeFeed: HomeFeed = HomeFeed.GUESS,
-    /** 播放历史 page: this device's records rather than the signed-in account's. */
-    val playHistoryLocal: Boolean = false,
     val home: FeedState = FeedState(),
     val category: FeedState = FeedState(),
     val browseDraft: BrowseSelection = BrowseSelection(),
@@ -60,8 +81,12 @@ data class HongguoUiState(
     val filtersLoading: Boolean = false,
     val filtersError: String? = null,
     val favorites: List<LibraryEntry> = emptyList(),
+    val chaseFavorites: List<ChaseFavorite> = favorites.map { ChaseFavorite(it, onDevice = true, inAccount = false) },
+    val chaseFavoritesError: String? = null,
     val libraryError: String? = null,
     val history: List<LibraryEntry> = emptyList(),
+    val historyOwnerId: String? = null,
+    val historyError: String? = null,
     val libraryCloud: Boolean = false,
     val query: String = "",
     val searchedQuery: String = "",
@@ -102,13 +127,17 @@ data class HongguoUiState(
     val playbackSpeed: Float = 1f,
     /** 弹幕 rendering preferences; the per-episode comments themselves live in the player layer. */
     val danmaku: DanmakuSettings = DanmakuSettings(),
-    val themeStyle: AppThemeStyle = AppThemeStyle.WARM,
+    val themeStyle: AppThemeStyle = AppThemeStyle.IMMERSIVE,
     val themeMode: ThemeMode? = null,
     val navBarStyle: NavBarStyle = NavBarStyle.CLASSIC,
     val themeOnboardingPending: Boolean = false,
     /** Confirmation after the first-launch picker; cleared only once the snackbar has been shown. */
     val themeHint: String? = null,
 )
+
+/** A library click can outlive its account's list. Only currently visible positions can be resumed. */
+internal fun HongguoUiState.libraryResumeFor(cardId: String): LibraryEntry? =
+    history.firstOrNull { it.card.id == cardId } ?: favorites.firstOrNull { it.card.id == cardId }
 
 class HongguoViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = DramaRepository()
@@ -163,15 +192,24 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var filtersJob: Job? = null
     private var pendingLibrary: LibraryEntry? = null
     private var pendingAutoPlay = false
-    private data class ResumeTarget(val card: DramaCard, val index: Int)
-    private val resumeTargets = ConcurrentHashMap<String, ResumeTarget>()
+    private var detailHistoryOwner: String? = null
     private data class AccountPlayback(
         val entry: LibraryEntry,
+        val historyOwner: String?,
+        val store: LibraryStore,
         val owner: String?,
         var rendered: Boolean = false,
+        var watchState: EpisodeWatchState = EpisodeWatchState.WATCHING,
         var durationMs: Long = 0,
     )
     private val accountPlaybacks = LinkedHashMap<Long, AccountPlayback>()
+    private var lastRenderedRequest: Long? = null
+    private data class AccountLibrary(
+        val owner: String?, val history: List<LibraryEntry>, val favorites: List<LibraryEntry>,
+        val historyError: String?, val favoritesError: String?,
+    )
+    private var lastLibraryRefreshOwner: String? = null
+    private var lastLibraryRefreshAt = 0L
     @Volatile private var searchVersion = 0
     @Volatile private var detailVersion = 0
     @Volatile private var mediaVersion = 0
@@ -238,12 +276,13 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     }
     fun closeAccount() = navigate(accountOrigin, rememberOrigin = false)
     fun closeLibrary() = navigate(libraryOrigin, rememberOrigin = false)
-    /** 播放历史 is a page of where it was opened from, so back returns there; it is not the 追剧 tab. */
-    fun openPlayHistory(local: Boolean = false) {
-        mutableState.update { it.copy(playHistoryLocal = local) }
-        selectTab(AppTab.PLAY_HISTORY)
+    fun openAccountSection(section: AccountSection) {
+        accounts.selectSection(section)
+        mutableState.update { it.copy(accountPageVisit = it.accountPageVisit + 1) }
+        selectTab(AppTab.ACCOUNT)
     }
-    fun selectPlayHistorySource(local: Boolean) = mutableState.update { it.copy(playHistoryLocal = local) }
+    /** 播放历史 is a page of where it was opened from, so back returns there; it is not the 追剧 tab. */
+    fun openPlayHistory() = selectTab(AppTab.PLAY_HISTORY)
     fun closeMyLibrary() = navigate(myLibraryOrigin, rememberOrigin = false)
     fun closeSettings() = navigate(settingsOrigin, rememberOrigin = false)
     fun closeThemeStyle() = navigate(themeOrigin, rememberOrigin = false)
@@ -251,6 +290,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     fun closeAccountSettings() = navigate(accountSettingsOrigin, rememberOrigin = false)
     fun closeStorageSettings() = navigate(storageSettingsOrigin, rememberOrigin = false)
     fun closeAbout() = navigate(aboutOrigin, rememberOrigin = false)
+    /** TV offers separate device and cloud shelves. */
     fun selectLibrarySource(cloud: Boolean) {
         librarySourceChosen = true
         mutableState.update { it.copy(libraryCloud = cloud) }
@@ -263,11 +303,26 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     }
 
     init {
-        mutableState.update { it.copy(favorites = library.state.value.favorites, history = library.state.value.history, libraryError = library.state.value.storageError) }
         viewModelScope.launch {
-            library.state.collect { snapshot -> mutableState.update {
-                it.copy(favorites = snapshot.favorites, history = snapshot.history, libraryError = snapshot.storageError)
-            } }
+            accounts.state.map { it.profile?.id }.distinctUntilChanged().collectLatest { owner ->
+                if (state.value.selectedCard != null && detailHistoryOwner != owner) backToSearch()
+                val personal = owner?.let { library.forHistoryOwner(it).state } ?: flowOf(null)
+                val accountLibrary = accounts.state.map {
+                    AccountLibrary(it.profile?.id, it.history, it.favorites, it.historyError, it.favoritesError)
+                }.distinctUntilChanged()
+                combine(library.state, personal, accountLibrary) { device, scoped, account ->
+                    if (account.owner == owner && accounts.state.value.profile?.id == owner) {
+                        val history = LibraryCodec.mergedHistory(device, scoped, account.history)
+                        val chaseFavorites = LibraryCodec.mergedFavorites(device.favorites, if (owner == null) emptyList() else account.favorites)
+                        mutableState.update {
+                            it.copy(favorites = device.favorites, chaseFavorites = chaseFavorites,
+                                chaseFavoritesError = account.favoritesError.takeIf { owner != null }, history = history,
+                                historyOwnerId = owner, historyError = account.historyError,
+                                libraryError = device.storageError ?: scoped?.storageError)
+                        }
+                    }
+                }.collect {}
+            }
         }
         viewModelScope.launch {
             // Login, logout or switching account changes whose feed 猜你喜欢 shows.
@@ -300,12 +355,22 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         if (rememberOrigin && tab == AppTab.STORAGE_SETTINGS && state.value.tab != AppTab.STORAGE_SETTINGS) storageSettingsOrigin = state.value.tab
         if (rememberOrigin && tab == AppTab.ABOUT && state.value.tab != AppTab.ABOUT) aboutOrigin = state.value.tab
         if (rememberOrigin && tab in setOf(AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES) && state.value.tab !in setOf(AppTab.PLAY_HISTORY, AppTab.LOCAL_FAVORITES)) myLibraryOrigin = state.value.tab
-        // The source stays as onAccountSession or the user left it: a signed-in account's records come first.
         if (rememberOrigin && tab in setOf(AppTab.HISTORY, AppTab.FAVORITES) && state.value.tab !in setOf(AppTab.HISTORY, AppTab.FAVORITES, AppTab.ACCOUNT)) libraryOrigin = state.value.tab
         if (state.value.selectedCard != null) backToSearch()
         mutableState.update { it.copy(tab = tab) }
         when (tab) {
             AppTab.HOME -> if (!state.value.home.loaded && !state.value.home.loading) refreshHome()
+            AppTab.PLAY_HISTORY, AppTab.HISTORY, AppTab.FAVORITES -> {
+                val account = accounts.state.value
+                val now = android.os.SystemClock.elapsedRealtime()
+                val cloudPage = tab == AppTab.FAVORITES && state.value.libraryCloud
+                if (!cloudPage && account.sessionStatus == AccountSessionStatus.LOGGED_IN && !account.busy &&
+                    (account.profile?.id != lastLibraryRefreshOwner || now - lastLibraryRefreshAt >= 60_000)) {
+                    lastLibraryRefreshOwner = account.profile?.id
+                    lastLibraryRefreshAt = now
+                    accounts.refresh()
+                }
+            }
             AppTab.CATEGORY -> if (!state.value.category.loaded && !state.value.category.loading) {
                 reloadFilters()
                 applyBrowse()
@@ -449,11 +514,30 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val detail = state.value.detail?.takeIf { it.id == card.id }
         library.toggleFavorite(if (detail == null) card else cardFor(detail))
     }
-    fun removeHistory(id: String) = library.deleteHistory(id)
-    fun reloadLibrary() = library.reload()
+    fun removeHistory(id: String) {
+        val view = state.value
+        if (view.historyOwnerId != accounts.state.value.profile?.id) return
+        val entry = view.history.firstOrNull { it.card.id == id } ?: return
+        library.forHistoryOwner(view.historyOwnerId).deleteHistory(entry)
+    }
+    fun reloadLibrary() {
+        library.reload()
+        val account = accounts.state.value
+        account.profile?.id?.let { library.forHistoryOwner(it).reload() }
+        if (account.profile != null && !account.busy) accounts.refresh()
+    }
     fun clearFavorites() = library.clearFavorites()
-    fun clearHistory() = library.clearHistory()
-    fun openLibrary(entry: LibraryEntry) = openDramaInternal(entry.card, entry)
+    fun removeLocalFavorite(id: String) = library.removeFavorite(id)
+    fun clearHistory() {
+        val view = state.value
+        if (view.historyOwnerId != accounts.state.value.profile?.id) return
+        library.forHistoryOwner(view.historyOwnerId).clearHistory(view.history)
+    }
+    fun openLibrary(entry: LibraryEntry) {
+        val view = state.value
+        if (view.historyOwnerId != accounts.state.value.profile?.id) return
+        openDramaInternal(entry.card, view.libraryResumeFor(entry.card.id))
+    }
     fun setAutoPlayNext(enabled: Boolean) {
         preferences.edit().putBoolean("auto_play_next", enabled).apply()
         mutableState.update { it.copy(autoPlayNext = enabled) }
@@ -606,13 +690,15 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     /** Continues a feed preview in the full player at [positionMs] of [episode] instead of restarting it. */
     fun playFromPreview(card: DramaCard, episode: Episode, positionMs: Long) =
-        openLibrary(LibraryEntry(card, episode.id, episode.index.coerceAtLeast(1), positionMs))
+        openDramaInternal(card, LibraryEntry(card, episode.id, episode.index.coerceAtLeast(1), positionMs))
 
     fun openDrama(card: DramaCard) = openDramaInternal(card, null)
     /** Opens the drama and starts its last-watched (or first) episode as soon as the episode list arrives. */
     fun playDrama(card: DramaCard) = openDramaInternal(card, null, autoPlay = true)
 
     private fun openDramaInternal(card: DramaCard, resume: LibraryEntry?, autoPlay: Boolean = false) {
+        val historyOwner = accounts.state.value.profile?.id
+        detailHistoryOwner = historyOwner
         pendingLibrary = resume
         pendingAutoPlay = autoPlay
         cancelSearch()
@@ -644,18 +730,20 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         detailJob = viewModelScope.launch {
             try {
                 val detail = repository.details(card)
-                if (version != detailVersion || !currentCoroutineContext().isActive) return@launch
-                val lastId = resume?.episodeId?.takeIf { it.isNotBlank() } ?: preferences.getString("${card.id}.episode", "")
-                val lastIndex = resume?.episodeIndex?.takeIf { it > 0 } ?: preferences.getInt("${card.id}.index", -1)
-                val selected = detail.episodes.indexOfFirst { it.id == lastId }.takeIf { it >= 0 }
+                if (version != detailVersion || !currentCoroutineContext().isActive || accounts.state.value.profile?.id != historyOwner) return@launch
+                val watched = resume ?: visibleHistoryFor(card.id, historyOwner)
+                val checkpoint = watched?.let { historyResume(detail.episodes, it) }
+                val key = resumeKey(historyOwner, card.id)
+                val lastId = preferences.getString("$key.episode", null)
+                val lastIndex = preferences.getInt("$key.index", -1)
+                val selected = checkpoint?.episodePosition ?: detail.episodes.indexOfFirst { it.id == lastId }.takeIf { it >= 0 }
                     ?: detail.episodes.indexOfFirst { it.index == lastIndex }.takeIf { it >= 0 } ?: 0
                 mutableState.update { it.copy(detail = detail, loadingDetail = false, episodePosition = selected) }
                 library.refreshCard(cardFor(detail))
-                if (resume != null && resume.episodeIndex > 0) {
-                    val target = detail.episodes[selected]
-                    val position = if (target.id == resume.episodeId || target.index == resume.episodeIndex) resume.positionMs else 0
-                    playEpisode(selected, resumeOverrideMs = position)
-                } else if (autoPlay && detail.episodes.isNotEmpty()) playEpisode(selected)
+                if (historyOwner != null) library.forHistoryOwner(historyOwner).refreshCard(cardFor(detail))
+                if (autoPlay || (resume != null && checkpoint != null && !checkpoint.seriesEnded)) {
+                    playEpisode(selected, resumeOverrideMs = checkpoint?.positionMs)
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -668,10 +756,21 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     fun retryDetails() { state.value.selectedCard?.let { openDramaInternal(it, pendingLibrary, pendingAutoPlay) } }
 
+    private fun visibleHistoryFor(id: String, owner: String?): LibraryEntry? =
+        state.value.takeIf { it.historyOwnerId == owner }?.history?.firstOrNull { it.card.id == id }
+
+    // The unprefixed keys belong to guest playback saved by earlier versions.
+    private fun resumeKey(owner: String?, seriesId: String): String =
+        if (owner == null) seriesId else "account.${owner.length}.$owner.$seriesId"
+
     fun playEpisode(position: Int, restart: Boolean = false, resumeOverrideMs: Long? = null) {
         val current = state.value
         val detail = current.detail ?: return
         val episode = detail.episodes.getOrNull(position) ?: return
+        val historyOwner = detailHistoryOwner
+        if (historyOwner != accounts.state.value.profile?.id) return
+        val uploadOwner = accounts.ownerKey
+        if (historyOwner != accounts.state.value.profile?.id) return
         val warmed = takePrefetch(episode.id)
         ++mediaVersion
         mediaJob?.cancel()
@@ -680,10 +779,11 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         prefetchAttemptedFor = -1
         val version = mediaVersion
         accountPlaybacks[version.toLong()] = AccountPlayback(
-            LibraryEntry(cardFor(detail), episode.id, episode.index), accounts.ownerKey)
+            LibraryEntry(cardFor(detail), episode.id, episode.index), historyOwner, library.forHistoryOwner(historyOwner), uploadOwner)
         while (accountPlaybacks.size > 16) accountPlaybacks.remove(accountPlaybacks.keys.first())
-        resumeTargets[episode.id] = ResumeTarget(cardFor(detail), episode.index)
-        val savedPosition = if (restart) 0 else resumeOverrideMs ?: preferences.getLong("${detail.id}.${episode.id}.position", 0)
+        val checkpoint = visibleHistoryFor(detail.id, historyOwner)?.let { historyResume(detail.episodes, it) }
+        val savedPosition = if (restart) 0 else resumeOverrideMs ?: checkpoint?.takeIf { it.episodePosition == position }?.positionMs
+            ?: preferences.getLong("${resumeKey(historyOwner, detail.id)}.${episode.id}.position", 0)
         mutableState.update {
             it.copy(episodePosition = position, preparing = true, video = null,
                 preparationStage = "正在获取片源", preparationDone = 0, preparationTotal = 0,
@@ -844,7 +944,10 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         state.value.video?.let { it.episodeId == episodeId && it.requestId == requestId } == true
 
     fun onPlaybackBuffered(episodeId: String, requestId: Long, bufferedAheadMs: Long) {
-        if (!isCurrentVideo(episodeId, requestId) || bufferedAheadMs < 5_000) return
+        if (!isCurrentVideo(episodeId, requestId)) return
+        // The player sends this observation only while it is actually playing.
+        accountPlaybacks[requestId]?.let { it.watchState = it.watchState.onPlaying() }
+        if (bufferedAheadMs < 5_000) return
         bufferReadyForPrefetch = true
         prefetchNext()
     }
@@ -855,12 +958,15 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     fun onFirstFrame(episodeId: String, requestId: Long) {
         if (!isCurrentVideo(episodeId, requestId)) return
-        val alreadyRendered = state.value.firstFrameRendered
-        mutableState.update { it.copy(firstFrameRendered = true) }
-        accountPlaybacks[requestId]?.takeIf { it.entry.episodeId == episodeId }?.rendered = true
-        if (!alreadyRendered) resumeTargets[episodeId]?.let { target ->
-            library.recordPlayback(target.card, episodeId, target.index, state.value.resumePositionMs)
+        val playback = accountPlaybacks[requestId] ?: return
+        if (playback.historyOwner != accounts.state.value.profile?.id) return
+        if (!playback.rendered) {
+            playback.rendered = true
+            lastRenderedRequest = requestId
+            val entry = playback.entry
+            playback.store.recordPlayback(entry.card, episodeId, entry.episodeIndex, state.value.resumePositionMs)
         }
+        mutableState.update { it.copy(firstFrameRendered = true) }
         prefetchNext()
     }
 
@@ -873,15 +979,8 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     fun onPlaybackEnded(episodeId: String, requestId: Long, durationMs: Long = 0) {
         val current = state.value
-        if (!isCurrentVideo(episodeId, requestId)) return
-        val playback = accountPlaybacks[requestId]
-        if (durationMs > 0 && playback != null) playback.durationMs = durationMs
-        if (playback?.rendered == true && playback.durationMs > 0) {
-            accounts.reportProgress(playback.entry.copy(positionMs = playback.durationMs,
-                updatedAt = System.currentTimeMillis()), playback.durationMs, true, playback.owner)
-        }
-        // Local replay starts at the beginning; the cloud retains the completed episode duration.
-        savePosition(episodeId, 0, requestId, completed = true)
+        if (!isCurrentVideo(episodeId, requestId) || detailHistoryOwner != accounts.state.value.profile?.id) return
+        savePosition(episodeId, durationMs, requestId, durationMs, force = true, completed = true)
         if (current.episodePosition < (current.detail?.episodes?.lastIndex ?: -1)) {
             if (current.autoPlayNext) nextEpisode() else onPlaybackStatus(episodeId, requestId, "本集已播完，上滑观看下一集")
         } else {
@@ -899,25 +998,36 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     fun savePosition(episodeId: String, positionMs: Long, requestId: Long? = null,
                      durationMs: Long = 0, force: Boolean = false, completed: Boolean = false) {
         val current = state.value
-        if (requestId != null && current.video?.episodeId == episodeId && current.video.requestId != requestId) return
-        val target = resumeTargets[episodeId] ?: return
-        val editor = preferences.edit().putLong("${target.card.id}.$episodeId.position", positionMs.coerceAtLeast(0))
-        // The old player's disposal may follow a new selection; it must not replace that selection.
+        val id = requestId ?: current.video?.requestId ?: return
+        val playback = accountPlaybacks[id] ?: return
+        val entry = playback.entry
+        if (id != lastRenderedRequest || !playback.rendered || entry.episodeId != episodeId ||
+            playback.historyOwner != accounts.state.value.profile?.id) return
+        if (current.video?.episodeId == episodeId && current.video.requestId != id) return
+        if (durationMs > 0) playback.durationMs = durationMs
+        val position = if (completed && playback.durationMs > 0) playback.durationMs else positionMs.coerceAtLeast(0)
+        // Pausing or releasing a completed player can report a position a little short of its duration.
+        if (playback.watchState != EpisodeWatchState.WATCHING) {
+            if (completed) {
+                playback.watchState = EpisodeWatchState.COMPLETED
+                return
+            }
+            if (!isCurrentVideo(episodeId, id) || !playback.watchState.canResumeAt(position, playback.durationMs)) return
+            playback.store.recordPlayback(entry.card, episodeId, entry.episodeIndex, position)
+        }
+        playback.watchState = if (completed) EpisodeWatchState.COMPLETED else EpisodeWatchState.WATCHING
+        val key = resumeKey(playback.historyOwner, entry.card.id)
+        val editor = preferences.edit().putLong("$key.$episodeId.position", if (completed) 0 else position)
         val selected = current.detail?.episodes?.getOrNull(current.episodePosition)
-        if (selected?.id == episodeId && current.detail?.id == target.card.id) {
-            editor.putString("${target.card.id}.episode", episodeId).putInt("${target.card.id}.index", target.index)
+        if (selected?.id == episodeId && current.detail?.id == entry.card.id) {
+            editor.putString("$key.episode", episodeId).putInt("$key.index", entry.episodeIndex)
         }
         editor.apply()
-        library.updatePosition(target.card, episodeId, target.index, positionMs.coerceAtLeast(0))
-        val playback = requestId?.let { accountPlaybacks[it] }
-        if (playback != null && playback.entry.episodeId == episodeId) {
-            if (durationMs > 0) playback.durationMs = durationMs
-            if (playback.rendered && !completed) accounts.reportProgress(
-                playback.entry.copy(positionMs = positionMs.coerceAtLeast(0), updatedAt = System.currentTimeMillis()),
-                playback.durationMs, force, playback.owner)
-        }
-        if (current.video?.episodeId == episodeId && (requestId == null || current.video.requestId == requestId))
-            mutableState.update { it.copy(resumePositionMs = positionMs.coerceAtLeast(0)) }
+        playback.store.updatePosition(entry.card, episodeId, entry.episodeIndex, position, completed)
+        if (!completed || playback.durationMs > 0) accounts.reportProgress(
+            entry.copy(positionMs = position, completed = completed, updatedAt = System.currentTimeMillis()),
+            playback.durationMs, force, playback.owner)
+        if (isCurrentVideo(episodeId, id)) mutableState.update { it.copy(resumePositionMs = if (completed) 0 else position) }
     }
 
     fun backToSearch() {

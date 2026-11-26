@@ -78,8 +78,6 @@ import com.hongguo.account.AccountViewModel
  * plus a two-column waterfall, 发现 lists results with summaries, 片单 is a progress grid.
  * ------------------------------------------------------------------------------------------- */
 
-private val WaterfallRatios = floatArrayOf(.72f, .6f, .8f, .66f)
-
 @Composable
 internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
     val items = state.home.items
@@ -108,14 +106,12 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
             }
         }
         item(span = StaggeredGridItemSpan.FullLine) {
-            // 分类 used to sit at the end of this row as a fifth "channel", but it only opened the 发现 tab that the
-            // bottom bar already offers, and looked selectable like the feeds beside it.
             val tabs = rememberTabIndicator()
             // 推荐 is the default and sits last, so the row opens scrolled to its end.
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(Int.MAX_VALUE)).padding(horizontal = 4.dp)
                 .slidingIndicator(tabs, state.homeFeed, Orange, width = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
-                listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧", HomeFeed.GUESS to "推荐").forEach { (feed, label) ->
+                listOf(HomeFeed.LATEST to "新剧", HomeFeed.COMIC to "漫剧", HomeFeed.GUESS to "推荐").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
                     val color by animatedTabColor(selected, Ink, Muted)
                     Column(Modifier.tabAnchor(tabs, feed).quietSelectable(selected) { model.selectHomeFeed(feed) }
@@ -136,7 +132,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Icon(Icons.Outlined.PlayArrow, null, tint = AccentInk, modifier = Modifier.size(20.dp))
                         Text("继续看", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("${entry.card.title} · 第 ${entry.episodeIndex.coerceAtLeast(1)} 集", color = Muted, fontSize = 13.sp,
+                        Text("${entry.card.title} · ${entry.completedCaption ?: "第 ${entry.episodeIndex.coerceAtLeast(1)} 集"}", color = Muted, fontSize = 13.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Icon(Icons.Outlined.ChevronRight, null, tint = Muted, modifier = Modifier.size(18.dp))
                     }
@@ -146,7 +142,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
         if (ranked.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) {
             Surface(color = CardSurface, shape = RoundedCornerShape(14.dp), modifier = Modifier.testTag("cards_ranking")) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(when (state.homeFeed) { HomeFeed.LATEST -> "新剧榜"; HomeFeed.COMIC -> "漫剧榜"; HomeFeed.GUESS -> "为你推荐"; else -> "热度榜" },
+                    Text(when (state.homeFeed) { HomeFeed.LATEST -> "新剧榜"; HomeFeed.COMIC -> "漫剧榜"; else -> "为你推荐" },
                         color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 2.dp))
                     ranked.forEachIndexed { index, card ->
                         Row(Modifier.fillMaxWidth().clickable { model.openDrama(card) }.heightIn(min = 52.dp)
@@ -170,7 +166,7 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
             Text("猜你想看", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
         }
         staggeredItemsIndexed(rest, key = { _, card -> card.id }) { index, card ->
-            WaterfallCard(card, WaterfallRatios[index % WaterfallRatios.size], "cards_result_${index + 5}",
+            WaterfallCard(card, "cards_result_${index + 5}",
                 Modifier.animateItem()) { model.openDrama(card) }
         }
         state.home.error?.let { error -> item(span = StaggeredGridItemSpan.FullLine) {
@@ -186,10 +182,10 @@ internal fun CardsHome(state: HongguoUiState, model: HongguoViewModel) {
 }
 
 @Composable
-private fun WaterfallCard(card: DramaCard, ratio: Float, tag: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun WaterfallCard(card: DramaCard, tag: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(onClick = onClick, color = CardSurface, shape = RoundedCornerShape(12.dp), modifier = modifier.testTag(tag)) {
         Column {
-            PosterImage(card.cover, Modifier.fillMaxWidth().aspectRatio(ratio))
+            PosterImage(card.cover, Modifier.fillMaxWidth().aspectRatio(DramaPosterRatio).background(Cream))
             Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(card.title, color = Ink, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)

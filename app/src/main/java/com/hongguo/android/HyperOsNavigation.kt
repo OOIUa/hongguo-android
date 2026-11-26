@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -160,7 +161,8 @@ internal fun Modifier.glassBackdropSource(backdrop: GlassBackdrop): Modifier = t
     .drawWithContent {
         backdrop.layer.record { this@drawWithContent.drawContent() }
         drawLayer(backdrop.layer)
-        backdrop.version++
+        // Only the glass should observe this counter when the page records a new frame.
+        Snapshot.withoutReadObservation { backdrop.version++ }
     }
 
 /**
@@ -214,7 +216,7 @@ internal fun LiquidGlassNavigationBar(
         keyboard?.hide()
         focus.clearFocus()
         val tab = currentTabs[index].tab
-        currentOnSelect(if (tab == AppTab.FAVORITES) AppTab.HISTORY else tab)
+        currentOnSelect(tab)
     }
 
     val glass = rememberGraphicsLayer()

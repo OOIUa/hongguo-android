@@ -84,7 +84,7 @@ internal fun DetailScreen(state: HongguoUiState, model: HongguoViewModel, accoun
 }
 
 /**
- * C1 柔焦铺底 + 居中完整 3:4 立体大海报详情页（全 3 套主题 × 深浅 6 色板统一适配）。
+ * 柔焦铺底与居中完整海报详情页（全 3 套主题 × 深浅 6 色板统一适配）。
  * 底层使用柔焦海报铺满通顶（状态栏全程透明），前景居中完整展示无裁切海报并支持点击看原图；
  * 剧名、标签与操作按钮全部置于海报下方，零遮挡画面主体。
  */
@@ -111,6 +111,9 @@ internal fun CinemaDetailScreen(
 
     val list = rememberLazyListState()
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val posterWidth = 156.dp
+    val posterTop = statusTop + 44.dp
+    val backdropHeight = posterTop + posterWidth / posterRatio + 12.dp
     val episodeLabel = detail?.episodes?.getOrNull(state.episodePosition)?.index
         ?: detail?.episodes?.firstOrNull()?.index
 
@@ -130,7 +133,7 @@ internal fun CinemaDetailScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(statusTop + 308.dp)
+                            .height(backdropHeight)
                             .clip(RoundedCornerShape(0.dp)),
                     ) {
                         val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -182,13 +185,13 @@ internal fun CinemaDetailScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = statusTop + 44.dp, bottom = 4.dp),
+                            .padding(top = posterTop, bottom = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         val posterShape = RoundedCornerShape(18.dp)
                         Box(
                             modifier = Modifier
-                                .width(188.dp)
+                                .width(posterWidth)
                                 .aspectRatio(posterRatio)
                                 .shadow(
                                     elevation = 18.dp,
@@ -382,7 +385,60 @@ internal fun CinemaDetailScreen(
             }
 
             if (detail != null) {
-                // 3. Episode Selector right near the top for fast access
+                if (detail.summary.isNotBlank()) {
+                    item(key = "summary") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("简介", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                if (detail.summary.length > 68) {
+                                    Text(
+                                        text = if (summaryExpanded) "收起" else "展开",
+                                        color = AccentInk,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .clickable { summaryExpanded = !summaryExpanded }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            .testTag("detail_summary_toggle"),
+                                    )
+                                }
+                            }
+                            Text(
+                                text = detail.summary,
+                                color = Muted,
+                                fontSize = 14.sp,
+                                lineHeight = 22.sp,
+                                maxLines = if (summaryExpanded) Int.MAX_VALUE else 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+
+                if (state.related.isNotEmpty()) {
+                    item(key = "related") {
+                        RelatedWorksSection(state, model, accountModel, horizontalPadding = 16)
+                    }
+                }
+
+                if (detail.cast.isNotEmpty()) {
+                    item(key = "cast") {
+                        Box(Modifier.padding(horizontal = 16.dp)) {
+                            CastSection(detail.cast)
+                        }
+                    }
+                }
+
                 if (detail.episodes.isNotEmpty()) {
                     val orderedIndices = if (reverseOrder) detail.episodes.indices.reversed() else detail.episodes.indices.toList()
                     val ranges = orderedIndices.chunked(30)
@@ -478,63 +534,6 @@ internal fun CinemaDetailScreen(
                         }
                     }
                 }
-
-                // 4. Clean Borderless Expandable Synopsis
-                if (detail.summary.isNotBlank()) {
-                    item(key = "summary") {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text("简介", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                if (detail.summary.length > 68) {
-                                    Text(
-                                        text = if (summaryExpanded) "收起" else "展开",
-                                        color = AccentInk,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .clickable { summaryExpanded = !summaryExpanded }
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            .testTag("detail_summary_toggle"),
-                                    )
-                                }
-                            }
-                            Text(
-                                text = detail.summary,
-                                color = Muted,
-                                fontSize = 14.sp,
-                                lineHeight = 22.sp,
-                                maxLines = if (summaryExpanded) Int.MAX_VALUE else 3,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-
-                // 5. Cast Section (unified across all 3 themes)
-                if (detail.cast.isNotEmpty()) {
-                    item(key = "cast") {
-                        Box(Modifier.padding(horizontal = 16.dp)) {
-                            CastSection(detail.cast)
-                        }
-                    }
-                }
-
-                // 6. Related Works Section
-                if (state.related.isNotEmpty()) {
-                    item(key = "related") {
-                        RelatedWorksSection(state, model, accountModel, horizontalPadding = 16)
-                    }
-                }
             }
         }
 
@@ -554,7 +553,7 @@ internal fun CinemaDetailScreen(
         }
 
         // Keep light status-bar icons while the blurred backdrop is visibly behind the transparent bar
-        DetailStatusBar(list, 260.dp + statusTop)
+        DetailStatusBar(list, backdropHeight - 48.dp)
     }
 
     if (posterPreviewOpen && coverUrl.isNotBlank()) {

@@ -10,11 +10,11 @@ import org.junit.Test
 
 class AppThemeStyleTest {
     @Test
-    fun persistedKeysAreStableAndUnknownFallsBackToWarm() {
+    fun persistedKeysAreStableAndUnknownFallsBackToImmersive() {
         assertEquals(listOf("warm", "immersive", "cards"), AppThemeStyle.entries.map { it.key })
         AppThemeStyle.entries.forEach { assertEquals(it, AppThemeStyle.fromKey(it.key)) }
-        assertEquals(AppThemeStyle.WARM, AppThemeStyle.fromKey(null))
-        assertEquals(AppThemeStyle.WARM, AppThemeStyle.fromKey("removed-style"))
+        assertEquals(AppThemeStyle.IMMERSIVE, AppThemeStyle.fromKey(null))
+        assertEquals(AppThemeStyle.IMMERSIVE, AppThemeStyle.fromKey("removed-style"))
     }
 
     @Test
@@ -26,10 +26,13 @@ class AppThemeStyleTest {
     }
 
     @Test
-    fun withoutAChoiceEachLayoutKeepsItsNaturalLook() {
+    fun withoutAChoiceEveryLayoutFollowsTheSystem() {
         assertEquals(listOf(AppThemeStyle.IMMERSIVE), AppThemeStyle.entries.filter { it.palette().isDark })
-        assertFalse(resolveDark(null, AppThemeStyle.WARM, systemDark = true))
-        assertTrue(resolveDark(null, AppThemeStyle.IMMERSIVE, systemDark = false))
+        AppThemeStyle.entries.forEach { style ->
+            assertEquals(ThemeMode.SYSTEM, null.orDefaultFor(style))
+            assertTrue(resolveDark(null, style, systemDark = true))
+            assertFalse(resolveDark(null, style, systemDark = false))
+        }
     }
 
     @Test

@@ -60,23 +60,23 @@ class ThemeOnboardingFlowTest {
     @Test fun choosingAThemeSavesItConfirmsAndNeverAsksAgain() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             awaitPicker()
-            compose.onNodeWithTag("theme_option_warm").assertIsSelected()
-            // Previewing does not save anything yet.
-            compose.onNodeWithTag("theme_option_immersive").performClick()
             compose.onNodeWithTag("theme_option_immersive").assertIsSelected()
-            assertEquals(AppThemeStyle.WARM, model(scenario).state.value.themeStyle)
+            // Previewing does not save anything yet.
+            compose.onNodeWithTag("theme_option_warm").performClick()
+            compose.onNodeWithTag("theme_option_warm").assertIsSelected()
+            assertEquals(AppThemeStyle.IMMERSIVE, model(scenario).state.value.themeStyle)
             assertFalse(preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, true))
 
             compose.onNodeWithTag("theme_onboarding_confirm").performScrollTo().performClick()
             compose.onNodeWithTag("theme_onboarding").assertDoesNotExist()
             compose.waitUntil(5_000) {
-                compose.onAllNodes(hasText(themeAppliedMessage(AppThemeStyle.IMMERSIVE, chosen = true)))
+                compose.onAllNodes(hasText(themeAppliedMessage(AppThemeStyle.WARM, chosen = true)))
                     .fetchSemanticsNodes().isNotEmpty()
             }
             val state = model(scenario).state.value
-            assertEquals(AppThemeStyle.IMMERSIVE, state.themeStyle)
+            assertEquals(AppThemeStyle.WARM, state.themeStyle)
             assertFalse(state.themeOnboardingPending)
-            assertEquals("immersive", preferences.getString(ThemePreferences.STYLE, null))
+            assertEquals("warm", preferences.getString(ThemePreferences.STYLE, null))
             assertTrue(preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, false))
         }
         ActivityScenario.launch(MainActivity::class.java).use {
@@ -108,10 +108,10 @@ class ThemeOnboardingFlowTest {
             pressBack()
             compose.onNodeWithTag("theme_onboarding").assertDoesNotExist()
             compose.waitUntil(5_000) {
-                compose.onAllNodes(hasText(themeAppliedMessage(AppThemeStyle.WARM, chosen = false)))
+                compose.onAllNodes(hasText(themeAppliedMessage(AppThemeStyle.IMMERSIVE, chosen = false)))
                     .fetchSemanticsNodes().isNotEmpty()
             }
-            assertEquals(AppThemeStyle.WARM, model(scenario).state.value.themeStyle)
+            assertEquals(AppThemeStyle.IMMERSIVE, model(scenario).state.value.themeStyle)
             assertTrue(preferences.getBoolean(ThemePreferences.ONBOARDING_DONE, false))
         }
     }

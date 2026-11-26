@@ -208,7 +208,7 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
             if(id == null || id == credentials.deviceId || id == credentials.installId ||
                 (!validIdentifier(id) && gatewayLogin != "1"))
                 throw AccountProtocolException(
-                    if (credentials.source == AccountCredentialSource.WEBSITE) "官网登录已确认，但红果 App 未确认账号授权；可保留官网登录状态，或导入本人的 App 登录态"
+                    if (credentials.source == AccountCredentialSource.WEBSITE) "官网会话已确认，红果 App 尚未确认账号授权，请稍后重试连接"
                     // A valid session on a number that never opened the official App has no business account (hongguoTV 0.1.18).
                     else if (data.opt("biz_user_id").let { it == null || it === JSONObject.NULL || (it is String && it.isBlank()) })
                         "该账号还没有红果账号资料，请先用官方红果 App 登录一次后再试"
@@ -456,7 +456,7 @@ class CloudAccountClient internal constructor(http: OkHttpClient, private val ap
             val stamp=row.optLong("last_watch_time").let { if(it in 1..9999999999L) it*1000 else it }
             CloudProgress(Series(id,""),episode,(row.optInt("vid_index",1)-1).coerceAtLeast(0),
                 row.optLong("current_play_time").coerceAtLeast(0),row.optLong("current_total_time").coerceAtLeast(0),stamp,row.optInt("episode_count").coerceAtLeast(0))
-            }.distinctBy { it.series.id }.sortedByDescending { it.updatedAt }
+            }.sortedByDescending { it.updatedAt }.distinctBy { it.series.id }
             if (rows.length() > 0 && parsed.isEmpty()) throw AccountProtocolException("云端历史条目格式已变化")
             return parsed
         }

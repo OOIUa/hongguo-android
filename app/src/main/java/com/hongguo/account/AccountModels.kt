@@ -26,8 +26,6 @@ data class AccountState(
     val phoneStep: PhoneStep = PhoneStep.IDLE,
     val phoneRemainingSeconds: Int = 0,
     val phoneMasked: String = "",
-    /** The platform asked for a verification only the official login page can show. */
-    val suggestWebsiteLogin: Boolean = false,
     val history: List<LibraryEntry> = emptyList(),
     val favorites: List<LibraryEntry> = emptyList(),
     val likes: List<LibraryEntry> = emptyList(),
@@ -42,7 +40,7 @@ data class AccountState(
     val reservationsError: String? = null,
     val syncEnabled: Boolean = false,
     val message: String? = null,
-    val selectedSection: AccountSection = AccountSection.HISTORY,
+    val selectedSection: AccountSection = AccountSection.FAVORITES,
     val favoriteUncertainIds: Set<String> = emptySet(),
     val favoriteBusyIds: Set<String> = emptySet(),
     val reservationBusyIds: Set<String> = emptySet(),

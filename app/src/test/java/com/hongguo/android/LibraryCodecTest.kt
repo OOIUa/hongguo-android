@@ -28,6 +28,29 @@ class LibraryCodecTest {
         assertEquals(LibrarySnapshot(), LibraryCodec.decode(null))
     }
 
+    @Test fun unifiedFavoritesRetainTheirSourcesAndOrderByCollectionTime() {
+        val shared = entry("11", 100, position = 1500)
+        val deviceOnly = entry("22", 200)
+        val cloudOnly = LibraryEntry(card("33"), updatedAt = 50)
+        val remote = LibraryEntry(shared.card.copy(title = "剧集 11", cover = "", summary = ""), updatedAt = 300)
+        val result = LibraryCodec.mergedFavorites(listOf(deviceOnly, shared), listOf(cloudOnly, remote))
+        assertEquals(listOf(
+            ChaseFavorite(shared.copy(updatedAt = 300), onDevice = true, inAccount = true),
+            ChaseFavorite(deviceOnly, onDevice = true, inAccount = false),
+            ChaseFavorite(cloudOnly, onDevice = false, inAccount = true),
+        ), result)
+    }
+
+    @Test fun duplicateCloudFavoritesStayCloudOnlyAndDoNotSupplyAPlaybackCheckpoint() {
+        val remote = entry("11", 55, index = 2, position = 31_500)
+        val newer = remote.copy(updatedAt = 90, completed = true)
+        val remoteOnly = LibraryCodec.mergedFavorites(emptyList(), listOf(newer, remote)).single()
+        assertEquals(ChaseFavorite(LibraryEntry(remote.card, updatedAt = 90), onDevice = false, inAccount = true), remoteOnly)
+        val local = entry("22", 80)
+        assertEquals(listOf(ChaseFavorite(local, onDevice = true, inAccount = false)),
+            LibraryCodec.mergedFavorites(listOf(local, local.copy(updatedAt = 30)), emptyList()))
+    }
+
     @Test fun storageDecodeRejectsDamageRatherThanAuthorizingAnEmptyWrite() {
         for (raw in listOf("{broken", "{}", "[]", "{\"version\":2}", "{\"favorites\":null,\"history\":[]}")) {
             try { LibraryCodec.decodeChecked(raw); fail("Unreadable library accepted: $raw") }
@@ -147,5 +170,66 @@ class LibraryCodecTest {
         val next = LibraryCodec.recordPlayback(initial, card("a"), "new", 2, 0, 50)
         assertEquals(listOf("a", "b"), next.history.map { it.card.id })
         assertEquals(100, next.history.first().updatedAt)
+    }
+
+    @Test fun mergedHistoryUsesLastWatchIncludingRewindsAndKeepsThePosterFromOlderRows() {
+        val original = entry("1", 10, "ep8", 8, 19000)
+        val cloud = original.copy(updatedAt = 25)
+        val local = original.copy(card = card("1", "剧集 1").copy(cover = "", episodeCount = 0),
+            updatedAt = 25, episodeId = "ep2", episodeIndex = 2, positionMs = 500)
+        val guest = LibrarySnapshot(history = listOf(original, entry("guest", 4)))
+        val owner = LibrarySnapshot(history = listOf(local))
+        val merged = LibraryCodec.mergedHistory(guest, owner, listOf(cloud, entry("cloud", 30)))
+        assertEquals(listOf("cloud", "1", "guest"), merged.map { it.card.id })
+        assertEquals(local.copy(card = original.card), merged[1])
+        assertEquals(guest.history, LibraryCodec.mergedHistory(guest, null, listOf(cloud)))
+    }
+
+    @Test fun realPositionUpdatesAdvanceTimeAndFinalCompletionSurvivesPlayerDisposal() {
+        val initial = LibrarySnapshot(history = listOf(entry("another", 20), entry("a", 10, "last", 30, 20)))
+        val paused = LibraryCodec.updatePosition(initial, card(), "last", 30, 1400, now = 35)
+        assertEquals(35, paused.history.first().updatedAt)
+        assertEquals(paused, LibraryCodec.updatePosition(paused, card(), "last", 30, 1400, now = 45))
+        val ended = LibraryCodec.updatePosition(paused, card(), "last", 30, 0, now = 50, completed = true)
+        assertTrue(ended.history.first().seriesCompleted)
+        assertEquals(ended, LibraryCodec.decodeChecked(LibraryCodec.encode(ended)))
+        assertEquals(ended, LibraryCodec.updatePosition(ended, card(), "last", 30, 1420, now = 60))
+        val replay = LibraryCodec.recordPlayback(ended, card(), "old", 1, 0, 65)
+        assertFalse(replay.history.first().completed)
+        assertEquals(replay, LibraryCodec.updatePosition(replay, card(), "last", 30, 1500, now = 70))
+    }
+
+    @Test fun oldCacheCanLearnCompletionFromAnIdenticalObservationButNeverFromAnOlderWatch() {
+        val cache = entry("a", 45, "ep30", 30, 2000)
+        val confirmed = cache.copy(completed = true)
+        assertTrue(LibraryCodec.latestHistory(listOf(cache, confirmed)).single().seriesCompleted)
+        for (different in listOf(confirmed.copy(updatedAt = 44), confirmed.copy(positionMs = 2200), confirmed.copy(episodeId = "ep29"))) {
+            assertFalse(LibraryCodec.latestHistory(listOf(cache, different)).single().completed)
+        }
+    }
+
+    @Test fun removalAppliesToOneAccountAndOnlyThroughTheRemovedWatch() {
+        val watched = entry("a", 100)
+        val guest = LibrarySnapshot(history = listOf(watched))
+        val accountA = LibraryCodec.hideHistory(LibrarySnapshot(history = listOf(watched)), watched, 150)
+        val reopened = LibraryCodec.decodeChecked(LibraryCodec.encode(accountA))
+        assertEquals(emptyList<LibraryEntry>(), LibraryCodec.mergedHistory(guest, reopened, listOf(watched)))
+        assertEquals(listOf(watched), LibraryCodec.mergedHistory(guest, LibrarySnapshot(), listOf(watched)))
+        val watchedAgain = watched.copy(updatedAt = 151, episodeIndex = 2)
+        assertEquals(listOf(watchedAgain), LibraryCodec.mergedHistory(guest, reopened, listOf(watchedAgain)))
+    }
+
+    @Test fun clearingOfflineAlsoHidesOlderCloudPagesAndAFirstFrameRestoresOnlyTheRewatchedDrama() {
+        val fastClock = entry("ahead", 600)
+        val guest = LibrarySnapshot(history = listOf(entry("guest", 40)))
+        val cleared = LibraryCodec.hideAllHistory(LibrarySnapshot(), listOf(fastClock), 100)
+        val reopened = LibraryCodec.decodeChecked(LibraryCodec.encode(cleared))
+        val cloud = listOf(entry("older", 65), fastClock, entry("unknown-time", 0))
+        assertTrue(LibraryCodec.mergedHistory(guest, reopened, cloud).isEmpty())
+        val replayed = LibraryCodec.recordPlayback(reopened, fastClock.card, "second", 2, 0, 110)
+        assertEquals(listOf("ahead"), LibraryCodec.mergedHistory(guest, replayed, cloud).map { it.card.id })
+        assertEquals("second", LibraryCodec.mergedHistory(guest, replayed, cloud).single().episodeId)
+        val laterWatch = entry("new", 120)
+        assertEquals(listOf(laterWatch), LibraryCodec.mergedHistory(guest, reopened, cloud + laterWatch))
     }
 }

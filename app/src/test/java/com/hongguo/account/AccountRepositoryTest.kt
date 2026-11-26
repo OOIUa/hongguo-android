@@ -163,6 +163,22 @@ class AccountRepositoryTest {
         assertEquals(3, repo.state.value.stats?.likes)
         val merged = repo.state.value.history.single { it.card.id == other.id }
         assertEquals(5, merged.episodeIndex)
+        assertFalse(merged.completed)
+    }
+
+    @Test fun completedCloudEpisodeSurvivesOfflineCacheAndNewerRewatchWins() = runTest {
+        val progressed = CloudProgress(series, entry.episodeId, 5, 60000, 60000, 1700000000000, 10)
+        val api = Gateway().apply { historyValue = listOf(progressed) }
+        val store = signedStore()
+        val repo = repository(store, api); runCurrent()
+        val cached = AccountDiskCodec.decode(AccountDiskCodec.encode(store.value))
+        assertTrue(cached.accounts.getValue(uid).history.single().completed)
+        api.readHistoryValue = listOf(progressed.copy(episodeIndex = 1, position = 12000, updatedAt = progressed.updatedAt + 1000))
+        repo.refresh(); runCurrent()
+        val replay = repo.state.value.history.single()
+        assertEquals(2, replay.episodeIndex)
+        assertEquals(12000L, replay.positionMs)
+        assertFalse(replay.completed)
     }
 
     @Test fun watchRecordFailureKeepsTheProgressList() = runTest {
@@ -786,6 +802,20 @@ class AccountRepositoryTest {
         assertEquals(1, api.setFavoriteCalls)
     }
 
+    @Test fun confirmedFavoriteWithPartialMetadataKeepsItsTitleAndPosterAfterRefresh() = runTest {
+        val api = Gateway().apply { applyFavorite = false }
+        val repo = repository(signedStore(), api); runCurrent()
+        api.beforeFavoriteWrite = {
+            api.favoritesValue = listOf(CloudFavorite(Series(card.id, "剧集 ${card.id}"), 1700000000123))
+        }
+        repo.setFavorite(card, true, repo.ownerKey); runCurrent()
+        repo.refresh(); runCurrent()
+        val saved = repo.state.value.favorites.single()
+        assertEquals(card, saved.card)
+        assertEquals(1700000000123L, saved.updatedAt)
+        assertEquals(1, api.setFavoriteCalls)
+    }
+
     @Test fun oldFavoriteListReadCannotOverrideAConfirmedNewShelf() = runTest {
         val store = signedStore(); val api = Gateway()
         val repo = repository(store, api); runCurrent()
@@ -818,13 +848,15 @@ class AccountRepositoryTest {
         assertEquals(2, login.verifies)
     }
 
-    @Test fun platformVerificationSuggestsTheOfficialPageAndCancelClearsIt() = runTest {
-        val login = Login().apply { sendError = PhoneLogin.Failure("需要验证", 1105, needsWebsite = true) }
+    @Test fun smsVerificationChallengeIsShownUntilAnotherLoginStarts() = runTest {
+        val login = Login().apply { sendError = PhoneLogin.Failure("需要滑块验证", 1105, needsWebsite = true) }
         val repo = repository(MemoryStore(), Gateway(), login); runCurrent()
         repo.sendSms("13800138000"); runCurrent()
-        assertTrue(repo.state.value.suggestWebsiteLogin)
-        repo.cancelLogin()
-        assertFalse(repo.state.value.suggestWebsiteLogin)
+        assertEquals("需要滑块验证", repo.state.value.message)
+        assertEquals(PhoneStep.IDLE, repo.state.value.phoneStep)
+        repo.startQrLogin(); runCurrent()
+        assertNull(repo.state.value.message)
+        assertNotNull(repo.state.value.qrBytes)
     }
 
     @Test fun smsUncertainSendPersistsCooldownAndNeverAutomaticallyResends() = runTest {

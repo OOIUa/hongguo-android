@@ -86,13 +86,13 @@ class AccountProtocolTest {
         assertEquals(4, server.requestCount)
     }
 
-    @Test fun smsPlatformVerificationPointsToTheOfficialPage() {
+    @Test fun smsPlatformVerificationReportsTheRequiredSliderChallenge() {
         server.enqueue(qr())
         server.enqueue(body("""{"message":"error","data":{"error_code":1,"verify_center_decision_conf":"{}"}}"""))
         val error = assertThrows(PhoneLogin.Failure::class.java) { WebLogin(http, server.url("/")).send("13800138000") }
         assertTrue(error.needsWebsite)
         assertFalse(error.canRetryCode)
-        assertTrue(error.message!!.contains("官网"))
+        assertTrue(error.message!!.contains("滑块验证"))
     }
 
     @Test fun profilePreservesNineteenDigitIdsAndRejectsAnonymousAndBusinessErrors() {
@@ -197,7 +197,10 @@ class AccountProtocolTest {
     }
 
     @Test fun cloudHistoryParserKeepsExactPositionAndEpochUnits() {
-        val result = CloudAccountClient.parseProgress(JSONArray("""[{"series_id":"9999999999999999999","vid":"9999999999999999998","vid_index":3,"current_play_time":43210,"current_total_time":90000,"last_watch_time":1792500000}]""")).single()
+        val result = CloudAccountClient.parseProgress(JSONArray("""[
+            {"series_id":"9999999999999999999","vid":"9999999999999999997","vid_index":9,"last_watch_time":1792499999000},
+            {"series_id":"9999999999999999999","vid":"9999999999999999998","vid_index":3,"current_play_time":43210,"current_total_time":90000,"last_watch_time":1792500000}
+        ]""")).single()
         assertEquals("9999999999999999999", result.series.id)
         assertEquals(2, result.episodeIndex); assertEquals(43210L, result.position)
         assertEquals(1792500000000L, result.updatedAt)

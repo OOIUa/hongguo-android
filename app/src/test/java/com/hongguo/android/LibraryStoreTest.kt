@@ -5,11 +5,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LibraryStoreTest {
-    private class Preferences(var raw: String?) : SharedPreferences {
+    @Test fun removingAnAlreadyRemovedDeviceFavoriteCannotReaddItOrClearHistory() {
+        val storage = LibraryStore(Preferences(null))
+        val card = DramaCard("19", "剧名", "", 4, "")
+        storage.toggleFavorite(card)
+        storage.recordPlayback(card, "22", 1, 4000)
+        val before = storage.state.value.history
+        storage.removeFavorite(card.id)
+        storage.removeFavorite(card.id)
+        assertTrue(storage.state.value.favorites.isEmpty())
+        assertEquals(before, storage.state.value.history)
+    }
+
+    private class Preferences(snapshot: String?) : SharedPreferences {
+        private val values = mutableMapOf<String, String?>()
+        var raw: String? get() = values[LibraryStore.SNAPSHOT_KEY]
+            set(value) { values[LibraryStore.SNAPSHOT_KEY] = value }
+        init { raw = snapshot }
         var writes = 0
-        override fun getString(key: String?, defValue: String?) = raw ?: defValue
-        override fun getAll(): MutableMap<String, *> = mutableMapOf("snapshot" to raw)
-        override fun contains(key: String?) = raw != null
+        override fun getString(key: String?, defValue: String?) = values[key] ?: defValue
+        override fun getAll(): MutableMap<String, *> = values.toMutableMap()
+        override fun contains(key: String?) = values[key] != null
         override fun getStringSet(key: String?, defValues: MutableSet<String>?) = defValues
         override fun getInt(key: String?, defValue: Int) = defValue
         override fun getLong(key: String?, defValue: Long) = defValue
@@ -18,16 +34,17 @@ class LibraryStoreTest {
         override fun registerOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) { }
         override fun unregisterOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) { }
         override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor {
-            var pending = raw
-            override fun putString(key: String?, value: String?) = apply { pending = value }
+            private val pending = mutableMapOf<String, String?>()
+            private var clear = false
+            override fun putString(key: String?, value: String?) = apply { pending[requireNotNull(key)] = value }
             override fun putStringSet(key: String?, values: MutableSet<String>?) = this
             override fun putInt(key: String?, value: Int) = this
             override fun putLong(key: String?, value: Long) = this
             override fun putFloat(key: String?, value: Float) = this
             override fun putBoolean(key: String?, value: Boolean) = this
-            override fun remove(key: String?) = apply { pending = null }
-            override fun clear() = apply { pending = null }
-            override fun commit(): Boolean { raw = pending; writes++; return true }
+            override fun remove(key: String?) = putString(key, null)
+            override fun clear() = apply { clear = true }
+            override fun commit(): Boolean { if (clear) values.clear(); values.putAll(pending); writes++; return true }
             override fun apply() { commit() }
         }
     }
@@ -61,5 +78,24 @@ class LibraryStoreTest {
         assertEquals(listOf(entry), store.state.value.favorites)
         assertNotNull(store.state.value.storageError)
         assertEquals("not-json", preferences.raw)
+    }
+
+    @Test fun oldGuestAndTwoAccountsKeepSeparateWatchPositionsAndDeviceRemovalPersists() {
+        val card = DramaCard("1", "测试", "", 12, "")
+        val guest = LibraryEntry(card, "ep1", 1, 2500, 1)
+        val preferences = Preferences(LibraryCodec.encode(LibrarySnapshot(history = listOf(guest))))
+        val library = LibraryStore(preferences)
+        val first = library.forHistoryOwner("a")
+        val second = library.forHistoryOwner("b")
+        first.recordPlayback(card, "ep8", 8, 120)
+        second.recordPlayback(card, "ep2", 2, 380)
+        assertEquals(listOf(guest), library.state.value.history)
+        val mine = LibraryCodec.mergedHistory(library.state.value, first.state.value)
+        assertEquals("ep8", mine.single().episodeId)
+        first.deleteHistory(mine.single())
+        val reopened = LibraryStore(preferences)
+        assertTrue(LibraryCodec.mergedHistory(reopened.state.value, reopened.forHistoryOwner("a").state.value, mine).isEmpty())
+        assertEquals("ep2", LibraryCodec.mergedHistory(reopened.state.value, reopened.forHistoryOwner("b").state.value).single().episodeId)
+        assertEquals(listOf(guest), reopened.forHistoryOwner(null).state.value.history)
     }
 }

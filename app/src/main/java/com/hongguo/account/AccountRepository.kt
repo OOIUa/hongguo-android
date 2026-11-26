@@ -170,13 +170,12 @@ class AccountRepository internal constructor(
                     if (generation != 0L) return@launch
                     disk = loaded
                     val profile = loaded.profile
-                    mutableState.value = AccountState(profile = profile,
+                    showCacheLocked(AccountState(
                         websiteProfile = loaded.websiteProfile.takeIf { profile == null && loaded.websiteCredentials != null }, sessionStatus = when {
                         profile != null -> AccountSessionStatus.RESTORING
                         loaded.websiteCredentials != null -> AccountSessionStatus.WEBSITE_ONLY
                         else -> AccountSessionStatus.SIGNED_OUT
-                    })
-                    showCacheLocked()
+                    }))
                     updatePhoneCountdownLocked()
                 }
                 startCountdown()
@@ -189,9 +188,9 @@ class AccountRepository internal constructor(
     private fun state(change: (AccountState) -> AccountState) = synchronized(lock) { mutableState.value = change(mutableState.value) }
     private fun current(g: Long) = synchronized(lock) { generation == g }
     private fun cacheLocked() = disk.profile?.id?.let { disk.accounts[it] } ?: AccountCache()
-    private fun showCacheLocked() {
+    private fun showCacheLocked(state: AccountState = mutableState.value) {
         val c = cacheLocked()
-        mutableState.value = mutableState.value.copy(profile = disk.profile, history = c.history, favorites = c.favorites, likes = c.likes,
+        mutableState.value = state.copy(profile = disk.profile, history = c.history, favorites = c.favorites, likes = c.likes,
             reservations = c.reservations, reservationOnlineIds = c.reservationOnlineIds,
             reservationReleaseTexts = c.reservationReleaseTexts, syncEnabled = c.syncEnabled,
             favoriteUncertainIds = c.favoriteAttempts.keys, pendingProgressCount = c.pending.size, lastSyncAt = c.lastSyncAt)
@@ -221,7 +220,7 @@ class AccountRepository internal constructor(
         activeLogin?.cancel(); activeLogin = null
         gateway.cancelAll()
         mutableState.value = mutableState.value.copy(busy = false, qrBytes = null, qrExpiresAt = 0, qrRemainingSeconds = 0,
-            phoneStep = PhoneStep.IDLE, phoneMasked = "", suggestWebsiteLogin = false, favoriteBusyIds = emptySet(),
+            phoneStep = PhoneStep.IDLE, phoneMasked = "", favoriteBusyIds = emptySet(),
             reservationBusyIds = emptySet(), reservationResult = null)
     }
 
@@ -262,7 +261,7 @@ class AccountRepository internal constructor(
                 }
                 if (current(g)) state { it.copy(qrBytes = null, qrRemainingSeconds = 0, message = "二维码已过期，请手动重新获取") }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { handleLoginFailure(g, error, "扫码登录未完成，可重试或在官网完成验证") }
+            catch (error: Exception) { handleLoginFailure(g, error, "扫码登录未完成，请重新获取二维码后再试") }
         }
     }
 
@@ -294,8 +293,7 @@ class AccountRepository internal constructor(
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { if (current(g)) state { it.copy(busy = false,
-                suggestWebsiteLogin = (error as? PhoneLogin.Failure)?.needsWebsite == true,
-                message = loginFailureMessage(error, "验证码发送未获确认，请等待后手动重试，或在官网完成验证")) } }
+                message = loginFailureMessage(error, "验证码发送未获确认，请稍后重新获取")) } }
         }
     }
 
@@ -314,7 +312,7 @@ class AccountRepository internal constructor(
             catch (error: Exception) {
                 if (error is PhoneLogin.Failure && error.canRetryCode) {
                     if (current(pair.first)) state { it.copy(busy = false, phoneStep = PhoneStep.CODE_SENT, message = error.message) }
-                } else handleLoginFailure(pair.first, error, "本次验证码验证未完成，请在官网完成验证，或等待后手动获取新验证码")
+                } else handleLoginFailure(pair.first, error, "本次验证未完成，请稍后重新获取验证码")
             }
         }
     }
@@ -387,11 +385,10 @@ class AccountRepository internal constructor(
             ownerGeneration++
             lastUploaded.clear(); lastObserved.clear(); lastProgressUploadAt = 0
             activeLogin?.cancel(); activeLogin = null
-            mutableState.value = mutableState.value.copy(profile = profile, websiteProfile = null, sessionStatus = AccountSessionStatus.LOGGED_IN,
+            showCacheLocked(mutableState.value.copy(websiteProfile = null, sessionStatus = AccountSessionStatus.LOGGED_IN,
                 busy = false, qrBytes = null, qrExpiresAt = 0, qrRemainingSeconds = 0, phoneStep = PhoneStep.IDLE,
                 historyError = null, favoritesError = null, reservationsError = null, loginDiagnostic = null, localClearFailed = false,
-                message = "已登录红果账号")
-            showCacheLocked()
+                message = "已登录红果账号"))
         }
         refresh()
     }
@@ -455,12 +452,7 @@ class AccountRepository internal constructor(
                         cacheChange(g) { cache ->
                             // Preserve a newer local observation and any queued update while reads are in flight.
                             // A detail batch can miss series; known names and posters survive, placeholders do not.
-                            val merged = (cache.history + rows).groupBy { it.card.id }.values.map { items ->
-                                val newest = items.maxBy { it.updatedAt }
-                                val donor = items.firstOrNull { it !== newest && knownCard(it.card) } ?: newest
-                                newest.backfillCard(donor)
-                            }
-                            cache.copy(history = normalizeHistory(merged))
+                            cache.copy(history = normalizeHistory(LibraryCodec.latestHistory(cache.history + rows)))
                         }
                         if (current(g)) state { it.copy(historyError = null) }
                     }
@@ -470,7 +462,7 @@ class AccountRepository internal constructor(
                         synchronized(lock) {
                             // A list read started before/during a confirmed write must not restore the old shelf.
                             if (generation == g && favoriteRevision == readRevision && mutableState.value.favoriteBusyIds.isEmpty()) {
-                                cacheChange(g) { it.copy(favorites = normalizeFavorites(backfilled(rows, it.favorites))) }
+                                cacheChange(g) { it.copy(favorites = normalizeFavorites(rows, it.favorites)) }
                             }
                         }
                         if (current(g)) state { it.copy(favoritesError = null) }
@@ -552,7 +544,7 @@ class AccountRepository internal constructor(
             try {
                 val before = runInterruptible(io) { gateway.favorites(credentials) }.map(::favoriteEntry)
                 if (!current(g)) return@launch
-                if (!cacheChange(g) { it.copy(favorites = normalizeFavorites(before)) }) return@launch
+                if (!cacheChange(g) { it.copy(favorites = normalizeFavorites(before, it.favorites, card)) }) return@launch
                 if (before.any { it.card.id == card.id } == add) {
                     state { it.copy(message = if (add) "云端已收藏" else "云端已取消收藏") }; return@launch
                 }
@@ -564,10 +556,10 @@ class AccountRepository internal constructor(
                 val after = runInterruptible(io) { gateway.favorites(credentials) }.map(::favoriteEntry)
                 if (!current(g)) return@launch
                 if (after.any { it.card.id == card.id } == add) {
-                    cacheChange(g) { it.copy(favorites = normalizeFavorites(after), favoriteAttempts = it.favoriteAttempts - card.id) }
+                    cacheChange(g) { it.copy(favorites = normalizeFavorites(after, it.favorites, card), favoriteAttempts = it.favoriteAttempts - card.id) }
                     state { it.copy(message = if (add) "已确认云端收藏成功" else "已确认云端取消收藏") }
                 } else {
-                    cacheChange(g) { it.copy(favorites = normalizeFavorites(after)) }
+                    cacheChange(g) { it.copy(favorites = normalizeFavorites(after, it.favorites, card)) }
                     state { it.copy(message = "云端未确认本次收藏变化，请核对后再决定；不会自动重试") }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -657,7 +649,7 @@ class AccountRepository internal constructor(
                 val rows = runInterruptible(io) { gateway.favorites(pair.second) }.map(::favoriteEntry)
                 if (!current(pair.first)) return@launch
                 val added = rows.any { it.card.id == seriesId }
-                cacheChange(pair.first) { it.copy(favorites = normalizeFavorites(rows), favoriteAttempts = it.favoriteAttempts - seriesId) }
+                cacheChange(pair.first) { it.copy(favorites = normalizeFavorites(rows, it.favorites), favoriteAttempts = it.favoriteAttempts - seriesId) }
                 state { it.copy(message = if (added) "已核对：云端当前已收藏" else "已核对：云端当前未收藏。需要修改时请重新确认") }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
@@ -865,7 +857,6 @@ class AccountRepository internal constructor(
             sessionStatus = if (disk.profile != null) mutableState.value.sessionStatus
                 else if (disk.websiteCredentials != null) AccountSessionStatus.WEBSITE_ONLY else AccountSessionStatus.SIGNED_OUT,
             loginDiagnostic = (error as? AccountProtocolException)?.diagnostic,
-            suggestWebsiteLogin = (error as? PhoneLogin.Failure)?.needsWebsite == true,
             message = loginFailureMessage(error, fallback))
     }
 
@@ -893,22 +884,13 @@ class AccountRepository internal constructor(
         }
         fun card(series: Series, count: Int = 0) = DramaCard(series.id, series.title, series.cover,
             if (count > 0) count else Regex("[0-9]+").find(series.badge)?.value?.toIntOrNull() ?: 0, series.description)
-        /** Upstream detail batches can miss series; such list rows carry a numeric placeholder title.
-         *  Known names, posters and counts win over placeholders, so a refresh never trades real
-         *  metadata for placeholders. */
-        private val PlaceholderTitle = Regex("剧集 [0-9]+")
-        fun knownCard(card: DramaCard) = card.title.isNotBlank() && !PlaceholderTitle.matches(card.title)
-        fun LibraryEntry.backfillCard(previous: LibraryEntry): LibraryEntry = copy(card = card.copy(
-            title = if (!knownCard(card)) previous.card.title else card.title,
-            cover = if (card.cover.isBlank()) previous.card.cover else card.cover,
-            summary = if (card.summary.isBlank()) previous.card.summary else card.summary,
-            episodeCount = if (card.episodeCount <= 0) previous.card.episodeCount else card.episodeCount))
         fun backfilled(rows: List<LibraryEntry>, previous: List<LibraryEntry>): List<LibraryEntry> {
-            val known = previous.filter { knownCard(it.card) }.associateBy { it.card.id }
+            val known = previous.filter { it.hasKnownTitle }.associateBy { it.card.id }
             return rows.map { row -> known[row.card.id]?.let { row.backfillCard(it) } ?: row }
         }
         fun historyEntry(progress: CloudProgress) = LibraryEntry(card(progress.series, progress.episodeCount), progress.episodeId,
-            progress.episodeIndex.coerceAtLeast(0) + 1, progress.position.coerceAtLeast(0), progress.updatedAt.coerceAtLeast(0))
+            progress.episodeIndex.coerceIn(0, Int.MAX_VALUE - 1) + 1, progress.position.coerceAtLeast(0), progress.updatedAt.coerceAtLeast(0),
+            completed = progress.duration > 0 && progress.position >= progress.duration)
         fun favoriteEntry(favorite: CloudFavorite) = LibraryEntry(card(favorite.series), updatedAt = favorite.collectedAt.coerceAtLeast(0))
         fun likeEntry(like: CloudLike) = LibraryEntry(card(like.series), updatedAt = like.likedAt.coerceAtLeast(0))
         /** Release texts of upcoming reservations; short, single-line platform text only. */
@@ -921,8 +903,17 @@ class AccountRepository internal constructor(
             Series(entry.card.id, entry.card.title, entry.card.cover, entry.card.summary, "全 ${entry.card.episodeCount} 集"),
             entry.episodeId, entry.episodeIndex - 1, entry.positionMs, pending.durationMs, entry.updatedAt, entry.card.episodeCount) }
         private fun normalizeHistory(rows: List<LibraryEntry>) = LibraryCodec.normalize(LibrarySnapshot(history = rows)).history
-        private fun normalizeFavorites(rows: List<LibraryEntry>) = LibraryCodec.normalize(LibrarySnapshot(favorites = rows)).favorites
+        private fun normalizeFavorites(rows: List<LibraryEntry>, cached: List<LibraryEntry>, selected: DramaCard? = null): List<LibraryEntry> {
+            val byId = cached.associateBy { it.card.id }
+            val selectedEntry = selected?.let { LibraryEntry(it) }
+            val favorites = rows.map { row ->
+                val fromCache = byId[row.card.id]?.let { row.backfillCard(it) } ?: row
+                if (selectedEntry?.card?.id == row.card.id) fromCache.backfillCard(selectedEntry) else fromCache
+            }
+            return LibraryCodec.normalize(LibrarySnapshot(favorites = favorites)).favorites
+        }
         private fun sameObservation(previous: PendingProgress, entry: LibraryEntry, duration: Long) = previous.entry.episodeId == entry.episodeId &&
-            previous.entry.episodeIndex == entry.episodeIndex && previous.entry.positionMs == entry.positionMs && previous.durationMs == duration
+            previous.entry.episodeIndex == entry.episodeIndex && previous.entry.positionMs == entry.positionMs &&
+            previous.entry.completed == entry.completed && previous.durationMs == duration
     }
 }

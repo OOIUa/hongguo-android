@@ -91,8 +91,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -103,8 +101,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.hongguo.account.AccountViewModel
 
 /* ---------------------------------------------------------------------------------------------
@@ -113,15 +109,6 @@ import com.hongguo.account.AccountViewModel
  * ------------------------------------------------------------------------------------------- */
 
 private val Gold = Color(0xFFE9C77B)
-
-/** Edge-to-edge poster without the rounded placeholder used by list covers. */
-@Composable
-internal fun PosterImage(url: String, modifier: Modifier) {
-    Box(modifier.background(Cream)) {
-        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(),
-            contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-    }
-}
 
 @Composable
 internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
@@ -187,7 +174,7 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
             Row(Modifier.weight(1f).slidingIndicator(tabs, state.homeFeed, Color.White),
                 horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.Bottom) {
-                listOf(HomeFeed.RECOMMEND to "热度", HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧", HomeFeed.GUESS to "推荐").forEach { (feed, label) ->
+                listOf(HomeFeed.LATEST to "最新", HomeFeed.COMIC to "漫剧", HomeFeed.GUESS to "推荐").forEach { (feed, label) ->
                     val selected = state.homeFeed == feed
                     val color by animatedTabColor(selected, Color.White, Color.White.copy(alpha = .7f))
                     Column(Modifier.tabAnchor(tabs, feed).quietSelectable(selected) { model.selectHomeFeed(feed) }
@@ -383,7 +370,7 @@ internal fun ImmersiveTheater(state: HongguoUiState, model: HongguoViewModel) {
         itemsIndexed(items.drop(3), key = { _, card -> card.id }) { index, card ->
             Column(Modifier.animateItem().clickable(role = Role.Button) { model.openDrama(card) }.testTag("theater_result_${index + 3}"),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(.75f))
+                Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(DramaPosterRatio))
                 Text(card.title, color = Ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }

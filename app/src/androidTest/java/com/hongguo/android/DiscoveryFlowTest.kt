@@ -1,5 +1,8 @@
 package com.hongguo.android
 
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -67,5 +70,33 @@ class DiscoveryFlowTest {
         compose.waitUntil(120_000) { !model.state.value.category.loading && !model.state.value.filtersLoading }
         assertEquals("short_play", model.state.value.browseApplied.genre)
         assertNull(model.state.value.category.error)
+    }
+}
+
+@RunWith(AndroidJUnit4::class)
+class HomeChannelsTest {
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun everyPhoneThemeOffersLatestComicsAndRecommendations() {
+        val theme = mutableStateOf(AppThemeStyle.WARM)
+        val state = HongguoUiState()
+        lateinit var model: HongguoViewModel
+        compose.runOnIdle { model = ViewModelProvider(compose.activity)[HongguoViewModel::class.java] }
+        compose.setContent {
+            HongguoTheme(style = theme.value, applyToWindow = false) {
+                when (theme.value) {
+                    AppThemeStyle.WARM -> HomeScreen(state, model)
+                    AppThemeStyle.IMMERSIVE -> ImmersiveHome(state, model)
+                    AppThemeStyle.CARDS -> CardsHome(state, model)
+                }
+            }
+        }
+        for ((style, prefix) in listOf(AppThemeStyle.WARM to "home", AppThemeStyle.IMMERSIVE to "immersive", AppThemeStyle.CARDS to "cards")) {
+            compose.runOnIdle { theme.value = style }
+            compose.onNodeWithTag("${prefix}_feed_latest").assertExists()
+            compose.onNodeWithTag("${prefix}_feed_comic").assertExists()
+            compose.onNodeWithTag("${prefix}_feed_guess").assertIsSelected()
+            compose.onNodeWithTag("${prefix}_feed_recommend").assertDoesNotExist()
+        }
     }
 }

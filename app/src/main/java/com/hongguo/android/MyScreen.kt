@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,10 +28,11 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -49,6 +51,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -69,6 +72,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -77,10 +81,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.hongguo.account.AccountSection
 import com.hongguo.account.AccountState
 import kotlinx.coroutines.launch
 
@@ -90,22 +97,15 @@ internal fun MyScreen(
     model: HongguoViewModel,
     updateState: UpdateUiState,
     updateModel: UpdateViewModel,
+    onOpenAccountSection: (AccountSection) -> Unit,
     accountName: String? = null,
-    accountStatus: String = "登录后同步收藏、历史与预约",
+    accountStatus: String = "登录后查看收藏、历史与预约",
     accountAvatar: String? = null,
     accountSignedIn: Boolean = false,
-    cloudLibraryCount: Int? = null,
-    cloudReservationCount: Int? = null,
-    onAccount: () -> Unit = { model.selectTab(AppTab.ACCOUNT) },
 ) {
     val openSettings = { model.selectTab(AppTab.SETTINGS) }
     val openAbout = { model.selectTab(AppTab.ABOUT) }
     val openLocalFavorites = { model.selectTab(AppTab.LOCAL_FAVORITES) }
-    val openLocalHistory = { model.openPlayHistory(local = true) }
-    val openCloudLibrary = {
-        model.selectTab(AppTab.FAVORITES)
-        model.selectLibrarySource(true)
-    }
 
     val navClearance = LocalNavClearance.current
     Column(
@@ -121,14 +121,8 @@ internal fun MyScreen(
             accountStatus = accountStatus,
             accountAvatar = accountAvatar,
             signedIn = accountSignedIn,
-            localFavorites = state.favorites.size,
-            localHistory = state.history.size,
-            cloudLibrary = cloudLibraryCount,
-            cloudReservations = cloudReservationCount,
-            onAccount = onAccount,
-            onFavorites = openLocalFavorites,
-            onHistory = openLocalHistory,
-            onCloud = openCloudLibrary,
+            onAccount = { onOpenAccountSection(AccountSection.FAVORITES) },
+            onOpenAccountSection = onOpenAccountSection,
         )
         MyBentoSection(
             latest = state.history.firstOrNull(),
@@ -138,7 +132,7 @@ internal fun MyScreen(
                 if (entry != null) model.openLibrary(entry) else model.selectTab(AppTab.HOME)
             },
             onFavorites = openLocalFavorites,
-            onHistory = openLocalHistory,
+            onHistory = model::openPlayHistory,
         )
         MyMainMenuCard(
             themeLabel = state.themeStyle.label,
@@ -156,14 +150,8 @@ private fun RefinedAccountCard(
     accountStatus: String,
     accountAvatar: String?,
     signedIn: Boolean,
-    localFavorites: Int,
-    localHistory: Int,
-    cloudLibrary: Int?,
-    cloudReservations: Int?,
     onAccount: () -> Unit,
-    onFavorites: () -> Unit,
-    onHistory: () -> Unit,
-    onCloud: () -> Unit,
+    onOpenAccountSection: (AccountSection) -> Unit,
 ) {
     val shape = RoundedCornerShape(22.dp)
     Box(
@@ -173,23 +161,17 @@ private fun RefinedAccountCard(
             .background(Brush.linearGradient(listOf(AccountCardStart, AccountCardEnd)))
             .border(1.dp, AccountCardBorder, shape),
     ) {
-        // Subtle top-right brand ambient glow + faint logo watermark
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 28.dp, y = (-32).dp)
-                .size(136.dp)
-                .background(Brush.radialGradient(listOf(AccountCardGlow, Color.Transparent))),
-        )
-        Image(
-            painter = painterResource(R.drawable.ic_logo),
-            contentDescription = null,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 12.dp, y = (-12).dp)
-                .size(84.dp)
-                .alpha(0.05f),
-        )
+        Box(Modifier.matchParentSize(), contentAlignment = Alignment.TopEnd) {
+            Box(
+                Modifier.offset(x = 28.dp, y = (-32).dp).size(136.dp)
+                    .background(Brush.radialGradient(listOf(AccountCardGlow, Color.Transparent))),
+            )
+            Image(
+                painter = painterResource(R.drawable.ic_logo),
+                contentDescription = null,
+                modifier = Modifier.offset(x = 12.dp, y = (-12).dp).size(84.dp).alpha(0.05f),
+            )
+        }
 
         Column(Modifier.fillMaxWidth()) {
             Row(
@@ -249,7 +231,7 @@ private fun RefinedAccountCard(
                     color = if (signedIn) Cream else SoftOrange,
                 ) {
                     Text(
-                        text = if (signedIn) "账号" else "去登录",
+                        text = if (signedIn) "我的账号" else "去登录",
                         color = if (signedIn) Ink else AccentInk,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -258,43 +240,26 @@ private fun RefinedAccountCard(
                 }
             }
 
-            HorizontalDivider(
-                color = Line,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 11.dp),
-            ) {
-                AccountQuickStat(
-                    value = localFavorites.toString(),
-                    label = "收藏",
-                    modifier = Modifier.weight(1f),
-                    onClick = onFavorites,
-                )
-                AccountQuickStat(
-                    value = localHistory.toString(),
-                    label = "看过",
-                    modifier = Modifier.weight(1f),
-                    onClick = onHistory,
-                )
-                AccountQuickStat(
-                    value = cloudLibrary?.toString() ?: "—",
-                    label = "云片单",
-                    valueColor = if (signedIn) AccentInk else Ink,
-                    modifier = Modifier.weight(1f),
-                    onClick = onCloud,
-                )
-                AccountQuickStat(
-                    value = cloudReservations?.toString() ?: "—",
-                    label = "预约",
-                    modifier = Modifier.weight(1f),
-                    onClick = onAccount,
-                )
+            if (signedIn) {
+                HorizontalDivider(color = Line, modifier = Modifier.padding(horizontal = 16.dp))
+                AccountShortcut("我的预约", Modifier.fillMaxWidth().padding(horizontal = 4.dp).testTag("my_reservations")) {
+                    onOpenAccountSection(AccountSection.RESERVATIONS)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun AccountShortcut(label: String, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier = modifier.clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label, modifier = Modifier.weight(1f), color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Icon(Icons.Outlined.ChevronRight, null, modifier = Modifier.size(16.dp), tint = Muted)
     }
 }
 
@@ -328,151 +293,96 @@ private fun MyBentoSection(
     onFavorites: () -> Unit,
     onHistory: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(148.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        // Left: Continue watching poster card (7/12 width)
-        Box(
-            modifier = Modifier
-                .weight(7f)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(20.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF7B3B2C), Color(0xFF2C1814))))
-                .testTag("my_continue_watching")
-                .clickable { onContinue(latest) },
-        ) {
-            if (latest != null) {
-                Cover(latest.card.cover, latest.card.title, Modifier.fillMaxSize())
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color(0x521F120E),
-                                0.45f to Color(0x661E110E),
-                                1f to Color(0xE0180D0A),
-                            ),
-                        ),
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val posterWidth = minOf((maxWidth - 10.dp) * 7f / 12f, 168.dp)
+        val titleLines = if (posterWidth < 132.dp * LocalDensity.current.fontScale) 3 else 2
+        Row(Modifier.fillMaxWidth().height(posterWidth / DramaPosterRatio), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ContinueWatchingCard(latest, titleLines, Modifier.width(posterWidth), onClick = { onContinue(latest) })
+            Column(
+                Modifier.weight(1f).fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                BentoStatTile(
+                    label = "本机收藏",
+                    count = favoriteCount,
+                    icon = Icons.Outlined.StarBorder,
+                    iconTint = AccentInk,
+                    modifier = Modifier.weight(1f).fillMaxWidth().testTag("my_favorites"),
+                    onClick = onFavorites,
+                )
+                BentoStatTile(
+                    label = "观看历史",
+                    count = historyCount,
+                    icon = Icons.Outlined.History,
+                    iconTint = StatusBlue,
+                    modifier = Modifier.weight(1f).fillMaxWidth().testTag("my_history"),
+                    onClick = onHistory,
                 )
             }
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.18f),
-                    ) {
-                        Text(
-                            text = "继续追剧",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.22f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Filled.PlayArrow, null, Modifier.size(16.dp), tint = Color.White)
-                    }
-                }
-
-                if (latest != null) {
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(
-                            text = latest.card.title,
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        val ep = latest.episodeIndex.coerceAtLeast(1)
-                        val progressNote = if (latest.card.episodeCount > 0) {
-                            val pct = ((ep.toFloat() / latest.card.episodeCount).coerceIn(0.01f, 1f) * 100).toInt()
-                            "第${ep}集 · 已看 $pct%"
-                        } else {
-                            "第${ep}集 · ${libraryPositionLabel(latest.positionMs)}"
-                        }
-                        Text(
-                            text = progressNote,
-                            color = Color.White.copy(alpha = 0.78f),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(Modifier.height(1.dp))
-                        WatchProgress(
-                            entry = latest,
-                            track = Color.White.copy(alpha = 0.24f),
-                            fill = Color(0xFFFF8B74),
-                        )
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "还没有观看记录",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                        )
-                        Text(
-                            text = "去首页找部好剧",
-                            color = Color.White.copy(alpha = 0.78f),
-                            fontSize = 11.sp,
-                        )
-                    }
-                }
-            }
-        }
-
-        // Right: Stacked Local Favorites + Local History cards (5/12 width)
-        Column(
-            modifier = Modifier
-                .weight(5f)
-                .fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            BentoStatTile(
-                label = "本机收藏",
-                count = favoriteCount,
-                icon = Icons.Outlined.StarBorder,
-                iconTint = AccentInk,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .testTag("my_favorites"),
-                onClick = onFavorites,
-            )
-            BentoStatTile(
-                label = "本机看过",
-                count = historyCount,
-                icon = Icons.Outlined.History,
-                iconTint = StatusBlue,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .testTag("my_history"),
-                onClick = onHistory,
-            )
         }
     }
+}
+
+@Composable
+private fun ContinueWatchingCard(latest: LibraryEntry?, titleLines: Int, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    val progress = latest?.completedCaption ?: when {
+        latest == null -> "去首页找部好剧"
+        latest.episodeIndex > 0 && latest.card.episodeCount > 0 -> {
+            val percent = (100L * latest.episodeIndex / latest.card.episodeCount).coerceIn(1L, 100L)
+            "第 ${latest.episodeIndex} 集 · 已看 $percent%"
+        }
+        latest.episodeIndex > 0 -> "第 ${latest.episodeIndex} 集 · ${libraryPositionLabel(latest.positionMs)}"
+        latest.positionMs > 0 -> "看到 ${libraryPositionLabel(latest.positionMs)}"
+        else -> "查看剧集"
+    }
+    Box(
+        modifier.fillMaxHeight().clip(shape)
+            .background(CardSurface)
+            .border(1.dp, Line, shape)
+            .testTag("my_continue_watching")
+            .clickable(role = Role.Button, onClickLabel = if (latest == null) "前往首页" else "打开剧集详情", onClick = onClick),
+    ) {
+        if (latest != null) {
+            Cover(latest.card.cover, latest.card.title, Modifier.matchParentSize().testTag("my_continue_poster"))
+        } else {
+            Box(Modifier.matchParentSize().background(SoftOrange).padding(bottom = 48.dp), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.PlayCircleOutline, null, modifier = Modifier.size(36.dp), tint = AccentInk)
+            }
+        }
+        Column(
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                .background(Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    .25f to Color.Black.copy(alpha = .68f),
+                    1f to Color.Black.copy(alpha = .91f),
+                ))
+                .padding(start = 11.dp, end = 11.dp, top = 32.dp, bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            PosterCaption("继续追剧", 10.sp, 12.sp, Color(0xFFFFCEB6), FontWeight.SemiBold)
+            PosterCaption(
+                latest?.card?.title ?: "还没有观看记录", 13.sp, 20.sp, Color.White, FontWeight.Bold,
+                maxLines = titleLines, modifier = Modifier.weight(1f, fill = false),
+            )
+            PosterCaption(progress, 10.sp, 12.sp, Color.White.copy(alpha = .9f))
+            if (latest != null) WatchProgress(latest, Modifier.padding(top = 3.dp),
+                track = Color.White.copy(alpha = .32f), fill = Color(0xFFFF896D))
+        }
+    }
+}
+
+@Composable
+private fun PosterCaption(
+    text: String, minSize: TextUnit, maxSize: TextUnit, color: Color,
+    weight: FontWeight = FontWeight.Normal, maxLines: Int = 1, modifier: Modifier = Modifier,
+) {
+    BasicText(
+        text, modifier,
+        style = LocalTextStyle.current.copy(color = color, fontWeight = weight, lineHeight = 1.18.em, letterSpacing = 0.sp),
+        autoSize = TextAutoSize.StepBased(minSize, maxSize, 1.sp),
+        maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -489,7 +399,7 @@ private fun BentoStatTile(
         modifier = modifier
             .clip(shape)
             .border(1.dp, Line, shape)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         shape = shape,
         color = CardSurface,
     ) {
@@ -497,20 +407,15 @@ private fun BentoStatTile(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 13.dp, vertical = 11.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(label, color = Muted, fontSize = 12.sp, maxLines = 1)
-                Icon(icon, null, Modifier.size(16.dp), tint = iconTint)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, Modifier.size(20.dp), tint = iconTint)
+                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(16.dp), tint = Muted)
             }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(count.toString(), color = Ink, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-                Text("部", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 2.dp))
-            }
+            Spacer(Modifier.height(6.dp))
+            Text(label, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$count 部", color = Muted, fontSize = 12.sp, maxLines = 1)
         }
     }
 }
@@ -1377,7 +1282,7 @@ private fun CacheItemRow(
     }
 }
 
-/** 关于软件: 品牌版本卡 + 检查更新 / 启动查新 / 更新线路 + 开源许可与本机说明. */
+/** 关于软件: 品牌版本卡 + 检查更新 / 启动查新 / 更新线路 + 开源许可. */
 @Composable
 internal fun AboutSoftwareScreen(
     updateState: UpdateUiState,
@@ -1574,17 +1479,6 @@ internal fun AboutSoftwareScreen(
                     Text("开源许可", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Text("GPL-3.0-only", color = Muted, fontSize = 12.sp)
                 }
-                HorizontalDivider(
-                    color = Line.copy(alpha = 0.55f),
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                Text(
-                    text = "本机收藏、播放记录和设置保存在当前设备；卸载应用或清除数据后会被移除。",
-                    color = Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 19.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                )
             }
         }
     }
