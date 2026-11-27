@@ -53,6 +53,9 @@ internal data class VideoPlaybackUi(
     val videoHeight: Int = 0,
 )
 
+internal fun hasBufferForNextEpisode(bufferedAheadMs: Long, remainingMs: Long): Boolean =
+    bufferedAheadMs >= 5_000 || (remainingMs > 0 && bufferedAheadMs >= remainingMs)
+
 /** Snapshot of one player, shared by its listener and the progress loop. */
 private fun videoSnapshot(active: ExoPlayer, playWhenReady: Boolean, holdForGesture: (Boolean) -> Unit): VideoPlaybackUi {
     val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
@@ -229,13 +232,13 @@ internal fun rememberVideoPlayback(video: PreparedVideo?, initialPositionMs: Lon
         val currentVideo = video ?: return@LaunchedEffect
         var lastSavedAt = 0L
         while (enabled && player === active && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-            val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
-            ui = videoSnapshot(active, active.playWhenReady || gestureHold[0], holdForGesture)
+            val snapshot = videoSnapshot(active, active.playWhenReady || gestureHold[0], holdForGesture)
+            ui = snapshot
             val now = android.os.SystemClock.elapsedRealtime()
-            if (active.isPlaying) model.onPlaybackBuffered(currentVideo.episodeId, currentVideo.requestId,
-                active.bufferedPosition - active.currentPosition)
-            if (now - lastSavedAt >= 2_000 && active.playbackState != Player.STATE_ENDED) {
-                model.savePosition(currentVideo.episodeId, active.currentPosition, currentVideo.requestId, duration)
+            if (snapshot.isPlaying) model.onPlaybackBuffered(currentVideo.episodeId, currentVideo.requestId,
+                snapshot.bufferedPositionMs - snapshot.positionMs, snapshot.durationMs - snapshot.positionMs)
+            if (now - lastSavedAt >= 2_000 && !snapshot.ended) {
+                model.savePosition(currentVideo.episodeId, snapshot.positionMs, currentVideo.requestId, snapshot.durationMs)
                 lastSavedAt = now
             }
             delay(350)

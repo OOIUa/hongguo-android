@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -26,7 +27,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import com.hongguo.api.service.ProgressiveMedia
 import com.hongguo.account.AccountSection
 import com.hongguo.account.AccountSessionStatus
 import com.hongguo.android.comments.SeriesReviewApi
@@ -184,13 +184,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private var searchJob: Job? = null
     private var detailJob: Job? = null
     private var mediaJob: Job? = null
-    private var prefetchJob: Job? = null
-    private class WarmSlot(val episodeId: String) {
-        var video: PreparedVideo? = null
-        @Volatile var taken = false
-        @Volatile var reader: ProgressiveMedia.Reader? = null
-    }
-    @Volatile private var warmSlot: WarmSlot? = null
+    private var nextPreload: EpisodePreload? = null
     private var playerForeground = false
     private var resumePreparationOnForeground = false
     private var bufferReadyForPrefetch = false
@@ -582,7 +576,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     fun setPreloadNext(enabled: Boolean) {
         preferences.edit().putBoolean("preload_next", enabled).apply()
         mutableState.update { it.copy(preloadNext = enabled) }
-        if (enabled) { prefetchAttemptedFor = -1; prefetchNext() } else takePrefetch(null)
+        if (enabled) { prefetchAttemptedFor = -1; prefetchNext() } else discardPrefetch()
     }
 
     fun setThemeStyle(style: AppThemeStyle) {
@@ -830,7 +824,10 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         if (historyOwner != accounts.state.value.profile?.id) return
         val uploadOwner = accounts.ownerKey
         if (historyOwner != accounts.state.value.profile?.id) return
-        val warmed = takePrefetch(episode.id)
+        if (nextPreload?.episodeId != episode.id) discardPrefetch()
+        val preload = nextPreload
+        nextPreload = null
+        val ready = preload?.takeReady()
         ++mediaVersion
         mediaJob?.cancel()
         resumePreparationOnForeground = false
@@ -844,15 +841,17 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val savedPosition = if (restart) 0 else resumeOverrideMs ?: checkpoint?.takeIf { it.episodePosition == position }?.positionMs
             ?: preferences.getLong("${resumeKey(historyOwner, detail.id)}.${episode.id}.position", 0)
         mutableState.update {
-            it.copy(episodePosition = position, preparing = true, video = null,
+            it.copy(episodePosition = position, preparing = ready == null, video = ready?.copy(requestId = version.toLong()),
                 preparationStage = "正在获取片源", preparationDone = 0, preparationTotal = 0,
-                playbackError = null, playbackStatus = "", firstFrameRendered = false, resumePositionMs = savedPosition, playerOpen = true,
+                playbackError = null, playbackStatus = if (ready == null) "" else "正在载入播放器",
+                firstFrameRendered = false, resumePositionMs = savedPosition, playerOpen = true,
                 detailReturnsToPlayer = false)
         }
         releaseVideo(current.video)
-        mediaJob = viewModelScope.launch {
+        if (ready != null) return
+        mediaJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                val prepared = warmed ?: repository.prepare(episode, detail.id) { stage, done, total ->
+                val prepared = preload?.awaitVideo() ?: repository.prepare(episode, detail.id) { stage, done, total ->
                     if (version == mediaVersion) mutableState.update {
                         it.copy(preparationStage = stage, preparationDone = done, preparationTotal = total)
                     }
@@ -876,7 +875,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         ++mediaVersion
         mediaJob?.cancel()
         resumePreparationOnForeground = false
-        takePrefetch(null)
+        discardPrefetch()
         mutableState.update { it.copy(preparing = false, preparationStage = "", playbackStatus = "已取消，可重新选择剧集") }
     }
 
@@ -900,7 +899,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val current = state.value
         if (current.selectedCard == null || current.detail == null) return closePlayer()
         current.video?.let { accounts.flushProgress(accountPlaybacks[it.requestId]?.owner) }
-        takePrefetch(null)
+        discardPrefetch()
         mutableState.update { it.copy(playerOpen = false, detailReturnsToPlayer = true) }
     }
 
@@ -914,7 +913,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val previous = state.value.video
         ++mediaVersion
         mediaJob?.cancel()
-        takePrefetch(null)
+        discardPrefetch()
         resumePreparationOnForeground = false
         mutableState.update { it.copy(playerOpen = false, video = null, preparing = false,
             preparationStage = "", playbackError = null, playbackStatus = "", firstFrameRendered = false, detailReturnsToPlayer = false) }
@@ -926,7 +925,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         playerForeground = active
         if (!active) {
             state.value.video?.let { accounts.flushProgress(accountPlaybacks[it.requestId]?.owner) }
-            takePrefetch(null)
+            discardPrefetch()
             if (state.value.playerOpen && state.value.preparing) {
                 ++mediaVersion
                 mediaJob?.cancel()
@@ -944,45 +943,20 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val requestId = current.video?.requestId ?: return
         val detail = current.detail ?: return
         val episode = detail.episodes.getOrNull(current.episodePosition + 1) ?: return
-        if (warmSlot?.episodeId == episode.id) return
+        if (nextPreload?.episodeId == episode.id) return
         if (prefetchAttemptedFor == requestId) return
         prefetchAttemptedFor = requestId
-        takePrefetch(null)
-        val slot = WarmSlot(episode.id)
-        warmSlot = slot
-        prefetchJob = viewModelScope.launch {
-            var ready = false
-            try {
-                val prepared = repository.prepare(episode, detail.id, allowFallback = false) { _, _, _ -> }
-                slot.video = prepared
-                if (warmSlot !== slot || !playerForeground) return@launch
-                repository.warmNext(prepared) { reader ->
-                    slot.reader = reader
-                    if (reader != null && (slot.taken || warmSlot !== slot)) reader.close()
-                }
-                ready = true
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { /* Speculative work must never interrupt the current episode. */ }
-            finally {
-                if (!slot.taken && (!ready || warmSlot !== slot)) {
-                    releaseVideo(slot.video)
-                    if (warmSlot === slot) warmSlot = null
-                }
-            }
-        }
+        discardPrefetch()
+        val preload = EpisodePreload(episode.id, ::releaseVideo)
+        nextPreload = preload
+        preload.start(viewModelScope,
+            prepare = { repository.prepare(episode, detail.id, allowFallback = false) { _, _, _ -> } },
+            warm = repository::warmNext)
     }
 
-    private fun takePrefetch(episodeId: String?): PreparedVideo? {
-        val slot = warmSlot
-        warmSlot = null
-        if (slot != null) slot.taken = episodeId != null && slot.episodeId == episodeId && slot.video != null
-        slot?.reader?.close()
-        slot?.reader = null
-        prefetchJob?.cancel()
-        prefetchJob = null
-        if (slot?.taken == true) return slot.video
-        releaseVideo(slot?.video)
-        return null
+    private fun discardPrefetch() {
+        nextPreload?.discard()
+        nextPreload = null
     }
 
     private fun releaseVideo(video: PreparedVideo?) {
@@ -1002,11 +976,12 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private fun isCurrentVideo(episodeId: String, requestId: Long): Boolean =
         state.value.video?.let { it.episodeId == episodeId && it.requestId == requestId } == true
 
-    fun onPlaybackBuffered(episodeId: String, requestId: Long, bufferedAheadMs: Long) {
+    @JvmOverloads
+    fun onPlaybackBuffered(episodeId: String, requestId: Long, bufferedAheadMs: Long, remainingMs: Long = 0L) {
         if (!isCurrentVideo(episodeId, requestId)) return
         // The player sends this observation only while it is actually playing.
         accountPlaybacks[requestId]?.let { it.watchState = it.watchState.onPlaying() }
-        if (bufferedAheadMs < 5_000) return
+        if (!hasBufferForNextEpisode(bufferedAheadMs, remainingMs)) return
         bufferReadyForPrefetch = true
         prefetchNext()
     }
@@ -1103,7 +1078,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         ++mediaVersion
         detailJob?.cancel()
         mediaJob?.cancel()
-        takePrefetch(null)
+        discardPrefetch()
         resumePreparationOnForeground = false
         releaseVideo(state.value.video)
     }

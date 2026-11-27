@@ -84,6 +84,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -131,6 +132,7 @@ import com.hongguo.android.danmaku.DanmakuPrefs
 import androidx.media3.common.Player
 import android.widget.Toast
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import java.util.Locale
 
 @Composable
@@ -193,6 +195,33 @@ internal fun playerHidesSystemBars(orientation: Int): Boolean = orientation == C
 
 private data class PagerMovement(val scrolling: Boolean, val settled: Int, val synchronizing: Int?)
 
+/** Scoped to one drama by EpisodePager's key. The player attaches after the slide settles. */
+@Composable
+internal fun rememberEpisodeLoadingAllowed(
+    episodeId: String, pictureReady: Boolean, playbackFailed: Boolean, pageSettled: Boolean,
+): Boolean {
+    var lastRenderedEpisodeId by remember { mutableStateOf<String?>(null) }
+    var allowed by remember(episodeId) {
+        mutableStateOf(lastRenderedEpisodeId == null || lastRenderedEpisodeId == episodeId)
+    }
+    when {
+        pictureReady && lastRenderedEpisodeId != episodeId -> SideEffect {
+            lastRenderedEpisodeId = episodeId
+            allowed = true
+        }
+        playbackFailed && !allowed -> SideEffect { allowed = true }
+        !allowed -> {
+            val settled by rememberUpdatedState(pageSettled)
+            LaunchedEffect(episodeId) {
+                snapshotFlow { settled }.first { it }
+                delay(EpisodeSwitchLoadingDelayMillis)
+                allowed = true
+            }
+        }
+    }
+    return allowed || pictureReady || playbackFailed
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail: DramaDetail, accountModel: AccountViewModel?,
@@ -245,15 +274,22 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
 
     // The current episode stays attached while the user drags, so its picture slides away with the page instead of
     // vanishing at drag start. It is released once another page settles (or a model-driven slide starts).
-    val activeVideo = state.video?.takeIf {
-        pager.settledPage == selected && synchronizing == null && it.episodeId == detail.episodes[selected].id
-    }
+    val selectedEpisodeId = detail.episodes[selected].id
+    val selectedPageSettled = pager.settledPage == selected && synchronizing == null
+    val activeVideo = state.video?.takeIf { selectedPageSettled && it.episodeId == selectedEpisodeId }
     // A temporary drag disables the owner without discarding this request's pause/resume intent.
     val sheetOpen = showEpisodes || showSpeed || showFavorites || showInfo || showDanmaku
     val temporaryDoubleSpeed = doubleSpeedHeld && activeVideo != null && !sheetOpen
     val holdSpeed = maxOf(2f, state.playbackSpeed)
     val playback = rememberVideoPlayback(state.video, state.resumePositionMs, model, enabled = activeVideo != null,
         playbackSpeed = if (temporaryDoubleSpeed) holdSpeed else state.playbackSpeed)
+    val loadingAllowed = rememberEpisodeLoadingAllowed(
+        episodeId = selectedEpisodeId,
+        // Media3 can paint a frame while still filling its startup buffer.
+        pictureReady = state.firstFrameRendered && activeVideo != null && playback.player != null && !playback.isBuffering,
+        playbackFailed = state.playbackError != null,
+        pageSettled = selectedPageSettled && !pager.isScrollInProgress,
+    )
     val togglePlayback = {
         playback.player?.let {
             if (it.playbackState == Player.STATE_ENDED) { it.seekTo(0); it.play() }
@@ -431,7 +467,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 }
                 when {
                     // The small window shows only the picture, or a small spinner while the next one loads.
-                    inPip -> if (page == selected && (state.preparing || playback.player == null || (playback.isBuffering && playback.playWhenReady)))
+                    inPip -> if (page == selected && loadingAllowed && (state.preparing || playback.player == null || (playback.isBuffering && playback.playWhenReady)))
                         CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
                     // Neighbouring episodes carry their number, so a swipe visibly brings the next one in.
                     page != selected -> EpisodePlaceholder(detail.episodes[page].index, detail.title)
@@ -446,7 +482,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                             modifier = Modifier.testTag("media_status"))
                         if (!touchLocked) Button(onClick = model::retryPlayback, modifier = Modifier.testTag("retry_playback"), shape = RoundedCornerShape(13.dp)) { Text("重新播放") }
                     }
-                    state.preparing || (activeVideo != null && playback.player == null) || (playback.isBuffering && playback.playWhenReady) -> {
+                    state.preparing || (activeVideo != null && playback.player == null) || (playback.isBuffering && playback.playWhenReady) -> if (loadingAllowed) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(13.dp)) {
                             CircularProgressIndicator(Modifier.size(32.dp), color = Color.White, strokeWidth = 2.dp)
                             Text(if (state.preparing) preparationLabel(state.preparationStage) else "正在缓冲", color = Color.White.copy(alpha = .85f), fontSize = 12.sp,
@@ -903,6 +939,7 @@ private fun PlayerLockButton(locked: Boolean, modifier: Modifier, onClick: () ->
 }
 
 private const val EpisodeSlideMillis = 320
+private const val EpisodeSwitchLoadingDelayMillis = 300L
 private const val FullScreenControlsMillis = 4_000L
 
 @Composable
