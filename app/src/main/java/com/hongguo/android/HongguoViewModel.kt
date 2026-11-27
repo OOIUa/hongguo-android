@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
 import com.hongguo.api.service.ProgressiveMedia
 import com.hongguo.account.AccountSection
 import com.hongguo.account.AccountSessionStatus
+import com.hongguo.android.comments.SeriesReviewApi
+import com.hongguo.android.comments.SeriesReviewPage
 import com.hongguo.android.danmaku.DanmakuPrefs
 import com.hongguo.android.danmaku.DanmakuSettings
 
@@ -100,6 +102,7 @@ data class HongguoUiState(
     val detail: DramaDetail? = null,
     val loadingDetail: Boolean = false,
     val detailError: String? = null,
+    val reviewFirstPage: SeriesReviewPage? = null,
     /** Other seasons and same-IP works of the selected drama; empty when unavailable. */
     val related: List<RelatedWork> = emptyList(),
     val suggestions: List<String> = emptyList(),
@@ -140,6 +143,7 @@ data class HongguoUiState(
 ) {
     val hasMoreRanks: Boolean
         get() = if (actorRankSelected) actorRankCursor != null else rankPage < rankTotalPages
+    val reviewCount: Int? get() = reviewFirstPage?.total
 }
 
 /** A library click can outlive its account's list. Only currently visible positions can be resumed. */
@@ -664,7 +668,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         val version = ++searchVersion
         mutableState.update { it.copy(tab = AppTab.SEARCH, query = query, searchedQuery = query,
             results = emptyList(), searching = true, loadingMore = false, hasMore = false, nextOffset = 0,
-            searchError = null, selectedCard = null, detail = null, video = null, preparing = false,
+            searchError = null, selectedCard = null, detail = null, reviewFirstPage = null, video = null, preparing = false,
             playbackError = null, firstFrameRendered = false, playerOpen = false, detailReturnsToPlayer = false) }
         searchJob = viewModelScope.launch {
             try {
@@ -738,7 +742,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         cancelDetailAndMedia()
         val version = ++detailVersion
         mutableState.update {
-            it.copy(selectedCard = card, detail = null, loadingDetail = true, detailError = null, related = emptyList(),
+            it.copy(selectedCard = card, detail = null, loadingDetail = true, detailError = null, related = emptyList(), reviewFirstPage = null,
                 video = null, preparing = false, preparationStage = "", playbackError = null,
                 episodePosition = -1, playbackStatus = "", firstFrameRendered = false, resumePositionMs = 0, playerOpen = false,
                 detailReturnsToPlayer = false)
@@ -788,6 +792,28 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun retryDetails() { state.value.selectedCard?.let { openDramaInternal(it, pendingLibrary, pendingAutoPlay) } }
+
+    internal suspend fun preloadReviewSummary(seriesId: String) {
+        if (state.value.detail?.id != seriesId || state.value.reviewFirstPage != null) return
+        try {
+            loadSeriesReviews(seriesId, 0)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // The entry remains available. Opening it can retry and show any error in the panel.
+        }
+    }
+
+    internal suspend fun loadSeriesReviews(seriesId: String, offset: Int): SeriesReviewPage {
+        val version = detailVersion
+        val current = state.value
+        if (offset == 0 && current.detail?.id == seriesId) current.reviewFirstPage?.let { return it }
+        val page = SeriesReviewApi.repository.page(seriesId, offset)
+        if (offset == 0) mutableState.update {
+            if (version == detailVersion && it.detail?.id == seriesId) it.copy(reviewFirstPage = page) else it
+        }
+        return page
+    }
 
     private fun visibleHistoryFor(id: String, owner: String?): LibraryEntry? =
         state.value.takeIf { it.historyOwnerId == owner }?.history?.firstOrNull { it.card.id == id }
@@ -1067,7 +1093,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         pendingLibrary = null
         pendingAutoPlay = false
         cancelDetailAndMedia()
-        mutableState.update { it.copy(selectedCard = null, detail = null, loadingDetail = false, detailError = null,
+        mutableState.update { it.copy(selectedCard = null, detail = null, loadingDetail = false, detailError = null, reviewFirstPage = null,
             preparing = false, video = null, playbackError = null, episodePosition = -1, playbackStatus = "", firstFrameRendered = false, playerOpen = false,
             detailReturnsToPlayer = false) }
     }

@@ -50,6 +50,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -119,6 +120,10 @@ private fun CinemaDetailContent(
 ) {
     val card = state.selectedCard ?: return
     val detail = state.detail
+    val pageActive = LocalPageActive.current
+    LaunchedEffect(card.id, detail?.id, pageActive) {
+        if (pageActive && detail?.id == card.id) model.preloadReviewSummary(card.id)
+    }
     val coverUrl = detail?.cover?.takeIf { it.isNotBlank() } ?: card.cover
     val title = detail?.title?.takeIf { it.isNotBlank() } ?: card.title
     val totalEpisodes = detail?.episodes?.size ?: card.episodeCount
@@ -128,6 +133,7 @@ private fun CinemaDetailContent(
     var reverseOrder by rememberSaveable(card.id) { mutableStateOf(false) }
     var summaryExpanded by rememberSaveable(card.id) { mutableStateOf(false) }
     var posterPreviewOpen by rememberSaveable(card.id) { mutableStateOf(false) }
+    var reviewsOpen by rememberSaveable(card.id) { mutableStateOf(false) }
     // Adaptive portrait ratio matching the poster's intrinsic ratio (defaults to 3:4 = 0.75f).
     var posterRatio by remember(coverUrl) { mutableFloatStateOf(0.75f) }
 
@@ -336,6 +342,9 @@ private fun CinemaDetailContent(
                         }
 
                         DetailActions(card, detail, favorite, episodeLabel, state.loadingDetail, model, accountModel)
+                        if (detail?.id == card.id) {
+                            SeriesReviewStats(detail, state.reviewCount, onReviews = { reviewsOpen = true })
+                        }
                     }
                 }
 
@@ -405,6 +414,14 @@ private fun CinemaDetailContent(
         }
     } else {
         infoPane()
+    }
+
+    if (detail != null && detail.id == card.id) {
+        SeriesReviewsOverlay(
+            seriesId = detail.id, seriesTitle = title, landscape = wide, visible = reviewsOpen && pageActive,
+            initialPage = state.reviewFirstPage, onDismiss = { reviewsOpen = false },
+            pageLoader = { offset -> model.loadSeriesReviews(card.id, offset) },
+        )
     }
 
     if (posterPreviewOpen && coverUrl.isNotBlank()) {

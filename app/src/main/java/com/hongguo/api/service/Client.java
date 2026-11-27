@@ -394,6 +394,16 @@ public final class Client {
         return m == null ? 0 : Json.optLong(m.get(k), 0);
     }
 
+    /** 官方详情把热度文案放在 series_sub_title_list，例如「红果热度值8480万」。 */
+    private static String heatText(Map<String, Object> vd) {
+        for (Object item : Json.optArr(vd == null ? null : vd.get("series_sub_title_list"))) {
+            if (!(item instanceof String)) continue;
+            String text = ((String) item).trim();
+            if (text.contains("热度")) return text;
+        }
+        return "";
+    }
+
     /** 剥 HTML 标签并截断。 */
     private static String strip(String s, int max) {
         String t = s == null ? "" : s.replaceAll("<[^>]+>", "");
@@ -510,6 +520,8 @@ public final class Client {
         meta.put("status", "");
         meta.put("play_cnt", 0);
         meta.put("followed_cnt", 0);
+        meta.put("hot_score", 0);
+        meta.put("heat_text", "");
         meta.put("create_time", 0);
         meta.put("cover", Json.optStr(web.get("cover"), ""));
         meta.put("category", new ArrayList<>());
@@ -613,6 +625,8 @@ public final class Client {
         meta.put("status", Json.optLong(vd.get("series_status"), 0) == 1 ? "完结" : "连载中");
         meta.put("play_cnt", num(vd, "series_play_cnt"));
         meta.put("followed_cnt", num(vd, "followed_cnt"));
+        meta.put("hot_score", num(vd, "hot_score"));
+        meta.put("heat_text", heatText(vd));
         meta.put("create_time", num(vd, "create_time"));
         String cover = str(vd, "series_cover");
         meta.put("cover", cover.isEmpty() ? firstEpCover : cover);
