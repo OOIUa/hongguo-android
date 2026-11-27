@@ -81,6 +81,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -114,7 +115,8 @@ import com.hongguo.account.AccountViewModel
 private val Gold = Color(0xFFE9C77B)
 
 @Composable
-internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
+internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel, railClearance: Dp = 0.dp,
+                           onVideoSurfaceVisible: ((Boolean) -> Unit)? = null) {
     val items = state.home.items
     val wide = isWideLayout()
     Box(Modifier.fillMaxSize().background(Color.Black).testTag("immersive_home")) {
@@ -140,11 +142,17 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
                 // Only the settled page of a visible, unobscured home plays; anything else releases the preview.
                 val previewEnabled = LocalPageActive.current && state.tab == AppTab.HOME && state.selectedCard == null && !state.playerOpen
                 val preview = rememberFeedPreview(items.getOrNull(pager.settledPage), previewEnabled, model)
+                if (onVideoSurfaceVisible != null && previewEnabled && preview.rendered && preview.player != null) {
+                    DisposableEffect(onVideoSurfaceVisible) {
+                        onVideoSurfaceVisible(true)
+                        onDispose { onVideoSurfaceVisible(false) }
+                    }
+                }
                 VerticalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("immersive_feed"),
                     key = { items.getOrNull(it)?.id ?: it }, beyondViewportPageCount = 1) { page ->
                     val card = items.getOrNull(page) ?: return@VerticalPager
                     ImmersiveFeedPage(card, page, state.favorites.any { it.card.id == card.id }, model,
-                        preview.takeIf { it.cardId == card.id })
+                        preview.takeIf { it.cardId == card.id }, railClearance)
                 }
                 // On the last page, say why nothing follows instead of letting the swipe silently do nothing.
                 if (pager.currentPage >= items.lastIndex) {
@@ -155,7 +163,7 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
                         !home.hasMore -> Triple("已经看到最后一部了", "刷新", model::refreshHome)
                         else -> Triple(null, null, {})
                     }
-                    if (message != null) Row(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp, start = 24.dp, end = 24.dp)
+                    if (message != null) Row(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp, start = 24.dp + railClearance, end = 24.dp)
                         .clip(RoundedCornerShape(20.dp)).background(Color.Black.copy(alpha = .62f))
                         .padding(start = 16.dp, end = if (action != null) 4.dp else 16.dp).heightIn(min = 40.dp)
                         .testTag("immersive_feed_end"), verticalAlignment = Alignment.CenterVertically) {
@@ -170,7 +178,7 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
         }
         // Feed switcher and search float above the feed. On a landscape screen the status bar gap is kept tight:
         // no extra 6dp on top and no 8dp inside the tabs, so the row sits right under the bar instead of leaving a band.
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = if (wide) 0.dp else 6.dp, start = 12.dp, end = 4.dp),
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = if (wide) 0.dp else 6.dp, start = 12.dp + railClearance, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = model::refreshHome, modifier = Modifier.testTag("immersive_refresh")) {
                 Icon(Icons.Outlined.Refresh, "刷新推荐", tint = Color.White)
@@ -200,7 +208,8 @@ internal fun ImmersiveHome(state: HongguoUiState, model: HongguoViewModel) {
 }
 
 @Composable
-private fun ImmersiveFeedPage(card: DramaCard, page: Int, favorite: Boolean, model: HongguoViewModel, preview: FeedPreviewUi?) {
+private fun ImmersiveFeedPage(card: DramaCard, page: Int, favorite: Boolean, model: HongguoViewModel,
+                              preview: FeedPreviewUi?, railClearance: Dp) {
     val playing = preview?.player
     val wide = isWideLayout()
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).testTag("immersive_page_$page")) {
@@ -235,7 +244,7 @@ private fun ImmersiveFeedPage(card: DramaCard, page: Int, favorite: Boolean, mod
         if (wide) {
             // 横屏：标题占页面一半，接着是播放键，最右是竖排的追剧/选集/详情。
             Row(Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                .padding(start = 16.dp, end = 10.dp, bottom = 16.dp + LocalNavClearance.current),
+                .padding(start = 16.dp + railClearance, end = 10.dp, bottom = 16.dp + LocalNavClearance.current),
                 verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.fillMaxWidth(.5f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     FeedTitle(card, playing != null, roomy = false)

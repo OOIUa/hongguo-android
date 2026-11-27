@@ -55,6 +55,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hongguo.account.AccountSessionStatus
 import com.hongguo.account.AccountViewModel
 
+private val GlassRailWidth = 60.dp
+private val GlassRailMargin = 8.dp
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,9 +124,14 @@ class MainActivity : ComponentActivity() {
                     // 悬浮玻璃: the bar floats as a liquid-glass capsule and the page runs underneath it.
                     val floatingNav = showNav && state.navBarStyle == NavBarStyle.GLASS
                     val backdrop = rememberGlassBackdrop()
-                    val navClearance = if (floatingNav) floatingNavClearance() else 0.dp
-                    // 横屏把底部 Tab 栏竖到左侧，页面内容只占剩下的宽度；悬浮玻璃栏保持原样不动。
                     val wide = isWideLayout()
+                    val glassRail = floatingNav && wide
+                    val glassBottom = floatingNav && !wide
+                    val navClearance = if (glassBottom) floatingNavClearance() else 0.dp
+                    val railClearance = if (glassRail) GlassRailWidth + GlassRailMargin * 2 else 0.dp
+                    var previewSurfaceVisible by remember { mutableStateOf(false) }
+                    val reportPreviewSurface = remember { { visible: Boolean -> previewSurfaceVisible = visible } }
+                    val glassOverVideo = glassRail && feedDark && previewSurfaceVisible
                     Row(Modifier.fillMaxSize()) {
                     if (wide && showNav && !floatingNav) {
                         HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
@@ -133,7 +141,7 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                     Scaffold(containerColor = Canvas,
                         snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("app_snackbar")
-                            .padding(bottom = if (floatingNav) 76.dp else 0.dp)) }, bottomBar = {
+                            .padding(start = railClearance, bottom = if (glassBottom) 76.dp else 0.dp)) }, bottomBar = {
                         if (showNav && !floatingNav && !wide) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
                             AppNavigation(state.tab, model::selectTab, style = layout)
                         }
@@ -142,8 +150,13 @@ class MainActivity : ComponentActivity() {
                         // The top inset is applied per page: 沉浸暗场's feed and detail picture run up under the transparent
                         // status bar instead of leaving a solid band above them.
                         val topInset = insets.calculateTopPadding()
-                        val pagePadding = PaddingValues(start = insets.calculateStartPadding(direction), top = 0.dp,
-                            end = insets.calculateEndPadding(direction), bottom = if (floatingNav) 0.dp else insets.calculateBottomPadding())
+                        val safe = WindowInsets.safeDrawing.asPaddingValues()
+                        val safeStart = if (glassRail) maxOf(safe.calculateStartPadding(direction), insets.calculateStartPadding(direction))
+                            else insets.calculateStartPadding(direction)
+                        val safeEnd = if (glassRail) maxOf(safe.calculateEndPadding(direction), insets.calculateEndPadding(direction))
+                            else insets.calculateEndPadding(direction)
+                        val pagePadding = PaddingValues(start = safeStart, top = 0.dp, end = safeEnd,
+                            bottom = if (glassBottom) 0.dp else insets.calculateBottomPadding())
                         Box(Modifier.fillMaxSize()) {
                         CompositionLocalProvider(LocalNavClearance provides navClearance) {
                         // A detail page keeps drawing its last state while it slides out after 返回.
@@ -151,7 +164,7 @@ class MainActivity : ComponentActivity() {
                         SideEffect { state.selectedCard?.let { lastDetail.key = "detail_${it.id}"; lastDetail.state = state } }
                         val screenKey = state.selectedCard?.let { "detail_${it.id}" } ?: "tab_${state.tab.name}"
                         Column(Modifier.fillMaxSize()
-                            .then(if (floatingNav) Modifier.glassBackdropSource(backdrop).background(Canvas) else Modifier)
+                            .then(if (floatingNav && !glassOverVideo) Modifier.glassBackdropSource(backdrop).background(Canvas) else Modifier)
                             .padding(pagePadding).semantics { testTagsAsResourceId = true }) {
                         AnimatedContent(targetState = screenKey, label = "page_transition", modifier = Modifier.fillMaxSize(),
                             transitionSpec = { pageTransition(initialState, targetState) }) { key ->
@@ -159,8 +172,10 @@ class MainActivity : ComponentActivity() {
                         CompositionLocalProvider(LocalPageActive provides pageActive) {
                         pageStates.SaveableStateProvider(key) {
                         Box(Modifier.fillMaxSize()) {
+                        val immersiveHome = layout == AppThemeStyle.IMMERSIVE && key == "tab_${AppTab.HOME.name}"
                         Column(Modifier.fillMaxSize().background(Canvas)
-                            .padding(top = if (drawsUnderStatusBar(key, layout)) 0.dp else topInset)) {
+                            .padding(start = if (immersiveHome) 0.dp else railClearance,
+                                top = if (drawsUnderStatusBar(key, layout)) 0.dp else topInset)) {
                             // Each page draws its own state: a leaving detail page keeps its drama, never the next one.
                             val detailState = when {
                                 !key.startsWith("detail_") -> null
@@ -179,7 +194,9 @@ class MainActivity : ComponentActivity() {
                             val tabState = if (state.tab == keyTab) state else state.copy(tab = keyTab)
                             when (keyTab) {
                                 AppTab.HOME -> when (layout) {
-                                    AppThemeStyle.IMMERSIVE -> HongguoTheme(layout, dark = true, applyToWindow = false) { ImmersiveHome(state, model) }
+                                    AppThemeStyle.IMMERSIVE -> HongguoTheme(layout, dark = true, applyToWindow = false) {
+                                        ImmersiveHome(state, model, railClearance, if (glassRail) reportPreviewSurface else null)
+                                    }
                                     AppThemeStyle.CARDS -> CardsHome(state, model)
                                     AppThemeStyle.WARM -> {
                                         BrandHeader()
@@ -249,8 +266,13 @@ class MainActivity : ComponentActivity() {
                         }
                         }
                         if (floatingNav) HongguoTheme(layout, dark = dark || feedDark, applyToWindow = false) {
-                            AppNavigation(state.tab, model::selectTab, Modifier.align(Alignment.BottomCenter),
-                                style = layout, backdrop = backdrop)
+                            val placement = if (glassRail) Modifier.align(Alignment.CenterStart)
+                                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
+                                .padding(start = GlassRailMargin, top = GlassRailMargin, bottom = GlassRailMargin)
+                                .size(GlassRailWidth, 256.dp)
+                            else Modifier.align(Alignment.BottomCenter)
+                            AppNavigation(state.tab, model::selectTab, placement,
+                                style = layout, backdrop = backdrop, vertical = glassRail, overVideo = glassOverVideo)
                         }
                         }
                     }

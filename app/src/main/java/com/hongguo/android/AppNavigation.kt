@@ -65,7 +65,8 @@ import java.util.Locale
 
 @Composable
 internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifier: Modifier = Modifier,
-                           style: AppThemeStyle = AppThemeStyle.WARM, backdrop: GlassBackdrop? = null) {
+                           style: AppThemeStyle = AppThemeStyle.WARM, backdrop: GlassBackdrop? = null,
+                           vertical: Boolean = false, overVideo: Boolean = false) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val active = when (selected) {
@@ -77,7 +78,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
     // 悬浮玻璃 (设置 › 底栏样式): a liquid-glass capsule over the page. The caller passes [backdrop] only when it has
     // laid the page out underneath the capsule; otherwise the themed classic bar below is used.
     if (backdrop != null) {
-        LiquidGlassNavigationBar(active, onSelect, tabs, style, backdrop, modifier)
+        LiquidGlassNavigationBar(active, onSelect, tabs, style, backdrop, modifier, vertical, overVideo)
         return
     }
     val secondary = NavMuted

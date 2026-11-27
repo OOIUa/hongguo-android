@@ -15,6 +15,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,6 +73,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -169,28 +171,42 @@ internal class LensScratch {
         press: Float,
         insetX: Float,
         insetY: Float,
-        growY: Float,
+        crossGrowth: Float,
+        vertical: Boolean = false,
     ) {
-        val count = tabCount.coerceAtLeast(1)
-        val itemWidth = barWidth / count
+        val trackLength = if (vertical) barHeight else barWidth
+        val trackWidth = if (vertical) barWidth else barHeight
+        val alongInset = if (vertical) insetY else insetX
+        val crossInset = if (vertical) insetX else insetY
+        val itemLength = trackLength / tabCount.coerceAtLeast(1)
         val clampedPress = press.coerceIn(0f, 1f)
         val speed = abs(velocity)
-        // Velocity-driven liquid elongation while gliding or dragging; subtly compresses height to feel fluid.
+        // Stretch along the gesture and compress across it, in either orientation.
         val stretch = (speed * 0.014f).coerceIn(0f, 0.24f)
         val glideGlow = (speed * 0.085f).coerceIn(0f, 0.85f)
         liquid = maxOf(clampedPress, glideGlow)
-        val baseWidth = (itemWidth - insetX * 2f).coerceAtLeast(0f)
-        width = (baseWidth + itemWidth * (0.14f * clampedPress + 0.34f * stretch))
-            .coerceAtMost((barWidth - insetX).coerceAtLeast(0f))
-        val baseHeight = (barHeight - insetY * 2f).coerceAtLeast(0f)
-        val verticalExpand = growY * clampedPress - growY * 0.45f * stretch
-        height = (baseHeight + verticalExpand * 2f)
-            .coerceIn(baseHeight * 0.86f, (barHeight - 2f).coerceAtLeast(0f))
-        val centerX = (position + 0.5f) * itemWidth
-        val minLeft = insetX * (1f - 0.5f * clampedPress)
-        val maxLeft = (barWidth - width - minLeft).coerceAtLeast(minLeft)
-        left = (centerX - width * 0.5f).coerceIn(minLeft, maxLeft)
-        top = (barHeight - height) * 0.5f
+        val endMargin = minOf(alongInset * (1f - 0.5f * clampedPress), trackLength * 0.5f)
+        val baseLength = (itemLength - alongInset * 2f).coerceAtLeast(0f)
+        val length = (baseLength + itemLength * (0.14f * clampedPress + 0.34f * stretch))
+            .coerceAtMost(trackLength - endMargin * 2f)
+        val baseWidth = (trackWidth - crossInset * 2f).coerceAtLeast(0f)
+        val crossExpand = crossGrowth * (clampedPress - 0.45f * stretch)
+        val breadth = (baseWidth + crossExpand * 2f)
+            .coerceIn(baseWidth * 0.86f, (trackWidth - 2f).coerceAtLeast(baseWidth))
+        val center = (position + 0.5f) * itemLength
+        val along = (center - length * 0.5f).coerceIn(endMargin, (trackLength - length - endMargin).coerceAtLeast(endMargin))
+        val across = (trackWidth - breadth) * 0.5f
+        if (vertical) {
+            top = along
+            left = across
+            height = length
+            width = breadth
+        } else {
+            left = along
+            top = across
+            width = length
+            height = breadth
+        }
     }
 }
 
@@ -241,6 +257,8 @@ internal fun LiquidGlassNavigationBar(
     style: AppThemeStyle,
     backdrop: GlassBackdrop,
     modifier: Modifier = Modifier,
+    vertical: Boolean = false,
+    overVideo: Boolean = false,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
@@ -253,18 +271,18 @@ internal fun LiquidGlassNavigationBar(
 
     // iOS 26 tab bar physics: press and drag the capsule so the selection lens turns into a refractive liquid
     // droplet, ticks as it crosses each tab, and springs to the nearest tab (or one further on a flick) on release.
-    var dragging by remember { mutableStateOf(false) }
-    var dragPos by remember { mutableFloatStateOf(selectedIndex.toFloat()) }
-    var hovered by remember { mutableIntStateOf(selectedIndex) }
-    val follow = remember { Animatable(selectedIndex.toFloat()) }
+    var dragging by remember(vertical) { mutableStateOf(false) }
+    var dragPos by remember(vertical) { mutableFloatStateOf(selectedIndex.toFloat()) }
+    var hovered by remember(vertical) { mutableIntStateOf(selectedIndex) }
+    val follow = remember(vertical) { Animatable(selectedIndex.toFloat()) }
     val followSpring = spring<Float>(dampingRatio = .84f, stiffness = 1400f)
-    val settle = remember { Animatable(selectedIndex.toFloat()) }
+    val settle = remember(vertical) { Animatable(selectedIndex.toFloat()) }
     val press = animateFloatAsState(
         targetValue = if (dragging) 1f else 0f,
         animationSpec = spring(dampingRatio = .56f, stiffness = Spring.StiffnessMediumLow),
         label = "glass_press",
     )
-    LaunchedEffect(selectedIndex) {
+    LaunchedEffect(selectedIndex, vertical) {
         if (!dragging) {
             hovered = selectedIndex
             settle.animateTo(
@@ -291,24 +309,20 @@ internal fun LiquidGlassNavigationBar(
     val isDark = palette.isDark
     val base = Canvas
 
-    Box(
-        modifier
-            .fillMaxWidth()
-            .padding(WindowInsets.navigationBars.asPaddingValues())
-            .padding(start = CapsuleSideMargin, end = CapsuleSideMargin, bottom = CapsuleGap)
-            .semantics { testTagsAsResourceId = true },
-        contentAlignment = Alignment.BottomCenter,
-    ) {
+    // The landscape host supplies the rail's size and positions it within the safe area.
+    val container = if (vertical) modifier else modifier.fillMaxWidth()
+        .padding(WindowInsets.navigationBars.asPaddingValues())
+        .padding(start = CapsuleSideMargin, end = CapsuleSideMargin, bottom = CapsuleGap)
+    val capsule = if (vertical) Modifier.fillMaxSize()
+        else Modifier.widthIn(max = 440.dp).fillMaxWidth().height(CapsuleHeight)
+    Box(container.semantics { testTagsAsResourceId = true }, contentAlignment = Alignment.BottomCenter) {
         Box(
-            Modifier
-                .widthIn(max = 440.dp)
-                .fillMaxWidth()
-                .height(CapsuleHeight)
+            capsule
                 // The whole capsule eases up gently while held, like pressing on elastic glass.
                 .graphicsLayer {
                     val p = press.value
-                    scaleX = 1f + .022f * p
-                    scaleY = 1f + .042f * p
+                    scaleX = 1f + (if (vertical) .042f else .022f) * p
+                    scaleY = 1f + (if (vertical) .022f else .042f) * p
                 }
                 // Hardware rounded-rect clip + soft floating elevation (avoids per-frame Path + clipPath).
                 .shadow(
@@ -319,15 +333,15 @@ internal fun LiquidGlassNavigationBar(
                     spotColor = Color.Black.copy(alpha = if (isDark) .50f else .18f),
                 )
                 .onGloballyPositioned { capsuleOrigin = it.positionInRoot() }
-                .pointerInput(tabs.size) {
+                .pointerInput(tabs.size, vertical) {
                     val velocity = VelocityTracker()
                     val count = tabs.size
-                    fun itemWidth() = size.width / count.toFloat()
-                    fun finish(velocityX: Float) {
-                        val width = itemWidth()
-                        val current = dragPos
+                    fun itemExtent() = (if (vertical) size.height else size.width) / count.toFloat()
+                    fun finish() {
+                        val speed = velocity.calculateVelocity()
+                        val tabsPerSecond = (if (vertical) speed.y else speed.x) / itemExtent()
                         // A quick flick carries the lens on in its direction, at most about one more tab.
-                        val projected = current + ((velocityX / width) * .12f).coerceIn(-.6f, .6f)
+                        val projected = dragPos + (tabsPerSecond * .12f).coerceIn(-.6f, .6f)
                         val target = projected.roundToInt().coerceIn(0, count - 1)
                         scope.launch {
                             settle.snapTo(follow.value)
@@ -336,36 +350,39 @@ internal fun LiquidGlassNavigationBar(
                             settle.animateTo(
                                 targetValue = target.toFloat(),
                                 animationSpec = spring(dampingRatio = .62f, stiffness = Spring.StiffnessMediumLow),
-                                initialVelocity = (velocityX / width).coerceIn(-12f, 12f),
+                                initialVelocity = tabsPerSecond.coerceIn(-12f, 12f),
                             )
                         }
                         if (target != currentSelectedIndex) selectTab(target)
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                     }
-                    detectHorizontalDragGestures(
-                        onDragStart = { start ->
-                            velocity.resetTracking()
-                            dragPos = (start.x / itemWidth() - .5f).coerceIn(0f, count - 1f)
-                            hovered = dragPos.roundToInt()
-                            val from = settle.value
-                            dragging = true
-                            scope.launch { follow.snapTo(from); follow.animateTo(dragPos, followSpring) }
-                            haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                        },
-                        onHorizontalDrag = { change, dx ->
-                            change.consume()
-                            velocity.addPosition(change.uptimeMillis, change.position)
-                            dragPos = (dragPos + dx / itemWidth()).coerceIn(-.3f, count - 1 + .3f)
-                            scope.launch { follow.animateTo(dragPos, followSpring) }
-                            val now = dragPos.roundToInt().coerceIn(0, count - 1)
-                            if (now != hovered) {
-                                hovered = now
-                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            }
-                        },
-                        onDragEnd = { finish(velocity.calculateVelocity().x) },
-                        onDragCancel = { finish(0f) },
-                    )
+                    fun start(position: Offset) {
+                        velocity.resetTracking()
+                        val along = if (vertical) position.y else position.x
+                        dragPos = (along / itemExtent() - .5f).coerceIn(0f, count - 1f)
+                        hovered = dragPos.roundToInt()
+                        val from = settle.value
+                        dragging = true
+                        scope.launch { follow.snapTo(from); follow.animateTo(dragPos, followSpring) }
+                        haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                    }
+                    fun drag(change: PointerInputChange, amount: Float) {
+                        change.consume()
+                        velocity.addPosition(change.uptimeMillis, change.position)
+                        dragPos = (dragPos + amount / itemExtent()).coerceIn(-.3f, count - 1 + .3f)
+                        scope.launch { follow.animateTo(dragPos, followSpring) }
+                        val now = dragPos.roundToInt().coerceIn(0, count - 1)
+                        if (now != hovered) {
+                            hovered = now
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        }
+                    }
+                    fun cancel() {
+                        dragging = false
+                        hovered = currentSelectedIndex
+                    }
+                    if (vertical) detectVerticalDragGestures(::start, ::finish, ::cancel, ::drag)
+                    else detectHorizontalDragGestures(::start, ::finish, ::cancel, ::drag)
                 },
         ) {
             // Isolated composable so tab label/icon color animations never recompose or invalidate the backdrop.
@@ -378,6 +395,8 @@ internal fun LiquidGlassNavigationBar(
                 press = { press.value },
                 isDark = isDark,
                 baseColor = base,
+                vertical = vertical,
+                overVideo = overVideo,
             )
             GlassTabRow(
                 tabs = tabs,
@@ -388,6 +407,7 @@ internal fun LiquidGlassNavigationBar(
                 lensPosition = lensPosition,
                 press = { press.value },
                 onSelectIndex = selectTab,
+                vertical = vertical,
             )
         }
     }
@@ -403,6 +423,8 @@ private fun GlassCapsuleSurface(
     press: () -> Float,
     isDark: Boolean,
     baseColor: Color,
+    vertical: Boolean = false,
+    overVideo: Boolean = false,
 ) {
     val glass = rememberGraphicsLayer()
     val effects = remember { GlassEffectCache() }
@@ -415,7 +437,7 @@ private fun GlassCapsuleSurface(
             .fillMaxSize()
             .drawBehind {
                 if (size.width <= 0f || size.height <= 0f) return@drawBehind
-                val radius = size.height * 0.5f
+                val radius = size.minDimension * 0.5f
                 val p = press()
                 lens.update(
                     barWidth = size.width,
@@ -426,11 +448,17 @@ private fun GlassCapsuleSurface(
                     press = p,
                     insetX = 4.5.dp.toPx(),
                     insetY = 4.5.dp.toPx(),
-                    growY = 3.2.dp.toPx(),
+                    crossGrowth = 3.2.dp.toPx(),
+                    vertical = vertical,
                 )
+                val lensRadius = minOf(lens.width, lens.height) * 0.5f
 
                 // 1. Glass backdrop (Android 12+ downsampled offscreen blur + Android 13+ fused AGSL refraction)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (overVideo) {
+                    // SurfaceView is composited outside the page's graphics layer. Alpha lets those
+                    // frames show through while keeping the navigation labels readable over bright scenes.
+                    drawRect(if (isDark) Color(0xA0181B21) else Color(0xB3FAFAFC))
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     val version = backdrop.version // observe page redraws
                     val offset = capsuleOrigin() - backdrop.origin
                     val scale = glassBackdropScale(density)
@@ -469,7 +497,7 @@ private fun GlassCapsuleSurface(
                         lensCy = lensCy,
                         lensHw = lensHw,
                         lensHh = lensHh,
-                        lensRadius = lensHh,
+                        lensRadius = lensRadius * scale,
                         lensAmount = lens.liquid,
                     )
                     drawRect(baseColor)
@@ -486,9 +514,9 @@ private fun GlassCapsuleSurface(
 
                 // 2. Selection pill (subtle frosted rest state -> crystal 3D liquid droplet when pressed or gliding)
                 val pillSize = Size(lens.width, lens.height)
-                val pillCorner = CornerRadius(lens.height * 0.5f)
+                val pillCorner = CornerRadius(lensRadius)
                 val liquid = lens.liquid
-                val hasAgsl = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                val hasAgsl = !overVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 translate(lens.left, lens.top) {
                     // Resting pill softens into a clear glass glaze while the droplet lifts & refracts underneath.
                     val restWeight = if (hasAgsl) (1f - 0.72f * liquid) else (1f - 0.35f * liquid)
@@ -504,7 +532,7 @@ private fun GlassCapsuleSurface(
                             brush = brushes.restingPillRim(lens.height, isDark),
                             topLeft = Offset(restStroke * 0.5f, restStroke * 0.5f),
                             size = Size(lens.width - restStroke, lens.height - restStroke),
-                            cornerRadius = CornerRadius(lens.height * 0.5f - restStroke * 0.5f),
+                            cornerRadius = CornerRadius((lensRadius - restStroke * 0.5f).coerceAtLeast(0f)),
                             alpha = restSheenAlpha,
                             style = Stroke(restStroke),
                         )
@@ -525,7 +553,7 @@ private fun GlassCapsuleSurface(
                             brush = brushes.dropletRim(lens.width, lens.height, isDark),
                             topLeft = Offset(dropletStroke * 0.5f, dropletStroke * 0.5f),
                             size = Size(lens.width - dropletStroke, lens.height - dropletStroke),
-                            cornerRadius = CornerRadius(lens.height * 0.5f - dropletStroke * 0.5f),
+                            cornerRadius = CornerRadius((lensRadius - dropletStroke * 0.5f).coerceAtLeast(0f)),
                             alpha = liquid,
                             style = Stroke(dropletStroke),
                         )
@@ -565,14 +593,9 @@ private fun GlassTabRow(
     lensPosition: () -> Float,
     press: () -> Float,
     onSelectIndex: (Int) -> Unit,
+    vertical: Boolean,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .fillMaxHeight()
-            .selectableGroup(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    val items: @Composable (Modifier) -> Unit = { itemModifier ->
         tabs.forEachIndexed { index, item ->
             val isSelected = index == selectedIndex
             val highlighted = index == highlightedIndex
@@ -589,9 +612,7 @@ private fun GlassTabRow(
                 }
             }
             Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
+                itemModifier
                     .selectable(
                         selected = isSelected,
                         role = Role.Tab,
@@ -612,13 +633,14 @@ private fun GlassTabRow(
                             val p = press()
                             val delta = index - lensPosition()
                             val near = (1f - abs(delta)).coerceIn(0f, 1f)
-                            // Optical smoothstep magnification + subtle horizontal parallax under the held droplet.
+                            // Optical smoothstep magnification and subtle parallax along the drag axis.
                             val smoothNear = near * near * (3f - 2f * near)
                             val scale = pop.value * (1f + .18f * smoothNear * p)
                             scaleX = scale
                             scaleY = scale
-                            translationX = -2.2.dp.toPx() * delta * smoothNear * p
-                            translationY = -2.dp.toPx() * smoothNear * p
+                            val parallax = -2.2.dp.toPx() * delta * smoothNear * p
+                            translationX = if (vertical) 0f else parallax
+                            translationY = if (vertical) parallax else -2.dp.toPx() * smoothNear * p
                         },
                 )
                 Text(
@@ -631,6 +653,15 @@ private fun GlassTabRow(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
+        }
+    }
+    if (vertical) {
+        Column(Modifier.fillMaxSize().selectableGroup()) {
+            items(Modifier.weight(1f).fillMaxWidth())
+        }
+    } else {
+        Row(Modifier.fillMaxSize().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+            items(Modifier.weight(1f).fillMaxHeight())
         }
     }
 }
@@ -982,7 +1013,8 @@ half4 main(float2 coord) {
     float clampedInside = max(inside, 0.0);
 
     // Subtle cylindrical body magnification + thick curved bezel Snell-like refraction.
-    float2 shift = float2(-p.x * 0.012, -p.y * 0.055);
+    float2 magnification = size.x >= size.y ? float2(0.012, 0.055) : float2(0.055, 0.012);
+    float2 shift = -p * magnification;
     float rimBend = 0.0;
     float rimU = 0.0;
     if (clampedInside < bevel) {
