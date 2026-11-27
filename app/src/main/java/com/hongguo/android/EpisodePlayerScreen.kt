@@ -198,28 +198,31 @@ private data class PagerMovement(val scrolling: Boolean, val settled: Int, val s
 /** Scoped to one drama by EpisodePager's key. The player attaches after the slide settles. */
 @Composable
 internal fun rememberEpisodeLoadingAllowed(
-    episodeId: String, pictureReady: Boolean, playbackFailed: Boolean, pageSettled: Boolean,
+    episodeId: String, firstFrameRendered: Boolean, playbackFailed: Boolean, pageSettled: Boolean,
 ): Boolean {
     var lastRenderedEpisodeId by remember { mutableStateOf<String?>(null) }
-    var allowed by remember(episodeId) {
+    var switchFinished by remember(episodeId) {
         mutableStateOf(lastRenderedEpisodeId == null || lastRenderedEpisodeId == episodeId)
     }
-    when {
-        pictureReady && lastRenderedEpisodeId != episodeId -> SideEffect {
-            lastRenderedEpisodeId = episodeId
-            allowed = true
-        }
-        playbackFailed && !allowed -> SideEffect { allowed = true }
-        !allowed -> {
-            val settled by rememberUpdatedState(pageSettled)
-            LaunchedEffect(episodeId) {
-                snapshotFlow { settled }.first { it }
-                delay(EpisodeSwitchLoadingDelayMillis)
-                allowed = true
-            }
-        }
+    if (firstFrameRendered && lastRenderedEpisodeId != episodeId) {
+        SideEffect { lastRenderedEpisodeId = episodeId }
     }
-    return allowed || pictureReady || playbackFailed
+    if (switchFinished) return true
+    if (playbackFailed || (!firstFrameRendered && lastRenderedEpisodeId == episodeId)) {
+        SideEffect { switchFinished = true }
+        return true
+    }
+
+    // The target page must settle before its decoder attaches. After it paints its first frame,
+    // Media3 can still briefly go READY -> BUFFERING as it starts playing.
+    var waitingForFrameTooLong by remember(episodeId, firstFrameRendered) { mutableStateOf(false) }
+    val settled by rememberUpdatedState(pageSettled)
+    LaunchedEffect(episodeId, firstFrameRendered) {
+        if (!firstFrameRendered) snapshotFlow { settled }.first { it }
+        delay(EpisodeSwitchLoadingDelayMillis)
+        if (firstFrameRendered) switchFinished = true else waitingForFrameTooLong = true
+    }
+    return waitingForFrameTooLong
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -285,8 +288,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
         playbackSpeed = if (temporaryDoubleSpeed) holdSpeed else state.playbackSpeed)
     val loadingAllowed = rememberEpisodeLoadingAllowed(
         episodeId = selectedEpisodeId,
-        // Media3 can paint a frame while still filling its startup buffer.
-        pictureReady = state.firstFrameRendered && activeVideo != null && playback.player != null && !playback.isBuffering,
+        firstFrameRendered = state.firstFrameRendered && state.video?.episodeId == selectedEpisodeId,
         playbackFailed = state.playbackError != null,
         pageSettled = selectedPageSettled && !pager.isScrollInProgress,
     )
