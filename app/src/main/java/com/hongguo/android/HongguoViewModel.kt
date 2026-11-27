@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -359,10 +358,10 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         }
         viewModelScope.launch {
             // Login, logout or switching account changes whose feed 猜你喜欢 shows.
-            accounts.state.map { (it.sessionStatus == AccountSessionStatus.LOGGED_IN) to it.profile?.id }
-                .distinctUntilChanged().drop(1).collect {
-                    if (state.value.homeFeed == HomeFeed.GUESS && state.value.home.loaded) refreshHome()
-                }
+            accounts.state.map { accounts.ownerKey }.distinctUntilChanged().collect { owner ->
+                val pager = guessPager
+                if (state.value.homeFeed == HomeFeed.GUESS && pager != null && pager.owner != owner) refreshHome()
+            }
         }
         selectTab(AppTab.HOME)
     }
@@ -423,29 +422,32 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     private fun requestHome(append: Boolean) {
         val current = state.value
+        val guess = current.homeFeed == HomeFeed.GUESS
+        val owner = if (guess) accounts.ownerKey else null
         if (append && (current.home.loading || current.home.loadingMore || !current.home.hasMore)) return
+        val continuing = append && (!guess || guessPager?.owner == owner)
         val version = ++homeVersion
         homeJob?.cancel()
-        val previous = if (append) current.home else FeedState()
-        mutableState.update { it.copy(home = previous.copy(loading = !append, loadingMore = append, error = null)) }
+        val previous = if (continuing) current.home else FeedState()
+        mutableState.update { it.copy(home = previous.copy(loading = !continuing, loadingMore = continuing, error = null)) }
         homeJob = viewModelScope.launch {
-            try {
-                val page = if (current.homeFeed == HomeFeed.GUESS) guessPage(append)
-                    else repository.discover(current.homeFeed, if (append) previous.nextOffset else 0, previous.items.map { it.id })
-                if (version != homeVersion || !currentCoroutineContext().isActive) return@launch
-                mutableState.update { it.copy(home = mergePage(previous, page, append)) }
+            val home = try {
+                val page = if (guess) guessPage(continuing, owner)
+                    else repository.discover(current.homeFeed, previous.nextOffset, previous.items.map { it.id })
+                mergePage(previous, page, continuing)
             } catch (error: CancellationException) { throw error }
             catch (error: Exception) {
-                if (version == homeVersion) mutableState.update { it.copy(home = previous.copy(
-                    loading = false, loadingMore = false, loaded = true, error = readableFailure(error,
-                        if (current.homeFeed == HomeFeed.GUESS) "加载推荐" else "加载首页"))) }
+                previous.copy(loading = false, loadingMore = false, loaded = true,
+                    error = readableFailure(error, if (guess) "加载推荐" else "加载首页"))
             }
+            if (version != homeVersion || !currentCoroutineContext().isActive) return@launch
+            if (guess && owner != accounts.ownerKey) refreshHome()
+            else mutableState.update { it.copy(home = home) }
         }
     }
 
     /** Signed in: the account's own feed; otherwise the anonymous one. A changed owner restarts the round. */
-    private suspend fun guessPage(append: Boolean): DramaPage {
-        val owner = accounts.ownerKey
+    private suspend fun guessPage(append: Boolean, owner: String?): DramaPage {
         val pager = guessPager?.takeIf { append && it.owner == owner }
             ?: GuessFeedPager(owner, accounts::recommendations, previous = guessPager, history = recommendationHistory,
                 historyKey = accounts.recommendationHistoryKey(owner)).also { guessPager = it }
