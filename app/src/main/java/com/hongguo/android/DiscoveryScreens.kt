@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -80,6 +81,7 @@ internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
         feed = state.home, tagPrefix = "home", emptyTitle = "这一页暂时没有剧集", columns = warmColumns(),
         emptyHint = "可以刷新，或切换上方内容类型。", onOpen = model::openDrama,
         onRefresh = model::refreshHome, onMore = model::loadMoreHome, skipLeading = 1,
+        feedTabs = { HomeFeedTabs(state, model) },
         header = {
             item(key = "home_search", span = { GridItemSpan(maxLineSpan) }) {
                 CatalogSearchEntry("搜索剧名，发现好故事", "home_search") { model.selectTab(AppTab.SEARCH) }
@@ -95,27 +97,29 @@ internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
                         onHistory = model::openPlayHistory)
                 }
             }
-            item(key = "home_feeds", span = { GridItemSpan(maxLineSpan) }) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    val tabs = rememberTabIndicator()
-                    // 推荐 is the default and sits last, so the row opens scrolled to its end.
-                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState(Int.MAX_VALUE))
-                        .slidingIndicator(tabs, state.homeFeed, Orange, width = 32.dp, height = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                        listOf(HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单", HomeFeed.GUESS to "推荐")
-                            .forEach { (feed, label) ->
-                                CatalogTextTab(label, state.homeFeed == feed, "home_feed_${feed.name.lowercase(Locale.ROOT)}",
-                                    Modifier.tabAnchor(tabs, feed)) { model.selectHomeFeed(feed) }
-                            }
-                    }
-                    IconButton(onClick = model::refreshHome, enabled = !state.home.loading,
-                        modifier = Modifier.size(36.dp).testTag("home_refresh")) {
-                        Icon(Icons.Outlined.Refresh, "刷新首页", tint = Muted)
-                    }
-                }
-            }
         },
     )
+}
+
+@Composable
+private fun HomeFeedTabs(state: HongguoUiState, model: HongguoViewModel) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        val tabs = rememberTabIndicator()
+        // 推荐 is the default and sits last, so the row opens scrolled to its end.
+        Row(Modifier.weight(1f).horizontalScroll(rememberScrollState(Int.MAX_VALUE))
+            .slidingIndicator(tabs, state.homeFeed, Orange, width = 32.dp, height = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            listOf(HomeFeed.LATEST to "最新短剧", HomeFeed.COMIC to "漫剧榜单", HomeFeed.GUESS to "推荐")
+                .forEach { (feed, label) ->
+                    CatalogTextTab(label, state.homeFeed == feed, "home_feed_${feed.name.lowercase(Locale.ROOT)}",
+                        Modifier.tabAnchor(tabs, feed)) { model.selectHomeFeed(feed) }
+                }
+        }
+        IconButton(onClick = model::refreshHome, enabled = !state.home.loading,
+            modifier = Modifier.size(36.dp).testTag("home_refresh")) {
+            Icon(Icons.Outlined.Refresh, "刷新首页", tint = Muted)
+        }
+    }
 }
 
 /** 3 columns like the A design; falls back to 2 on narrow screens or large text so titles stay readable. */
@@ -123,7 +127,7 @@ internal fun HomeScreen(state: HongguoUiState, model: HongguoViewModel) {
 private fun warmColumns(): Int {
     val width = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp().value.toInt() }
     val narrow = LocalDensity.current.fontScale >= 1.3f || width < 360
-    // Phones get 3 (or 2) columns; tablets and landscape keep posters near phone size instead of stretching them.
+    // In portrait, wider tablets can fit more columns while keeping posters near phone size.
     return if (narrow) (width / 170).coerceIn(2, 6) else (width / 120).coerceIn(3, 8)
 }
 
@@ -319,36 +323,63 @@ private fun SelectorChip(label: String, selected: Boolean, tag: String, onClick:
 private fun CatalogGrid(
     feed: FeedState, tagPrefix: String, emptyTitle: String, emptyHint: String,
     onOpen: (DramaCard) -> Unit, onRefresh: () -> Unit, onMore: () -> Unit,
-    canLoadMore: Boolean = true, columns: Int = 0, skipLeading: Int = 0, header: LazyGridScope.() -> Unit,
+    canLoadMore: Boolean = true, columns: Int = 0, skipLeading: Int = 0,
+    feedTabs: (@Composable () -> Unit)? = null, header: LazyGridScope.() -> Unit,
 ) {
     val minimumCardWidth = if (LocalDensity.current.fontScale >= 1.5f) 184.dp else 148.dp
-    val grid = rememberLazyGridState()
-    LoadAheadEffect(feed, { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
-        { grid.layoutInfo.totalItemsCount }, canLoadMore, onMore)
-    LazyVerticalGrid(columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(minimumCardWidth), state = grid,
-        modifier = Modifier.fillMaxSize().testTag("${tagPrefix}_results"),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp).plusNavClearance(),
-        horizontalArrangement = Arrangement.spacedBy(if (columns >= 3) 10.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        header()
-        if (feed.loading && feed.items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { CatalogLoading("正在读取剧集…") }
-        if (feed.loaded && !feed.loading && feed.items.isEmpty() && feed.error == null) {
-            item(span = { GridItemSpan(maxLineSpan) }) { EmptyPrompt(emptyTitle, emptyHint) }
-        }
-        itemsIndexed(feed.items.drop(skipLeading), key = { _, card -> card.id }) { index, card ->
-            CatalogPoster(card, "${tagPrefix}_result_$index", tall = columns >= 3, Modifier.animateItem()) { onOpen(card) }
-        }
-        feed.error?.let { error ->
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                FailurePanel(error, if (canLoadMore && feed.items.isNotEmpty() && feed.hasMore) onMore else onRefresh, "${tagPrefix}_retry")
+    val wide = isWideLayout()
+    val portraitGrid = rememberLazyGridState()
+    val landscapeGrid = rememberLazyGridState()
+    val controlsGrid = rememberLazyGridState()
+    val grid = if (wide) landscapeGrid else portraitGrid
+    val resultColumns = if (wide) 2 else columns
+    val results: @Composable () -> Unit = {
+        LoadAheadEffect(feed, { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+            { grid.layoutInfo.totalItemsCount }, canLoadMore, onMore)
+        LazyVerticalGrid(columns = if (resultColumns > 0) GridCells.Fixed(resultColumns) else GridCells.Adaptive(minimumCardWidth), state = grid,
+            modifier = Modifier.fillMaxSize().testTag("${tagPrefix}_results"),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp).plusNavClearance(),
+            horizontalArrangement = Arrangement.spacedBy(if (resultColumns >= 3) 10.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!wide) {
+                header()
+                if (feedTabs != null) item(key = "home_feeds", span = { GridItemSpan(maxLineSpan) }) { feedTabs() }
+            }
+            if (feed.loading && feed.items.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { CatalogLoading("正在读取剧集…") }
+            if (feed.loaded && !feed.loading && feed.items.isEmpty() && feed.error == null) {
+                item(span = { GridItemSpan(maxLineSpan) }) { EmptyPrompt(emptyTitle, emptyHint) }
+            }
+            itemsIndexed(feed.items.drop(skipLeading), key = { _, card -> card.id }) { index, card ->
+                CatalogPoster(card, "${tagPrefix}_result_$index", tall = resultColumns >= 3, Modifier.animateItem()) { onOpen(card) }
+            }
+            feed.error?.let { error ->
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    FailurePanel(error, if (canLoadMore && feed.items.isNotEmpty() && feed.hasMore) onMore else onRefresh, "${tagPrefix}_retry")
+                }
+            }
+            if (feed.hasMore && feed.items.isNotEmpty() && feed.error == null) item(span = { GridItemSpan(maxLineSpan) }) {
+                if (canLoadMore) LoadAheadFooter("${tagPrefix}_load_more")
+                else Text("请先应用新的筛选条件", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
+            }
+            if (!feed.loading && !feed.hasMore && feed.items.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
             }
         }
-        if (feed.hasMore && feed.items.isNotEmpty() && feed.error == null) item(span = { GridItemSpan(maxLineSpan) }) {
-            if (canLoadMore) LoadAheadFooter("${tagPrefix}_load_more")
-            else Text("请先应用新的筛选条件", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
+    }
+    if (wide) {
+        // Each pane owns its lazy grid. Keep the home feed controls above the posters while they scroll.
+        Row(Modifier.fillMaxSize()) {
+            LazyVerticalGrid(columns = GridCells.Fixed(1), state = controlsGrid,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp), content = header)
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Muted.copy(alpha = .16f)))
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                if (feedTabs != null) Box(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp)) { feedTabs() }
+                Box(Modifier.weight(1f)) { results() }
+            }
         }
-        if (!feed.loading && !feed.hasMore && feed.items.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-            Text("已经到底了", Modifier.fillMaxWidth().padding(vertical = 8.dp), color = Muted, fontSize = 12.sp)
-        }
+    } else {
+        results()
     }
 }
 
