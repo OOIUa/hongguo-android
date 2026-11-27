@@ -1388,11 +1388,6 @@ internal fun AboutSoftwareScreen(
                         color = Muted,
                         fontSize = 12.sp,
                     )
-                    Text(
-                        text = "原生客户端 · 请求与媒体处理在本机执行",
-                        color = Muted,
-                        fontSize = 11.sp,
-                    )
                 }
             }
         }
