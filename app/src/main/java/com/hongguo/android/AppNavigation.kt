@@ -1,6 +1,8 @@
 package com.hongguo.android
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -22,6 +24,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -78,6 +81,7 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
         return
     }
     val secondary = NavMuted
+    val selectedColor = if (style == AppThemeStyle.WARM) AccentInk else Ink
     val haptics = LocalHapticFeedback.current
     // The drag detector outlives recompositions (keyed on the tab count only), so it must read the current
     // selection: a stale `active` from when the bar was created (e.g. back on 我的 from 设置) made a drag that
@@ -121,32 +125,36 @@ internal fun AppNavigation(selected: AppTab, onSelect: (AppTab) -> Unit, modifie
                         if (isSelected) { pop.snapTo(.84f); pop.animateTo(1f, spring(dampingRatio = .42f, stiffness = 420f)) }
                     }
                     val popLayer = Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }
-                    val color by animateColorAsState(when {
-                        !isSelected -> secondary
-                        style == AppThemeStyle.WARM -> AccentInk
-                        else -> Ink
-                    }, tween(180), label = "nav_color_${tab.name}")
+                    val color by animateColorAsState(if (isSelected) selectedColor else secondary,
+                        tween(180), label = "nav_color_${tab.name}")
                     // Selection marks grow in rather than switching on and off.
                     // Read only while drawing, so the spring redraws the mark without recomposing the bar.
                     val mark = animateFloatAsState(if (isSelected) 1f else 0f,
                         spring(dampingRatio = .7f, stiffness = Spring.StiffnessMediumLow), label = "nav_mark_${tab.name}")
+                    val interactions = remember { MutableInteractionSource() }
                     Column(Modifier.weight(1f).heightIn(min = 64.dp)
-                        .selectable(selected = active == tab, role = Role.Tab, onClick = { select(tab) }).testTag("nav_${tab.name.lowercase(Locale.ROOT)}")
+                        .selectable(selected = active == tab, role = Role.Tab, interactionSource = interactions,
+                            indication = null, onClick = { select(tab) }).testTag("nav_${tab.name.lowercase(Locale.ROOT)}")
                         .padding(horizontal = 4.dp, vertical = 7.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center) {
                         val icon = if (isSelected) item.selectedIcon else item.icon
-                        if (style == AppThemeStyle.CARDS) {
+                        val cardStyle = style == AppThemeStyle.CARDS
+                        val selectionPill = if (cardStyle) {
                             val pill = Cream
-                            Box(Modifier.width(56.dp).height(30.dp).drawBehind {
+                            Modifier.drawBehind {
                                 val m = mark.value
                                 val w = size.width * (.6f + .4f * m)
                                 drawRoundRect(pill.copy(alpha = pill.alpha * m.coerceIn(0f, 1f)), topLeft = Offset((size.width - w) / 2, 0f),
                                     size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2))
-                            }, contentAlignment = Alignment.Center) {
-                                Icon(icon, contentDescription = null, tint = color, modifier = popLayer.size(23.dp))
                             }
-                        } else Icon(icon, contentDescription = null, tint = color, modifier = popLayer.size(23.dp))
+                        } else Modifier
+                        // The whole tab receives input. Its press, hover and focus feedback stays around the icon.
+                        Box(Modifier.width(56.dp).height(if (cardStyle) 30.dp else 23.dp)
+                            .clip(RoundedCornerShape(50)).then(selectionPill)
+                            .indication(interactions, ripple(bounded = false, color = selectedColor)), contentAlignment = Alignment.Center) {
+                            Icon(icon, contentDescription = null, tint = color, modifier = popLayer.size(23.dp))
+                        }
                         Spacer(Modifier.height(4.dp))
                         Text(item.label, color = color, fontSize = if (style == AppThemeStyle.IMMERSIVE && isSelected) 14.sp else 13.sp,
                             lineHeight = 18.sp, maxLines = 2,
