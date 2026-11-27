@@ -312,8 +312,14 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     ) ?: FullScreenControlsMillis
     val chromeHidden = cleanScreen || temporaryDoubleSpeed || inPip || touchLocked
     BackHandler(enabled = cleanScreen) { cleanScreen = false }
-    // Back leaves full screen before it leaves the player; declared later, so it wins while in landscape.
-    BackHandler(enabled = landscape && !touchLocked) { activity?.requestPlayerFullScreen(false) }
+    val onPlayerBack: () -> Unit = {
+        if (landscape && backReturnsToPortrait(activity?.requestedOrientation)) {
+            activity?.requestPlayerFullScreen(false)
+        } else {
+            model.closePlayer()
+        }
+    }
+    BackHandler(enabled = landscape && !touchLocked, onBack = onPlayerBack)
     LaunchedEffect(landscape) { cleanScreen = false }
     // In full screen the controls step aside after a few seconds of playback.
     LaunchedEffect(landscape, cleanScreen, playback.isPlaying, seeking, sheetOpen, touchLocked, controlsTimeout) {
@@ -483,7 +489,7 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
                 // Full screen hides the status bar; keeping its height there pushed the title down. A bar swiped in
                 // for a moment draws over the top edge instead.
                 statusBarInsets = if (landscape) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBarsIgnoringVisibility,
-                onBack = { if (landscape) activity?.requestPlayerFullScreen(false) else model.closePlayer() },
+                onBack = onPlayerBack,
                 onShowEpisodes = { showEpisodes = true },
                 title = detail.title.takeIf { landscape },
                 // Only the title's own words respond: they slide the drama's details in from the left.

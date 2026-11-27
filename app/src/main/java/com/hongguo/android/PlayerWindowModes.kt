@@ -80,6 +80,10 @@ internal fun Activity.requestPlayerFullScreen(fullScreen: Boolean) {
     requestedOrientation = if (fullScreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
 }
 
+/** Only the portrait player's 全屏观看 button requests a fixed landscape orientation. */
+internal fun backReturnsToPortrait(requestedOrientation: Int?): Boolean =
+    requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+
 @Composable
 internal fun FullScreenWatchButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(onClick = onClick, color = Color.White.copy(alpha = .14f), contentColor = Color.White, shape = RoundedCornerShape(8.dp),

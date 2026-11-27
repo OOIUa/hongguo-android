@@ -1,5 +1,6 @@
 package com.hongguo.android
 
+import android.content.pm.ActivityInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -25,5 +26,12 @@ class PlayerWindowModesTest {
         assertEquals(9 to 16, pictureInPictureRatio(0, 0))
         assertEquals(239 to 100, pictureInPictureRatio(3000, 1000))
         assertEquals(100 to 239, pictureInPictureRatio(400, 1000))
+    }
+
+    @Test fun backRestoresPortraitAfterExplicitFullScreen() {
+        assertTrue(backReturnsToPortrait(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE))
+        assertFalse(backReturnsToPortrait(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED))
+        assertFalse(backReturnsToPortrait(ActivityInfo.SCREEN_ORIENTATION_USER))
+        assertFalse(backReturnsToPortrait(ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT))
     }
 }
