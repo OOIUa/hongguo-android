@@ -131,6 +131,7 @@ data class HongguoUiState(
     val detailReturnsToPlayer: Boolean = false,
     val autoPlayNext: Boolean = true,
     val preloadNext: Boolean = true,
+    val autoPictureInPicture: Boolean = false,
     val playbackSpeed: Float = 1f,
     /** 弹幕 rendering preferences; the per-episode comments themselves live in the player layer. */
     val danmaku: DanmakuSettings = DanmakuSettings(),
@@ -157,6 +158,7 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
     private val preferences = application.getSharedPreferences(ThemePreferences.FILE, 0)
     private val mutableState = MutableStateFlow(HongguoUiState(query = preferences.getString("last_query", "").orEmpty(),
         autoPlayNext = preferences.getBoolean("auto_play_next", true), preloadNext = preferences.getBoolean("preload_next", true),
+        autoPictureInPicture = preferences.getBoolean("auto_picture_in_picture", false),
         playbackSpeed = runCatching { preferences.getFloat("playback_speed", 1f) }.getOrDefault(1f)
             .takeIf { it in PlaybackSpeeds } ?: 1f,
         danmaku = DanmakuSettings(
@@ -577,6 +579,10 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
         preferences.edit().putBoolean("preload_next", enabled).apply()
         mutableState.update { it.copy(preloadNext = enabled) }
         if (enabled) { prefetchAttemptedFor = -1; prefetchNext() } else discardPrefetch()
+    }
+    fun setAutoPictureInPicture(enabled: Boolean) {
+        preferences.edit { putBoolean("auto_picture_in_picture", enabled) }
+        mutableState.update { it.copy(autoPictureInPicture = enabled) }
     }
 
     fun setThemeStyle(style: AppThemeStyle) {

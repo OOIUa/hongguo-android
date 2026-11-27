@@ -340,7 +340,8 @@ private fun EpisodePager(state: HongguoUiState, model: HongguoViewModel, detail:
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var lockRequested by rememberSaveable(detail.id, landscape) { mutableStateOf(false) }
     val touchLocked = landscape && lockRequested
-    val pip = rememberPlayerPictureInPicture(enabled = active && activeVideo != null && !sheetOpen,
+    val pip = rememberPlayerPictureInPicture(
+        autoEnterEnabled = state.autoPictureInPicture && active && activeVideo != null && !sheetOpen,
         playing = playback.isPlaying, videoWidth = playback.videoWidth, videoHeight = playback.videoHeight,
         onTogglePlay = togglePlayback)
     // The small window shows only the picture.

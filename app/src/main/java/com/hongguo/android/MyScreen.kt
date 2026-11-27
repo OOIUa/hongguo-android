@@ -646,7 +646,7 @@ internal fun SystemSettingsScreen(
                 )
                 SettingsHubRow(
                     title = "播放设置",
-                    subtitle = "自动连播、预加载、倍速与弹幕",
+                    subtitle = "自动连播、预加载、画中画、倍速与弹幕",
                     pill = playbackSpeedLabel(state.playbackSpeed),
                     icon = Icons.Outlined.PlayCircleOutline,
                     iconBg = StatusBlueSoft,
@@ -859,7 +859,6 @@ internal fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, on
     }
 }
 
-/** 播放设置: 自动连播 + 预加载 + 默认播放倍速 + 默认开启官方弹幕. */
 @Composable
 internal fun PlaybackSettingsScreen(state: HongguoUiState, model: HongguoViewModel, onBack: () -> Unit) {
     val cardShape = RoundedCornerShape(22.dp)
@@ -898,6 +897,17 @@ internal fun PlaybackSettingsScreen(state: HongguoUiState, model: HongguoViewMod
                     checked = state.preloadNext,
                     tag = "settings_preload",
                     onChange = model::setPreloadNext,
+                )
+                HorizontalDivider(
+                    color = Line.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                SettingSwitch(
+                    title = "返回桌面时自动进入画中画",
+                    subtitle = "播放时按主页键或用手势返回桌面，可在小窗中继续观看",
+                    checked = state.autoPictureInPicture,
+                    tag = "settings_auto_pip",
+                    onChange = model::setAutoPictureInPicture,
                 )
             }
         }

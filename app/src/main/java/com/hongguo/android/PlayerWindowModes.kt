@@ -107,13 +107,12 @@ internal class PlayerPictureInPicture(val supported: Boolean) {
 }
 
 /**
- * 小窗播放 for the open player. The button enters it directly; leaving the app while a video plays enters it
- * automatically (Android 12+ through the platform, older versions on the user-leave hint). The user can turn this
- * off per app in the system's 画中画 settings. The small window carries a play/pause action.
+ * The player button opens 小窗播放 directly. When enabled in playback settings, leaving during playback
+ * also opens the small window (through the platform on Android 12+ or the user-leave hint on older devices).
  */
 @Composable
 internal fun rememberPlayerPictureInPicture(
-    enabled: Boolean,
+    autoEnterEnabled: Boolean,
     playing: Boolean,
     videoWidth: Int,
     videoHeight: Int,
@@ -126,8 +125,8 @@ internal fun rememberPlayerPictureInPicture(
     }
     val pip = remember(activity) { PlayerPictureInPicture(supported) }
     val toggle by rememberUpdatedState(onTogglePlay)
-    val currentEnabled by rememberUpdatedState(enabled)
-    val currentPlaying by rememberUpdatedState(playing)
+    val autoEnter = autoEnterEnabled && playing
+    val currentAutoEnter by rememberUpdatedState(autoEnter)
     // Between episodes the size is 0 until the next one's first format; keeping the last known size stops the
     // small window from jumping to 9:16 and back (issue #4).
     val lastSize = remember(activity) { IntArray(2) }
@@ -149,16 +148,16 @@ internal fun rememberPlayerPictureInPicture(
         return builder.build()
     }
     pip.enterAction = {
-        runCatching { activity.enterPictureInPictureMode(params(enabled && playing)) }.getOrDefault(false)
+        runCatching { activity.enterPictureInPictureMode(params(autoEnter)) }.getOrDefault(false)
     }
 
     DisposableEffect(activity) {
         pip.active = activity.isInPictureInPictureMode
         val listener = Consumer<PictureInPictureModeChangedInfo> { pip.active = it.isInPictureInPictureMode }
         activity.addOnPictureInPictureModeChangedListener(listener)
-        // Android 11 and older have no auto-enter: going home while a video plays enters the small window here.
+        // Android 11 and older use the user-leave hint for opt-in automatic entry.
         val leaving = Runnable {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && currentEnabled && currentPlaying && !pip.active) pip.enter()
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && currentAutoEnter && !pip.active) pip.enter()
         }
         activity.addOnUserLeaveHintListener(leaving)
         val receiver = object : BroadcastReceiver() {
@@ -174,8 +173,8 @@ internal fun rememberPlayerPictureInPicture(
         }
     }
     // Keeps the ratio, the play/pause action and auto-enter current, including while the window is small.
-    LaunchedEffect(enabled, playing, shownWidth, shownHeight) {
-        runCatching { activity.setPictureInPictureParams(params(enabled && playing)) }
+    LaunchedEffect(activity, autoEnter, playing, shownWidth, shownHeight) {
+        runCatching { activity.setPictureInPictureParams(params(autoEnter)) }
     }
     return pip
 }
