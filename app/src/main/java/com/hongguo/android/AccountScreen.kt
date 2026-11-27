@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,8 +29,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -138,12 +141,20 @@ internal fun AccountScreen(
     val hasPendingNotice = signedIn && state.pendingProgressCount > 0
     // A reservation shortcut starts at the shelf. Returning from a detail or settings restores the list position.
     val atReservations = accountPageVisit > 0 && signedIn && state.selectedSection == AccountSection.RESERVATIONS
-    val listState = key(accountPageVisit, state.profile?.id) {
+    val wide = isWideLayout()
+    val portraitList = key(accountPageVisit, state.profile?.id) {
         val shelfStart = 2 + (if (hasNotice) 1 else 0) + (if (hasPendingNotice) 1 else 0)
         rememberLazyListState(initialFirstVisibleItemIndex = if (atReservations) shelfStart else 0)
     }
 
-    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val rightList = key(accountPageVisit, state.profile?.id) {
+        // The history card and optional notices precede the shelf in the right column.
+        val shelfStart = 1 + (if (hasNotice) 1 else 0) + (if (hasPendingNotice) 1 else 0)
+        rememberLazyListState(initialFirstVisibleItemIndex = if (atReservations) shelfStart else 0)
+    }
+    val identityList = key(accountPageVisit, state.profile?.id) { rememberLazyListState() }
+    val listState = if (wide) identityList else portraitList
+    val statusTop = if (wide) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val heroCollapsePx = with(LocalDensity.current) { 116.dp.roundToPx() }
     val heroUnderBar by remember(listState, heroCollapsePx) {
         derivedStateOf {
@@ -153,18 +164,11 @@ internal fun AccountScreen(
     }
     val reportHeroUnderBar = LocalAccountHeroUnderBar.current
     val pageActive = LocalPageActive.current
-    LaunchedEffect(heroUnderBar, pageActive) {
-        if (pageActive) reportHeroUnderBar(heroUnderBar)
+    LaunchedEffect(heroUnderBar, pageActive, wide) {
+        if (pageActive) reportHeroUnderBar(!wide && heroUnderBar)
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Canvas)
-            .testTag("account_screen"),
-        contentPadding = PaddingValues(bottom = 28.dp),
-    ) {
+    val identityItems: LazyListScope.() -> Unit = {
         stickyHeader(key = "account_title") {
             AccountCinemaTopBar(
                 statusTop = statusTop,
@@ -178,13 +182,22 @@ internal fun AccountScreen(
             )
         }
 
-        if (signedIn) {
-            item(key = "account_hero") {
-                AccountSignedInHero(
-                    state = state,
-                    onAccountSettings = onAccountSettings,
+        item(key = "account_hero") {
+            when {
+                signedIn -> AccountSignedInHero(state = state, onAccountSettings = onAccountSettings)
+                sessionStatus == AccountSessionStatus.WEBSITE_ONLY -> AccountBrandHero(title = "官网已登录，账号待连接")
+                else -> AccountBrandHero(
+                    title = when (sessionStatus) {
+                        AccountSessionStatus.NEEDS_VERIFICATION -> "账号需要重新验证"
+                        AccountSessionStatus.RESTORING -> "正在确认已保存账号"
+                        else -> "登录红果账号"
+                    },
                 )
             }
+        }
+    }
+    val contentItems: LazyListScope.() -> Unit = {
+        if (signedIn) {
             if (hasNotice) {
                 item(key = "account_notice") {
                     AccountTopNoticeCard(
@@ -229,9 +242,6 @@ internal fun AccountScreen(
                 horizontalPadding = 16.dp,
             )
         } else if (sessionStatus == AccountSessionStatus.WEBSITE_ONLY) {
-            item(key = "account_hero") {
-                AccountBrandHero(title = "官网已登录，账号待连接")
-            }
             if (hasNotice) {
                 item(key = "account_notice") {
                     AccountTopNoticeCard(
@@ -328,15 +338,6 @@ internal fun AccountScreen(
                 }
             }
         } else {
-            item(key = "account_hero") {
-                AccountBrandHero(
-                    title = when (sessionStatus) {
-                        AccountSessionStatus.NEEDS_VERIFICATION -> "账号需要重新验证"
-                        AccountSessionStatus.RESTORING -> "正在确认已保存账号"
-                        else -> "登录红果账号"
-                    },
-                )
-            }
             if (hasNotice) {
                 item(key = "account_notice") {
                     AccountTopNoticeCard(
@@ -471,6 +472,26 @@ internal fun AccountScreen(
                     }
                 }
             }
+        }
+    }
+
+    Row(Modifier.fillMaxSize().background(Canvas).then(if (wide) Modifier.statusBarsPadding() else Modifier)) {
+        if (wide) {
+            LazyColumn(
+                state = identityList,
+                modifier = Modifier.weight(1f).fillMaxHeight().testTag("account_wide_identity"),
+            ) {
+                identityItems()
+            }
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Line))
+        }
+        LazyColumn(
+            state = if (wide) rightList else portraitList,
+            modifier = Modifier.weight(1f).fillMaxHeight().testTag("account_screen"),
+            contentPadding = PaddingValues(bottom = 28.dp),
+        ) {
+            if (!wide) identityItems()
+            contentItems()
         }
     }
 

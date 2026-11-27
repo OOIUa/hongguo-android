@@ -1,5 +1,8 @@
 package com.hongguo.android
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -19,6 +22,31 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AccountUiFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Test fun rotatingAccountKeepsTheLoginDraftAndSelectedMethod() {
+        fun rotate(orientation: Int, requested: Int) {
+            compose.activityRule.scenario.onActivity { it.requestedOrientation = requested }
+            compose.waitUntil(8_000) { compose.activity.resources.configuration.orientation == orientation }
+            compose.waitForIdle()
+        }
+
+        rotate(Configuration.ORIENTATION_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+        compose.runOnIdle {
+            ViewModelProvider(compose.activity)[AccountViewModel::class.java].logout()
+            ViewModelProvider(compose.activity)[HongguoViewModel::class.java].selectTab(AppTab.ACCOUNT)
+        }
+        compose.onNodeWithTag("account_wide_identity").assertDoesNotExist()
+        val phone = compose.onNodeWithTag("account_phone")
+        phone.performScrollTo().performTextInput("123")
+        rotate(Configuration.ORIENTATION_LANDSCAPE, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+        compose.onNodeWithTag("account_wide_identity").assertExists()
+        phone.performScrollTo().assertTextContains("123")
+        compose.onNodeWithTag("account_method_qr").performScrollTo().performClick()
+        compose.onNodeWithTag("account_method_qr").assertIsSelected()
+        rotate(Configuration.ORIENTATION_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+        compose.onNodeWithTag("account_wide_identity").assertDoesNotExist()
+        compose.onNodeWithTag("account_method_qr").performScrollTo().assertIsSelected()
+    }
 
     @Test fun accountEntryDoesNotMoveGuestRecordsOrSendAnInvalidPhone() {
         lateinit var model: AccountViewModel
