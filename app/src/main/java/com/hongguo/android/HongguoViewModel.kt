@@ -105,6 +105,10 @@ data class HongguoUiState(
     val suggestions: List<String> = emptyList(),
     val rankBoard: RankBoard = RankBoard.ALL,
     val rankEntries: List<RankEntry> = emptyList(),
+    val actorRankSelected: Boolean = false,
+    val actorRankBoard: ActorRankBoard = ActorRankBoard.DRAMA_STARS,
+    val actorRankEntries: List<ActorRankEntry> = emptyList(),
+    val actorRankCursor: ActorRankCursor? = null,
     val rankPage: Int = 0,
     val rankTotalPages: Int = 0,
     val rankLoading: Boolean = false,
@@ -133,7 +137,10 @@ data class HongguoUiState(
     val themeOnboardingPending: Boolean = false,
     /** Confirmation after the first-launch picker; cleared only once the snackbar has been shown. */
     val themeHint: String? = null,
-)
+) {
+    val hasMoreRanks: Boolean
+        get() = if (actorRankSelected) actorRankCursor != null else rankPage < rankTotalPages
+}
 
 /** A library click can outlive its account's list. Only currently visible positions can be resumed. */
 internal fun HongguoUiState.libraryResumeFor(cardId: String): LibraryEntry? =
@@ -237,36 +244,62 @@ class HongguoViewModel(application: Application) : AndroidViewModel(application)
 
     fun openRank() {
         selectTab(AppTab.RANK)
-        if (state.value.rankEntries.isEmpty() && !state.value.rankLoading) loadRank(state.value.rankBoard, 1)
+        if (state.value.rankPage == 0 && !state.value.rankLoading) loadRank()
     }
 
-    fun selectRankBoard(board: RankBoard) {
-        if (board == state.value.rankBoard) return
-        mutableState.update { it.copy(rankBoard = board, rankEntries = emptyList(), rankPage = 0, rankTotalPages = 0, rankError = null) }
-        loadRank(board, 1)
+    fun selectRankBoard(board: RankBoard) = changeRankBoard(board, actors = false)
+
+    fun selectActorRank() = selectActorRankBoard(state.value.actorRankBoard)
+
+    fun selectActorRankBoard(board: ActorRankBoard) = changeRankBoard(state.value.rankBoard, actors = true, actorBoard = board)
+
+    private fun changeRankBoard(board: RankBoard, actors: Boolean, actorBoard: ActorRankBoard = state.value.actorRankBoard) {
+        val current = state.value
+        if (board == current.rankBoard && actors == current.actorRankSelected && actorBoard == current.actorRankBoard) return
+        mutableState.update {
+            it.copy(rankBoard = board, actorRankSelected = actors, actorRankBoard = actorBoard, rankEntries = emptyList(), actorRankEntries = emptyList(),
+                actorRankCursor = null, rankPage = 0, rankTotalPages = 0, rankLoading = true, rankError = null)
+        }
+        loadRank()
     }
 
-    /** Boards are 100 works across a few pages; the next one loads as the list reaches its end. */
     fun loadMoreRank() {
         val current = state.value
-        if (current.rankLoading || current.rankError != null || current.rankPage >= current.rankTotalPages) return
-        loadRank(current.rankBoard, current.rankPage + 1)
+        if (!current.rankLoading && current.rankError == null && current.hasMoreRanks) loadRank()
     }
 
     fun retryRank() {
-        mutableState.update { it.copy(rankError = null) }
-        loadRank(state.value.rankBoard, state.value.rankPage + 1)
+        if (!state.value.rankLoading) loadRank()
     }
 
-    private fun loadRank(board: RankBoard, page: Int) {
+    fun searchRankActor(name: String) {
+        selectTab(AppTab.SEARCH)
+        pickSuggestion(name)
+    }
+
+    private fun loadRank() {
+        val current = state.value
         rankJob?.cancel()
         val version = ++rankVersion
         mutableState.update { it.copy(rankLoading = true, rankError = null) }
         rankJob = viewModelScope.launch {
             try {
-                val result = repository.rank(board, page)
-                if (version == rankVersion) mutableState.update { it.copy(rankLoading = false, rankPage = result.page, rankTotalPages = result.totalPages,
-                    rankEntries = (it.rankEntries + result.entries).distinctBy { row -> row.series.id }) }
+                if (current.actorRankSelected) {
+                    val result = repository.actorRank(current.actorRankBoard, current.actorRankCursor)
+                    if (version != rankVersion) return@launch
+                    val entries = (current.actorRankEntries + result.entries).distinctBy(ActorRankEntry::id)
+                    mutableState.update {
+                        it.copy(rankLoading = false, rankPage = current.rankPage + 1, actorRankEntries = entries,
+                            actorRankCursor = result.next.takeIf { entries.size > current.actorRankEntries.size })
+                    }
+                } else {
+                    val result = repository.rank(current.rankBoard, current.rankPage + 1)
+                    if (version != rankVersion) return@launch
+                    mutableState.update {
+                        it.copy(rankLoading = false, rankPage = result.page, rankTotalPages = result.totalPages,
+                            rankEntries = (it.rankEntries + result.entries).distinctBy { row -> row.series.id })
+                    }
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

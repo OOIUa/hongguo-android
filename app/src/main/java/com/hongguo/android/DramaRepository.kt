@@ -120,6 +120,10 @@ class DramaRepository {
 
     suspend fun rank(board: RankBoard, page: Int): RankPage = runInterruptible(Dispatchers.IO) { websiteClient.rank(board, page) }
 
+    suspend fun actorRank(board: ActorRankBoard, cursor: ActorRankCursor?): ActorRankPage = runInterruptible(Dispatchers.IO) {
+        ActorRankCatalog.page(board, cursor)
+    }
+
     suspend fun suggestions(query: String): List<String> = runInterruptible(Dispatchers.IO) { websiteClient.suggestions(query) }
 
     suspend fun related(id: String): List<RelatedWork> = runInterruptible(Dispatchers.IO) { relatedClient.related(id) }
