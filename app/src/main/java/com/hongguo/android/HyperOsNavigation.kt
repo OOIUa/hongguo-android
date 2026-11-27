@@ -1,25 +1,33 @@
 package com.hongguo.android
 
 import android.annotation.SuppressLint
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.RenderEffect as PlatformRenderEffect
 import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
@@ -31,28 +39,16 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
-import androidx.compose.ui.platform.LocalHapticFeedback
-import kotlin.math.abs
-import kotlin.math.roundToInt
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
@@ -63,21 +59,25 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -90,7 +90,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** Detects Xiaomi HyperOS (澎湃OS) on Xiaomi / Redmi / POCO devices; used for the default 底栏样式. MIUI and other vendors return false. */
 internal object SystemRom {
@@ -132,6 +135,10 @@ internal fun PaddingValues.plusNavClearance(): PaddingValues {
 private val CapsuleHeight = 62.dp
 private val CapsuleGap = 8.dp
 private val CapsuleSideMargin = 20.dp
+private val CapsuleShape = RoundedCornerShape(50)
+private val GlassBlurDp = 8.dp
+private val GlassBevelDp = 15.dp
+private val GlassRefractionDp = 17.dp
 
 /** Space the capsule occupies above the bottom edge, including the system navigation bar. */
 @Composable
@@ -139,8 +146,57 @@ internal fun floatingNavClearance(): Dp =
     WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + CapsuleGap + CapsuleHeight + 12.dp
 
 /**
+ * Offscreen sampling scale for the backdrop buffer (~240 dpi effective), keeping blur + AGSL
+ * cost flat across 1080p/1.5K/2K screens while staying smooth under an 8 dp optical blur.
+ */
+internal fun glassBackdropScale(density: Float): Float =
+    if (density <= 0f) 0.5f else (1.5f / density).coerceIn(0.45f, 0.75f)
+
+/** Reusable mutable holder for the moving selection droplet so drawing allocates zero objects per frame. */
+internal class LensScratch {
+    var left: Float = 0f; private set
+    var top: Float = 0f; private set
+    var width: Float = 0f; private set
+    var height: Float = 0f; private set
+    var liquid: Float = 0f; private set
+
+    fun update(
+        barWidth: Float,
+        barHeight: Float,
+        tabCount: Int,
+        position: Float,
+        velocity: Float,
+        press: Float,
+        insetX: Float,
+        insetY: Float,
+        growY: Float,
+    ) {
+        val count = tabCount.coerceAtLeast(1)
+        val itemWidth = barWidth / count
+        val clampedPress = press.coerceIn(0f, 1f)
+        val speed = abs(velocity)
+        // Velocity-driven liquid elongation while gliding or dragging; subtly compresses height to feel fluid.
+        val stretch = (speed * 0.014f).coerceIn(0f, 0.24f)
+        val glideGlow = (speed * 0.085f).coerceIn(0f, 0.85f)
+        liquid = maxOf(clampedPress, glideGlow)
+        val baseWidth = (itemWidth - insetX * 2f).coerceAtLeast(0f)
+        width = (baseWidth + itemWidth * (0.14f * clampedPress + 0.34f * stretch))
+            .coerceAtMost((barWidth - insetX).coerceAtLeast(0f))
+        val baseHeight = (barHeight - insetY * 2f).coerceAtLeast(0f)
+        val verticalExpand = growY * clampedPress - growY * 0.45f * stretch
+        height = (baseHeight + verticalExpand * 2f)
+            .coerceIn(baseHeight * 0.86f, (barHeight - 2f).coerceAtLeast(0f))
+        val centerX = (position + 0.5f) * itemWidth
+        val minLeft = insetX * (1f - 0.5f * clampedPress)
+        val maxLeft = (barWidth - width - minLeft).coerceAtLeast(minLeft)
+        left = (centerX - width * 0.5f).coerceIn(minLeft, maxLeft)
+        top = (barHeight - height) * 0.5f
+    }
+}
+
+/**
  * What sits behind the glass. The page records itself into [layer] once per frame and the capsule re-draws that
- * same layer blurred and refracted, so no second composition of the page is needed.
+ * same layer downsampled, blurred, and refracted, so no second composition of the page is needed.
  */
 @Stable
 internal class GlassBackdrop(val layer: GraphicsLayer) {
@@ -155,20 +211,27 @@ internal fun rememberGlassBackdrop(): GlassBackdrop {
     return remember(layer) { GlassBackdrop(layer) }
 }
 
-/** Marks the page content as the glass backdrop. Put it before the page's own background in the modifier chain. */
-internal fun Modifier.glassBackdropSource(backdrop: GlassBackdrop): Modifier = this
-    .onGloballyPositioned { backdrop.origin = it.positionInRoot() }
-    .drawWithContent {
-        backdrop.layer.record { this@drawWithContent.drawContent() }
-        drawLayer(backdrop.layer)
-        // Only the glass should observe this counter when the page records a new frame.
-        Snapshot.withoutReadObservation { backdrop.version++ }
-    }
+/**
+ * Marks the page content as the glass backdrop. Put it before the page's own background in the modifier chain.
+ * On Android 8–11 (API < 31) backdrop blur is unavailable, so this is a no-op with zero recording overhead.
+ */
+internal fun Modifier.glassBackdropSource(backdrop: GlassBackdrop): Modifier =
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) this
+    else this
+        .onGloballyPositioned { backdrop.origin = it.positionInRoot() }
+        .drawWithContent {
+            backdrop.layer.record { this@drawWithContent.drawContent() }
+            drawLayer(backdrop.layer)
+            // Only the glass surface should observe this counter when the page records a new frame.
+            Snapshot.withoutReadObservation { backdrop.version++ }
+        }
 
 /**
- * HyperOS / iOS 26 style floating capsule with a liquid-glass surface.
- * Android 13+: blur plus an AGSL lens that bends the content along the rim. Android 12: blur only.
- * Android 8–11 cannot blur what is behind a view, so the capsule falls back to a near-opaque frosted fill.
+ * iOS 26 / HyperOS style floating liquid-glass capsule.
+ * Android 13+: downsampled crisp blur + fused AGSL optical bezel refraction, color vibrancy, luminance-adaptive
+ * translucency, and a live refractive selection droplet that swells & stretches during drag or tab glide.
+ * Android 12: downsampled crisp blur + vibrancy color filter + native specular rims.
+ * Android 8–11: high-craft frosted glass fill with zero offscreen backdrop recording.
  */
 @Composable
 internal fun LiquidGlassNavigationBar(
@@ -186,226 +249,701 @@ internal fun LiquidGlassNavigationBar(
     val scope = rememberCoroutineScope()
     val selectedIndex = tabs.indexOfFirst { it.tab == selected }.coerceAtLeast(0)
     val activeColor = if (style == AppThemeStyle.WARM) AccentInk else Ink
-    // Darker than the classic bar's grey: labels sit on whatever colour scrolls underneath the glass.
-    val idleColor = Ink.copy(alpha = .72f)
+    val idleColor = Ink.copy(alpha = if (palette.isDark) .78f else .72f)
 
-    // iOS-style tab bar: press and drag the capsule, the selection lens follows the finger and swells like a
-    // magnifier, ticks as it crosses each tab, and springs to the nearest tab (or one further on a fling) on release.
+    // iOS 26 tab bar physics: press and drag the capsule so the selection lens turns into a refractive liquid
+    // droplet, ticks as it crosses each tab, and springs to the nearest tab (or one further on a flick) on release.
     var dragging by remember { mutableStateOf(false) }
     var dragPos by remember { mutableFloatStateOf(selectedIndex.toFloat()) }
     var hovered by remember { mutableIntStateOf(selectedIndex) }
-    // The drawn lens chases the finger with a stiff spring; it starts from wherever the lens currently is.
     val follow = remember { Animatable(selectedIndex.toFloat()) }
-    val followSpring = spring<Float>(dampingRatio = .86f, stiffness = 1400f)
+    val followSpring = spring<Float>(dampingRatio = .84f, stiffness = 1400f)
     val settle = remember { Animatable(selectedIndex.toFloat()) }
-    val press = animateFloatAsState(if (dragging) 1f else 0f,
-        spring(dampingRatio = .55f, stiffness = Spring.StiffnessMediumLow), label = "glass_press")
+    val press = animateFloatAsState(
+        targetValue = if (dragging) 1f else 0f,
+        animationSpec = spring(dampingRatio = .56f, stiffness = Spring.StiffnessMediumLow),
+        label = "glass_press",
+    )
     LaunchedEffect(selectedIndex) {
         if (!dragging) {
             hovered = selectedIndex
-            settle.animateTo(selectedIndex.toFloat(), spring(dampingRatio = .72f, stiffness = Spring.StiffnessMediumLow))
+            settle.animateTo(
+                targetValue = selectedIndex.toFloat(),
+                animationSpec = spring(dampingRatio = .70f, stiffness = Spring.StiffnessMediumLow),
+            )
         }
     }
-    // Where the lens is drawn; read only in draw / layer blocks so the motion does not recompose the bar.
-    val lensPosition = { if (dragging) follow.value else settle.value }
-    // Read by the long-lived drag detector, which would otherwise keep the values from when the bar was created.
+    // Read only inside draw / graphicsLayer scopes so motion never recomposes the bar.
+    val lensPosition = remember(follow, settle) { { if (dragging) follow.value else settle.value } }
+    val lensVelocity = remember(follow, settle) { { if (dragging) follow.velocity else settle.velocity } }
     val currentSelectedIndex by rememberUpdatedState(selectedIndex)
     val currentTabs by rememberUpdatedState(tabs)
     val currentOnSelect by rememberUpdatedState(onSelect)
-    fun select(index: Int) {
-        keyboard?.hide()
-        focus.clearFocus()
-        val tab = currentTabs[index].tab
-        currentOnSelect(tab)
+    val selectTab = remember {
+        { index: Int ->
+            keyboard?.hide()
+            focus.clearFocus()
+            currentOnSelect(currentTabs[index].tab)
+        }
     }
 
-    val glass = rememberGraphicsLayer()
-    val shape = RoundedCornerShape(50)
     var capsuleOrigin by remember { mutableStateOf(Offset.Zero) }
-    val tint = if (palette.isDark) Color(0xFF1E1F23) else Color.White
+    val isDark = palette.isDark
     val base = Canvas
-    val effects = remember { GlassEffectCache() }
 
-    Box(modifier.fillMaxWidth().padding(WindowInsets.navigationBars.asPaddingValues())
-        .padding(start = CapsuleSideMargin, end = CapsuleSideMargin, bottom = CapsuleGap)
-        .semantics { testTagsAsResourceId = true }, contentAlignment = Alignment.BottomCenter) {
-        Box(Modifier.widthIn(max = 440.dp).fillMaxWidth().height(CapsuleHeight)
-            // The whole capsule eases up a little while held, like pressing on a soft glass surface.
-            .graphicsLayer { val p = press.value; scaleX = 1f + .025f * p; scaleY = 1f + .045f * p }
-            .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = .22f), spotColor = Color.Black.copy(alpha = .28f))
-            .onGloballyPositioned { capsuleOrigin = it.positionInRoot() }
-            .pointerInput(tabs.size) {
-                val velocity = VelocityTracker()
-                val count = tabs.size
-                fun itemWidth() = size.width / count.toFloat()
-                fun finish(velocityX: Float) {
-                    val width = itemWidth()
-                    val current = dragPos
-                    // A quick flick carries the lens on in its direction, at most about one more tab, as on iOS.
-                    val projected = current + ((velocityX / width) * .12f).coerceIn(-.6f, .6f)
-                    val target = projected.roundToInt().coerceIn(0, count - 1)
-                    scope.launch {
-                        settle.snapTo(follow.value)
-                        dragging = false
-                        hovered = target
-                        settle.animateTo(target.toFloat(), spring(dampingRatio = .62f, stiffness = Spring.StiffnessMediumLow),
-                            initialVelocity = (velocityX / width).coerceIn(-12f, 12f))
-                    }
-                    if (target != currentSelectedIndex) select(target)
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+    Box(
+        modifier
+            .fillMaxWidth()
+            .padding(WindowInsets.navigationBars.asPaddingValues())
+            .padding(start = CapsuleSideMargin, end = CapsuleSideMargin, bottom = CapsuleGap)
+            .semantics { testTagsAsResourceId = true },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Box(
+            Modifier
+                .widthIn(max = 440.dp)
+                .fillMaxWidth()
+                .height(CapsuleHeight)
+                // The whole capsule eases up gently while held, like pressing on elastic glass.
+                .graphicsLayer {
+                    val p = press.value
+                    scaleX = 1f + .022f * p
+                    scaleY = 1f + .042f * p
                 }
-                detectHorizontalDragGestures(
-                    onDragStart = { start ->
-                        velocity.resetTracking()
-                        // The lens jumps under the finger (smoothed by the follow spring), then tracks it.
-                        dragPos = (start.x / itemWidth() - .5f).coerceIn(0f, count - 1f)
-                        hovered = dragPos.roundToInt()
-                        val from = settle.value
-                        dragging = true
-                        scope.launch { follow.snapTo(from); follow.animateTo(dragPos, followSpring) }
-                        haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                    },
-                    onHorizontalDrag = { change, dx ->
-                        change.consume()
-                        velocity.addPosition(change.uptimeMillis, change.position)
-                        // A little rubber-band past the first and last tab.
-                        dragPos = (dragPos + dx / itemWidth()).coerceIn(-.3f, count - 1 + .3f)
-                        scope.launch { follow.animateTo(dragPos, followSpring) }
-                        val now = dragPos.roundToInt().coerceIn(0, count - 1)
-                        if (now != hovered) {
-                            hovered = now
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        }
-                    },
-                    onDragEnd = { finish(velocity.calculateVelocity().x) },
-                    onDragCancel = { finish(0f) },
+                // Hardware rounded-rect clip + soft floating elevation (avoids per-frame Path + clipPath).
+                .shadow(
+                    elevation = if (isDark) 16.dp else 12.dp,
+                    shape = CapsuleShape,
+                    clip = true,
+                    ambientColor = Color.Black.copy(alpha = if (isDark) .42f else .14f),
+                    spotColor = Color.Black.copy(alpha = if (isDark) .50f else .18f),
                 )
-            }
-            .drawBehind {
-                if (backdrop.version < 0) return@drawBehind // read so page changes invalidate this draw
-                val radius = size.height / 2
-                val outline = Path().apply { addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(radius))) }
-                val blurPx = 16.dp.toPx()
-                val pad = ceil(blurPx * 2 + 24.dp.toPx())
-                clipPath(outline) {
-                    drawRect(base.copy(alpha = 1f))
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        val offset = capsuleOrigin - backdrop.origin
-                        glass.record(IntSize((size.width + pad * 2).toInt(), (size.height + pad * 2).toInt())) {
-                            translate(pad - offset.x, pad - offset.y) { drawLayer(backdrop.layer) }
+                .onGloballyPositioned { capsuleOrigin = it.positionInRoot() }
+                .pointerInput(tabs.size) {
+                    val velocity = VelocityTracker()
+                    val count = tabs.size
+                    fun itemWidth() = size.width / count.toFloat()
+                    fun finish(velocityX: Float) {
+                        val width = itemWidth()
+                        val current = dragPos
+                        // A quick flick carries the lens on in its direction, at most about one more tab.
+                        val projected = current + ((velocityX / width) * .12f).coerceIn(-.6f, .6f)
+                        val target = projected.roundToInt().coerceIn(0, count - 1)
+                        scope.launch {
+                            settle.snapTo(follow.value)
+                            dragging = false
+                            hovered = target
+                            settle.animateTo(
+                                targetValue = target.toFloat(),
+                                animationSpec = spring(dampingRatio = .62f, stiffness = Spring.StiffnessMediumLow),
+                                initialVelocity = (velocityX / width).coerceIn(-12f, 12f),
+                            )
                         }
-                        glass.renderEffect = effects.get(size, pad, radius, blurPx, 22.dp.toPx(), 18.dp.toPx())
-                        translate(-pad, -pad) { drawLayer(glass) }
-                        drawRect(tint.copy(alpha = if (palette.isDark) .46f else .5f))
-                    } else {
-                        drawRect(tint.copy(alpha = .9f))
+                        if (target != currentSelectedIndex) selectTab(target)
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    }
+                    detectHorizontalDragGestures(
+                        onDragStart = { start ->
+                            velocity.resetTracking()
+                            dragPos = (start.x / itemWidth() - .5f).coerceIn(0f, count - 1f)
+                            hovered = dragPos.roundToInt()
+                            val from = settle.value
+                            dragging = true
+                            scope.launch { follow.snapTo(from); follow.animateTo(dragPos, followSpring) }
+                            haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                        },
+                        onHorizontalDrag = { change, dx ->
+                            change.consume()
+                            velocity.addPosition(change.uptimeMillis, change.position)
+                            dragPos = (dragPos + dx / itemWidth()).coerceIn(-.3f, count - 1 + .3f)
+                            scope.launch { follow.animateTo(dragPos, followSpring) }
+                            val now = dragPos.roundToInt().coerceIn(0, count - 1)
+                            if (now != hovered) {
+                                hovered = now
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            }
+                        },
+                        onDragEnd = { finish(velocity.calculateVelocity().x) },
+                        onDragCancel = { finish(0f) },
+                    )
+                },
+        ) {
+            // Isolated composable so tab label/icon color animations never recompose or invalidate the backdrop.
+            GlassCapsuleSurface(
+                backdrop = backdrop,
+                capsuleOrigin = { capsuleOrigin },
+                tabCount = tabs.size,
+                lensPosition = lensPosition,
+                lensVelocity = lensVelocity,
+                press = { press.value },
+                isDark = isDark,
+                baseColor = base,
+            )
+            GlassTabRow(
+                tabs = tabs,
+                selectedIndex = selectedIndex,
+                highlightedIndex = if (dragging) hovered else selectedIndex,
+                activeColor = activeColor,
+                idleColor = idleColor,
+                lensPosition = lensPosition,
+                press = { press.value },
+                onSelectIndex = selectTab,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GlassCapsuleSurface(
+    backdrop: GlassBackdrop,
+    capsuleOrigin: () -> Offset,
+    tabCount: Int,
+    lensPosition: () -> Float,
+    lensVelocity: () -> Float,
+    press: () -> Float,
+    isDark: Boolean,
+    baseColor: Color,
+) {
+    val glass = rememberGraphicsLayer()
+    val effects = remember { GlassEffectCache() }
+    val recordCache = remember(backdrop) { GlassRecordCache() }
+    val brushes = remember { GlassBrushCache() }
+    val lens = remember { LensScratch() }
+
+    Spacer(
+        Modifier
+            .fillMaxSize()
+            .drawBehind {
+                if (size.width <= 0f || size.height <= 0f) return@drawBehind
+                val radius = size.height * 0.5f
+                val p = press()
+                lens.update(
+                    barWidth = size.width,
+                    barHeight = size.height,
+                    tabCount = tabCount,
+                    position = lensPosition(),
+                    velocity = lensVelocity(),
+                    press = p,
+                    insetX = 4.5.dp.toPx(),
+                    insetY = 4.5.dp.toPx(),
+                    growY = 3.2.dp.toPx(),
+                )
+
+                // 1. Glass backdrop (Android 12+ downsampled offscreen blur + Android 13+ fused AGSL refraction)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val version = backdrop.version // observe page redraws
+                    val offset = capsuleOrigin() - backdrop.origin
+                    val scale = glassBackdropScale(density)
+                    val blurPx = GlassBlurDp.toPx()
+                    // Only blur margin is needed: refraction always samples inward inside the capsule.
+                    val pad = ceil(blurPx * 2f + 2.dp.toPx())
+                    val baseArgb = baseColor.toArgb()
+
+                    if (recordCache.needsRecord(version, size.width, size.height, offset.x, offset.y, baseArgb, scale)) {
+                        val recW = ceil((size.width + pad * 2f) * scale).toInt().coerceAtLeast(1)
+                        val recH = ceil((size.height + pad * 2f) * scale).toInt().coerceAtLeast(1)
+                        glass.record(IntSize(recW, recH)) {
+                            // Fill padded margin with canvas color so bottom overhang never blurs transparent black.
+                            drawRect(baseColor)
+                            scale(scaleX = scale, scaleY = scale, pivot = Offset.Zero) {
+                                translate(pad - offset.x, pad - offset.y) { drawLayer(backdrop.layer) }
+                            }
+                        }
+                        recordCache.markRecorded(version, size.width, size.height, offset.x, offset.y, baseArgb, scale)
+                    }
+
+                    val lensCx = (pad + lens.left + lens.width * 0.5f) * scale
+                    val lensCy = (pad + lens.top + lens.height * 0.5f) * scale
+                    val lensHw = (lens.width * 0.5f) * scale
+                    val lensHh = (lens.height * 0.5f) * scale
+                    glass.renderEffect = effects.get(
+                        width = size.width * scale,
+                        height = size.height * scale,
+                        pad = pad * scale,
+                        radius = radius * scale,
+                        blur = blurPx * scale,
+                        bevel = GlassBevelDp.toPx() * scale,
+                        refraction = GlassRefractionDp.toPx() * scale,
+                        isDark = isDark,
+                        lensCx = lensCx,
+                        lensCy = lensCy,
+                        lensHw = lensHw,
+                        lensHh = lensHh,
+                        lensRadius = lensHh,
+                        lensAmount = lens.liquid,
+                    )
+                    drawRect(baseColor)
+                    scale(scaleX = 1f / scale, scaleY = 1f / scale, pivot = Offset.Zero) {
+                        translate(-pad * scale, -pad * scale) { drawLayer(glass) }
+                    }
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                        // API 31–32 has blur + vibrancy without AGSL adaptive tinting.
+                        drawRect(brushes.api31Tint(size.height, isDark))
+                    }
+                } else {
+                    drawRect(brushes.legacyFill(size.height, isDark))
+                }
+
+                // 2. Selection pill (subtle frosted rest state -> crystal 3D liquid droplet when pressed or gliding)
+                val pillSize = Size(lens.width, lens.height)
+                val pillCorner = CornerRadius(lens.height * 0.5f)
+                val liquid = lens.liquid
+                val hasAgsl = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                translate(lens.left, lens.top) {
+                    // Resting pill softens into a clear glass glaze while the droplet lifts & refracts underneath.
+                    val restWeight = if (hasAgsl) (1f - 0.72f * liquid) else (1f - 0.35f * liquid)
+                    val restColor = if (isDark) Color.White.copy(alpha = 0.145f * restWeight)
+                    else Color.Black.copy(alpha = 0.068f * restWeight)
+                    drawRoundRect(color = restColor, size = pillSize, cornerRadius = pillCorner)
+
+                    // Subtle inner top highlight even at rest so the pill reads as nested glass.
+                    val restSheenAlpha = (1f - liquid) * (if (isDark) 0.16f else 0.45f)
+                    if (restSheenAlpha > 0.01f) {
+                        val restStroke = 0.75.dp.toPx()
+                        drawRoundRect(
+                            brush = brushes.restingPillRim(lens.height, isDark),
+                            topLeft = Offset(restStroke * 0.5f, restStroke * 0.5f),
+                            size = Size(lens.width - restStroke, lens.height - restStroke),
+                            cornerRadius = CornerRadius(lens.height * 0.5f - restStroke * 0.5f),
+                            alpha = restSheenAlpha,
+                            style = Stroke(restStroke),
+                        )
+                    }
+
+                    if (liquid > 0.01f) {
+                        // Luminous glaze + curved top dome reflection + razor-sharp 1x directional Fresnel rim.
+                        val glazeAlpha = (if (hasAgsl) (if (isDark) 0.09f else 0.14f) else (if (isDark) 0.16f else 0.24f)) * liquid
+                        drawRoundRect(color = Color.White.copy(alpha = glazeAlpha), size = pillSize, cornerRadius = pillCorner)
+                        drawRoundRect(
+                            brush = brushes.dropletSheen(lens.height, isDark),
+                            size = Size(lens.width, lens.height * 0.56f),
+                            cornerRadius = pillCorner,
+                            alpha = liquid,
+                        )
+                        val dropletStroke = 1.15.dp.toPx()
+                        drawRoundRect(
+                            brush = brushes.dropletRim(lens.width, lens.height, isDark),
+                            topLeft = Offset(dropletStroke * 0.5f, dropletStroke * 0.5f),
+                            size = Size(lens.width - dropletStroke, lens.height - dropletStroke),
+                            cornerRadius = CornerRadius(lens.height * 0.5f - dropletStroke * 0.5f),
+                            alpha = liquid,
+                            style = Stroke(dropletStroke),
+                        )
                     }
                 }
-                // Specular rim: bright on the upper-left, faint on the lower-right, like light catching a glass edge.
-                val rim = 1.dp.toPx()
+
+                // 3. Native 1x capsule outer Fresnel specular rim (+ subtle light-mode hairline for white pages)
+                val rim = 1.15.dp.toPx()
                 drawRoundRect(
-                    Brush.linearGradient(
-                        0f to Color.White.copy(alpha = if (palette.isDark) .38f else .85f),
-                        .45f to Color.White.copy(alpha = .08f),
-                        1f to Color.White.copy(alpha = if (palette.isDark) .2f else .5f),
-                        start = Offset.Zero, end = Offset(size.width * .35f, size.height * 2.2f)),
-                    topLeft = Offset(rim / 2, rim / 2), size = Size(size.width - rim, size.height - rim),
-                    cornerRadius = CornerRadius(radius - rim / 2), style = Stroke(rim))
-            }) {
-            // Selection lens: a smaller pill of glass that slides between tabs and swells while dragged.
-            val indicator = if (palette.isDark) Color.White.copy(alpha = .14f) else Color.Black.copy(alpha = .065f)
-            val lensRim = Color.White.copy(alpha = if (palette.isDark) .32f else .9f)
-            Box(Modifier.matchParentSize().padding(vertical = 5.dp).drawBehind {
-                val itemWidth = size.width / tabs.size
-                val inset = 5.dp.toPx()
-                val p = press.value
-                val grow = 4.dp.toPx() * p
-                val width = itemWidth - inset * 2 + itemWidth * .16f * p
-                val left = lensPosition() * itemWidth + itemWidth / 2 - width / 2
-                val top = -grow
-                val height = size.height + grow * 2
-                val corner = CornerRadius(height / 2)
-                drawRoundRect(indicator.copy(alpha = indicator.alpha * (1f + .6f * p)), topLeft = Offset(left, top),
-                    size = Size(width, height), cornerRadius = corner)
-                if (p > .01f) {
-                    // While held the lens reads as its own piece of glass: a bright rim and a soft top highlight.
-                    drawRoundRect(lensRim.copy(alpha = lensRim.alpha * p), topLeft = Offset(left, top), size = Size(width, height),
-                        cornerRadius = corner, style = Stroke(1.dp.toPx()))
-                    drawRoundRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = .28f * p), Color.Transparent),
-                        startY = top, endY = top + height * .6f), topLeft = Offset(left, top), size = Size(width, height * .6f),
-                        cornerRadius = corner)
+                    brush = brushes.capsuleRim(size.width, size.height, isDark),
+                    topLeft = Offset(rim * 0.5f, rim * 0.5f),
+                    size = Size(size.width - rim, size.height - rim),
+                    cornerRadius = CornerRadius(radius - rim * 0.5f),
+                    style = Stroke(rim),
+                )
+                if (!isDark) {
+                    val hairline = 0.5.dp.toPx()
+                    drawRoundRect(
+                        color = Color.Black.copy(alpha = 0.075f),
+                        topLeft = Offset(hairline * 0.5f, hairline * 0.5f),
+                        size = Size(size.width - hairline, size.height - hairline),
+                        cornerRadius = CornerRadius(radius - hairline * 0.5f),
+                        style = Stroke(hairline),
+                    )
                 }
-            })
-            Row(Modifier.fillMaxWidth().fillMaxHeight().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
-                tabs.forEachIndexed { index, item ->
-                    val isSelected = index == selectedIndex
-                    val highlighted = if (dragging) index == hovered else isSelected
-                    val color by animateColorAsState(if (highlighted) activeColor else idleColor, tween(160), label = "glass_tab_color")
-                    val pop = remember { Animatable(1f) }
-                    LaunchedEffect(isSelected) {
-                        // A small bounce on the icon that becomes selected.
-                        if (isSelected) { pop.snapTo(.82f); pop.animateTo(1f, spring(dampingRatio = .42f, stiffness = 420f)) }
-                    }
-                    Column(Modifier.weight(1f).fillMaxHeight()
-                        .selectable(selected = isSelected, role = Role.Tab,
-                            interactionSource = remember { MutableInteractionSource() }, indication = null) { select(index) }
-                        .testTag("nav_${item.tab.name.lowercase(Locale.ROOT)}"),
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Icon(if (highlighted) item.selectedIcon else item.icon, contentDescription = null, tint = color,
-                            modifier = Modifier.size(24.dp).graphicsLayer {
-                                // Icons under the lens are magnified while it is held.
-                                val near = (1f - abs(lensPosition() - index)).coerceIn(0f, 1f)
-                                val scale = pop.value * (1f + .18f * near * press.value)
-                                scaleX = scale; scaleY = scale
-                                translationY = -2.dp.toPx() * near * press.value
-                            })
-                        Text(item.label, color = color, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1,
-                            fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
-                            modifier = Modifier.padding(top = 2.dp))
-                    }
+            },
+    )
+}
+
+@Composable
+private fun GlassTabRow(
+    tabs: List<AppNavTab>,
+    selectedIndex: Int,
+    highlightedIndex: Int,
+    activeColor: Color,
+    idleColor: Color,
+    lensPosition: () -> Float,
+    press: () -> Float,
+    onSelectIndex: (Int) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+            .selectableGroup(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tabs.forEachIndexed { index, item ->
+            val isSelected = index == selectedIndex
+            val highlighted = index == highlightedIndex
+            val color by animateColorAsState(
+                targetValue = if (highlighted) activeColor else idleColor,
+                animationSpec = tween(160),
+                label = "glass_tab_color",
+            )
+            val pop = remember { Animatable(1f) }
+            LaunchedEffect(isSelected) {
+                if (isSelected) {
+                    pop.snapTo(.84f)
+                    pop.animateTo(1f, spring(dampingRatio = .44f, stiffness = 420f))
                 }
+            }
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .selectable(
+                        selected = isSelected,
+                        role = Role.Tab,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onSelectIndex(index) }
+                    .testTag("nav_${item.tab.name.lowercase(Locale.ROOT)}"),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = if (highlighted) item.selectedIcon else item.icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .graphicsLayer {
+                            val p = press()
+                            val delta = index - lensPosition()
+                            val near = (1f - abs(delta)).coerceIn(0f, 1f)
+                            // Optical smoothstep magnification + subtle horizontal parallax under the held droplet.
+                            val smoothNear = near * near * (3f - 2f * near)
+                            val scale = pop.value * (1f + .18f * smoothNear * p)
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = -2.2.dp.toPx() * delta * smoothNear * p
+                            translationY = -2.dp.toPx() * smoothNear * p
+                        },
+                )
+                Text(
+                    text = item.label,
+                    color = color,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
         }
     }
 }
 
-/** Rebuilding a RuntimeShader every frame would allocate while scrolling; the effect only changes with size. */
-private class GlassEffectCache {
-    private var key: List<Float>? = null
-    private var effect: androidx.compose.ui.graphics.RenderEffect? = null
+/** Tracks whether the offscreen backdrop layer needs re-recording (skipped during static-page lens motion). */
+private class GlassRecordCache {
+    private var version = Int.MIN_VALUE
+    private var width = Float.NaN
+    private var height = Float.NaN
+    private var offsetX = Float.NaN
+    private var offsetY = Float.NaN
+    private var baseArgb = 0
+    private var scale = Float.NaN
 
-    @RequiresApi(Build.VERSION_CODES.S)
-    fun get(size: Size, pad: Float, radius: Float, blur: Float, bevel: Float, refraction: Float): androidx.compose.ui.graphics.RenderEffect {
-        val k = listOf(size.width, size.height, pad, radius, blur, bevel, refraction)
-        if (k != key || effect == null) { key = k; effect = glassEffect(size, pad, radius, blur, bevel, refraction) }
-        return effect!!
+    fun needsRecord(
+        version: Int,
+        width: Float,
+        height: Float,
+        offsetX: Float,
+        offsetY: Float,
+        baseArgb: Int,
+        scale: Float,
+    ): Boolean = this.version != version ||
+        this.width != width ||
+        this.height != height ||
+        this.offsetX != offsetX ||
+        this.offsetY != offsetY ||
+        this.baseArgb != baseArgb ||
+        this.scale != scale
+
+    fun markRecorded(
+        version: Int,
+        width: Float,
+        height: Float,
+        offsetX: Float,
+        offsetY: Float,
+        baseArgb: Int,
+        scale: Float,
+    ) {
+        this.version = version
+        this.width = width
+        this.height = height
+        this.offsetX = offsetX
+        this.offsetY = offsetY
+        this.baseArgb = baseArgb
+        this.scale = scale
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.S)
-private fun glassEffect(size: Size, pad: Float, radius: Float, blur: Float, bevel: Float, refraction: Float) =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) lensEffect(size, pad, radius, blur, bevel, refraction)
-    else PlatformRenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP).asComposeRenderEffect()
+/** Caches gradient brushes by dimension & theme so scrolling and steady drags allocate zero objects. */
+private class GlassBrushCache {
+    private var capsuleW = Float.NaN; private var capsuleH = Float.NaN; private var capsuleDark = -1
+    private var capsuleRimBrush: Brush? = null
 
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private fun lensEffect(size: Size, pad: Float, radius: Float, blur: Float, bevel: Float, refraction: Float) =
-    RuntimeShader(LENS_AGSL).run {
-        setFloatUniform("origin", pad, pad)
-        setFloatUniform("size", size.width, size.height)
-        setFloatUniform("radius", radius)
-        setFloatUniform("bevel", bevel)
-        setFloatUniform("refraction", refraction)
-        // Blur first, then bend the blurred image along the rim.
-        PlatformRenderEffect.createChainEffect(
-            PlatformRenderEffect.createRuntimeShaderEffect(this, "content"),
-            PlatformRenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP),
-        ).asComposeRenderEffect()
+    private var api31H = Float.NaN; private var api31Dark = -1
+    private var api31Brush: Brush? = null
+
+    private var legacyH = Float.NaN; private var legacyDark = -1
+    private var legacyBrush: Brush? = null
+
+    private var restH = Float.NaN; private var restDark = -1
+    private var restBrush: Brush? = null
+
+    private var sheenH = Float.NaN; private var sheenDark = -1
+    private var sheenBrush: Brush? = null
+
+    private var dropletW = Float.NaN; private var dropletH = Float.NaN; private var dropletDark = -1
+    private var dropletRimBrush: Brush? = null
+
+    fun capsuleRim(width: Float, height: Float, isDark: Boolean): Brush {
+        val d = if (isDark) 1 else 0
+        if (capsuleRimBrush == null || capsuleW != width || capsuleH != height || capsuleDark != d) {
+            capsuleW = width; capsuleH = height; capsuleDark = d
+            capsuleRimBrush = Brush.linearGradient(
+                0.00f to Color.White.copy(alpha = if (isDark) 0.52f else 0.94f),
+                0.28f to Color.White.copy(alpha = if (isDark) 0.14f else 0.28f),
+                0.52f to Color.White.copy(alpha = if (isDark) 0.05f else 0.06f),
+                0.80f to Color.White.copy(alpha = if (isDark) 0.18f else 0.34f),
+                1.00f to Color.White.copy(alpha = if (isDark) 0.34f else 0.72f),
+                start = Offset.Zero,
+                end = Offset(width * 0.36f, height * 2.15f),
+            )
+        }
+        return capsuleRimBrush!!
     }
 
+    fun api31Tint(height: Float, isDark: Boolean): Brush {
+        val d = if (isDark) 1 else 0
+        if (api31Brush == null || api31H != height || api31Dark != d) {
+            api31H = height; api31Dark = d
+            api31Brush = if (isDark) {
+                Brush.verticalGradient(
+                    0f to Color(0xFF282B33).copy(alpha = 0.42f),
+                    1f to Color(0xFF16181D).copy(alpha = 0.36f),
+                    startY = 0f, endY = height,
+                )
+            } else {
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.42f),
+                    1f to Color(0xFFF6F7FA).copy(alpha = 0.30f),
+                    startY = 0f, endY = height,
+                )
+            }
+        }
+        return api31Brush!!
+    }
+
+    fun legacyFill(height: Float, isDark: Boolean): Brush {
+        val d = if (isDark) 1 else 0
+        if (legacyBrush == null || legacyH != height || legacyDark != d) {
+            legacyH = height; legacyDark = d
+            legacyBrush = if (isDark) {
+                Brush.verticalGradient(
+                    0f to Color(0xFF272930).copy(alpha = 0.92f),
+                    1f to Color(0xFF1A1C21).copy(alpha = 0.92f),
+                    startY = 0f, endY = height,
+                )
+            } else {
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.94f),
+                    1f to Color(0xFFF5F5F8).copy(alpha = 0.90f),
+                    startY = 0f, endY = height,
+                )
+            }
+        }
+        return legacyBrush!!
+    }
+
+    fun restingPillRim(height: Float, isDark: Boolean): Brush {
+        val d = if (isDark) 1 else 0
+        if (restBrush == null || restH != height || restDark != d) {
+            restH = height; restDark = d
+            restBrush = Brush.verticalGradient(
+                0f to Color.White.copy(alpha = if (isDark) 0.55f else 0.85f),
+                0.55f to Color.White.copy(alpha = 0.04f),
+                1f to Color.White.copy(alpha = if (isDark) 0.16f else 0.25f),
+                startY = 0f, endY = height,
+            )
+        }
+        return restBrush!!
+    }
+
+    fun dropletSheen(height: Float, isDark: Boolean): Brush {
+        val d = if (isDark) 1 else 0
+        if (sheenBrush == null || sheenH != height || sheenDark != d) {
+            sheenH = height; sheenDark = d
+            sheenBrush = Brush.verticalGradient(
+                0f to Color.White.copy(alpha = if (isDark) 0.24f else 0.34f),
+                1f to Color.Transparent,
+                startY = 0f, endY = height * 0.56f,
+            )
+        }
+        return sheenBrush!!
+    }
+
+    fun dropletRim(width: Float, height: Float, isDark: Boolean): Brush {
+        val d = if (isDark) 1 else 0
+        if (dropletRimBrush == null || dropletW != width || dropletH != height || dropletDark != d) {
+            dropletW = width; dropletH = height; dropletDark = d
+            dropletRimBrush = Brush.linearGradient(
+                0.00f to Color.White.copy(alpha = if (isDark) 0.65f else 0.96f),
+                0.35f to Color.White.copy(alpha = if (isDark) 0.14f else 0.22f),
+                0.65f to Color.White.copy(alpha = if (isDark) 0.10f else 0.14f),
+                1.00f to Color.White.copy(alpha = if (isDark) 0.38f else 0.68f),
+                start = Offset.Zero,
+                end = Offset(width * 0.55f, height * 1.4f),
+            )
+        }
+        return dropletRimBrush!!
+    }
+}
+
 /**
- * Lens for a rounded rectangle: inside a rim of width `bevel` the sample point is pushed inwards along the
- * surface normal with a circular profile, so content near the edge looks magnified and bent like thick glass.
- * The red and blue channels are displaced slightly differently for a hint of dispersion.
+ * Caches compiled AGSL shader, blur filter, and resulting RenderEffect using primitive comparisons
+ * (zero per-frame List / boxed-Float allocations). At rest (lensAmount == 0) the exact same RenderEffect
+ * reference is reused across every scroll frame.
+ */
+private class GlassEffectCache {
+    private var cachedBlur = Float.NaN
+    private var blurEffect: PlatformRenderEffect? = null
+    private var api31Effect: androidx.compose.ui.graphics.RenderEffect? = null
+
+    private var shader: RuntimeShader? = null
+    private var cachedW = Float.NaN
+    private var cachedH = Float.NaN
+    private var cachedPad = Float.NaN
+    private var cachedRadius = Float.NaN
+    private var cachedBevel = Float.NaN
+    private var cachedRefraction = Float.NaN
+    private var cachedDark = -1
+
+    private var restingEffect: androidx.compose.ui.graphics.RenderEffect? = null
+
+    private var activeEffect: androidx.compose.ui.graphics.RenderEffect? = null
+    private var lastLx = Float.NaN
+    private var lastLy = Float.NaN
+    private var lastLhw = Float.NaN
+    private var lastLhh = Float.NaN
+    private var lastLr = Float.NaN
+    private var lastLAmt = Float.NaN
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    fun get(
+        width: Float,
+        height: Float,
+        pad: Float,
+        radius: Float,
+        blur: Float,
+        bevel: Float,
+        refraction: Float,
+        isDark: Boolean,
+        lensCx: Float,
+        lensCy: Float,
+        lensHw: Float,
+        lensHh: Float,
+        lensRadius: Float,
+        lensAmount: Float,
+    ): androidx.compose.ui.graphics.RenderEffect {
+        val blurChanged = blurEffect == null || cachedBlur != blur
+        if (blurChanged) {
+            cachedBlur = blur
+            blurEffect = PlatformRenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP)
+            api31Effect = null
+            restingEffect = null
+            activeEffect = null
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            if (api31Effect == null) {
+                val vibrancy = ColorMatrix().apply { setSaturation(1.30f) }
+                api31Effect = PlatformRenderEffect.createChainEffect(
+                    PlatformRenderEffect.createColorFilterEffect(ColorMatrixColorFilter(vibrancy)),
+                    blurEffect!!,
+                ).asComposeRenderEffect()
+            }
+            return api31Effect!!
+        }
+        return getApi33(
+            width, height, pad, radius, bevel, refraction, isDark,
+            lensCx, lensCy, lensHw, lensHh, lensRadius, lensAmount,
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun getApi33(
+        width: Float,
+        height: Float,
+        pad: Float,
+        radius: Float,
+        bevel: Float,
+        refraction: Float,
+        isDark: Boolean,
+        lensCx: Float,
+        lensCy: Float,
+        lensHw: Float,
+        lensHh: Float,
+        lensRadius: Float,
+        lensAmount: Float,
+    ): androidx.compose.ui.graphics.RenderEffect {
+        val s = shader ?: RuntimeShader(LENS_AGSL).also { shader = it }
+        val darkInt = if (isDark) 1 else 0
+        val geomChanged = cachedW != width || cachedH != height || cachedPad != pad ||
+            cachedRadius != radius || cachedBevel != bevel || cachedRefraction != refraction ||
+            cachedDark != darkInt
+        if (geomChanged) {
+            cachedW = width; cachedH = height; cachedPad = pad
+            cachedRadius = radius; cachedBevel = bevel; cachedRefraction = refraction
+            cachedDark = darkInt
+            s.setFloatUniform("origin", pad, pad)
+            s.setFloatUniform("size", width, height)
+            s.setFloatUniform("radius", radius)
+            s.setFloatUniform("bevel", bevel)
+            s.setFloatUniform("refraction", refraction)
+            s.setFloatUniform("dark", darkInt.toFloat())
+            restingEffect = null
+            activeEffect = null
+        }
+
+        if (lensAmount <= 0.005f) {
+            if (restingEffect == null) {
+                s.setFloatUniform("lensRect", 0f, 0f, 1f, 1f)
+                s.setFloatUniform("lensRadius", 1f)
+                s.setFloatUniform("lensAmount", 0f)
+                restingEffect = PlatformRenderEffect.createChainEffect(
+                    PlatformRenderEffect.createRuntimeShaderEffect(s, "content"),
+                    blurEffect!!,
+                ).asComposeRenderEffect()
+            }
+            return restingEffect!!
+        }
+
+        if (activeEffect == null || lastLx != lensCx || lastLy != lensCy ||
+            lastLhw != lensHw || lastLhh != lensHh || lastLr != lensRadius || lastLAmt != lensAmount
+        ) {
+            lastLx = lensCx; lastLy = lensCy; lastLhw = lensHw; lastLhh = lensHh
+            lastLr = lensRadius; lastLAmt = lensAmount
+            s.setFloatUniform("lensRect", lensCx, lensCy, lensHw, lensHh)
+            s.setFloatUniform("lensRadius", lensRadius)
+            s.setFloatUniform("lensAmount", lensAmount)
+            activeEffect = PlatformRenderEffect.createChainEffect(
+                PlatformRenderEffect.createRuntimeShaderEffect(s, "content"),
+                blurEffect!!,
+            ).asComposeRenderEffect()
+        }
+        return activeEffect!!
+    }
+}
+
+/**
+ * Fused iOS 26 Liquid Glass AGSL shader:
+ * - Single-pass exact analytical rounded-rect SDF + normal (1 evaluation instead of 5 finite differences).
+ * - Curved bezel Snell-like refraction + rim-localized RGB chromatic dispersion (1 fetch in flat core, 3 at rim).
+ * - Live moving selection droplet optical magnification, bezel bending, Fresnel highlight, and cast shadow.
+ * - Apple-style color vibrancy (saturation boost) + luminance-adaptive translucency + 3D internal Fresnel rim.
  */
 private const val LENS_AGSL = """
 uniform shader content;
@@ -414,28 +952,123 @@ uniform float2 size;
 uniform float radius;
 uniform float bevel;
 uniform float refraction;
+uniform float dark;
+uniform float4 lensRect;
+uniform float lensRadius;
+uniform float lensAmount;
 
-float sdRoundRect(float2 p, float2 halfSize, float r) {
+float3 sdRoundRectGrad(float2 p, float2 halfSize, float r) {
     float2 q = abs(p) - halfSize + r;
-    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    float2 qMax = max(q, 0.0);
+    float len = length(qMax);
+    float sd = len + min(max(q.x, q.y), 0.0) - r;
+    float2 s = float2(p.x >= 0.0 ? 1.0 : -1.0, p.y >= 0.0 ? 1.0 : -1.0);
+    float2 n = len > 0.0001
+        ? s * (qMax / len)
+        : (q.x > q.y ? float2(s.x, 0.0) : float2(0.0, s.y));
+    return float3(sd, n.x, n.y);
 }
 
 half4 main(float2 coord) {
     float2 halfSize = size * 0.5;
     float2 p = coord - origin - halfSize;
-    float inside = -sdRoundRect(p, halfSize, radius);
-    if (inside <= 0.0 || inside >= bevel) return content.eval(coord);
-    float t = 1.0 - inside / bevel;
-    float bend = 1.0 - sqrt(max(1.0 - t * t, 0.0));
-    float e = 0.75;
-    float2 n = float2(
-        sdRoundRect(p + float2(e, 0.0), halfSize, radius) - sdRoundRect(p - float2(e, 0.0), halfSize, radius),
-        sdRoundRect(p + float2(0.0, e), halfSize, radius) - sdRoundRect(p - float2(0.0, e), halfSize, radius));
-    n = n / max(length(n), 0.0001);
-    float2 shift = -n * bend * refraction;
-    half4 base = content.eval(coord + shift);
-    half r = content.eval(coord + shift * 1.12).r;
-    half b = content.eval(coord + shift * 0.88).b;
-    return half4(r, base.g, b, base.a);
+
+    float3 g = sdRoundRectGrad(p, halfSize, radius);
+    float inside = -g.x;
+    // Extend 2.5px past the silhouette so upscaled bilinear filtering never bleeds raw pixels into the clipped rim.
+    if (inside < -2.5) return content.eval(coord);
+
+    float2 n = g.yz;
+    float clampedInside = max(inside, 0.0);
+
+    // Subtle cylindrical body magnification + thick curved bezel Snell-like refraction.
+    float2 shift = float2(-p.x * 0.012, -p.y * 0.055);
+    float rimBend = 0.0;
+    float rimU = 0.0;
+    if (clampedInside < bevel) {
+        rimU = 1.0 - clampedInside / max(bevel, 1.0);
+        float s = rimU * 0.88;
+        rimBend = (rimU / sqrt(max(1.0 - s * s, 0.1))) * 0.475;
+        shift += -n * rimBend * refraction;
+    }
+
+    // Active selection droplet: uniformly skipped across the whole GPU wavefront when resting.
+    float lensMix = 0.0;
+    float lensRim = 0.0;
+    float lensSpec = 0.0;
+    float lensShadow = 0.0;
+    if (lensAmount > 0.005) {
+        float2 lp = coord - lensRect.xy;
+        float3 lg = sdRoundRectGrad(lp, lensRect.zw, lensRadius);
+        float lInside = -lg.x;
+        float shadowSpan = max(lensRadius * 0.28, 2.5);
+        if (lInside <= 0.0 && lInside > -shadowSpan) {
+            float d = -lInside / shadowSpan;
+            float falloff = (1.0 - d) * (1.0 - d);
+            lensShadow = falloff * lensAmount * (dark > 0.5 ? 0.24 : 0.10);
+        }
+        lensMix = clamp((lInside + 0.6) / 1.2, 0.0, 1.0) * lensAmount;
+        if (lensMix > 0.001) {
+            float lBevel = min(lensRadius * 0.68, bevel * 0.95);
+            float lu = clamp(1.0 - max(lInside, 0.0) / max(lBevel, 1.0), 0.0, 1.0);
+            float ls = lu * 0.86;
+            float lBend = (lu / sqrt(max(1.0 - ls * ls, 0.12))) * 0.51;
+            float2 lShift = -lp * 0.085 - lg.yz * lBend * (refraction * 0.92);
+            shift = mix(shift, shift * 0.35 + lShift, lensMix);
+            rimBend = max(rimBend, lBend * lensMix);
+            lensRim = lu * lu * lensMix;
+            float2 lightDir = float2(-0.48, -0.88);
+            float lDot1 = max(dot(lg.yz, lightDir), 0.0);
+            float lDot2 = max(dot(lg.yz, -lightDir), 0.0);
+            lensSpec = (lDot1 * lDot1 + lDot2 * lDot2 * 0.45) * lensRim;
+        }
+    }
+
+    // Rim-localized prismatic chromatic dispersion (1 texture sample in flat center, 3 along curved glass rims).
+    float dispStrength = max(rimBend, lensRim * 0.85);
+    float3 col;
+    if (dispStrength > 0.06) {
+        float disp = 0.13 * clamp(dispStrength, 0.0, 1.0);
+        float3 base = float3(content.eval(coord + shift).rgb);
+        float rCh = float(content.eval(coord + shift * (1.0 + disp)).r);
+        float bCh = float(content.eval(coord + shift * (1.0 - disp)).b);
+        col = float3(rCh, base.g, bCh);
+    } else {
+        col = float3(content.eval(coord + shift).rgb);
+    }
+
+    // Color vibrancy boost + luminance-adaptive crystal translucency.
+    float luma = dot(col, float3(0.2126, 0.7152, 0.0722));
+    float sat = dark > 0.5 ? 1.28 : 1.32;
+    col = clamp(mix(float3(luma), col, sat), 0.0, 1.0);
+
+    float vGrad = clamp(0.5 - p.y / max(size.y, 1.0), 0.0, 1.0);
+    if (dark > 0.5) {
+        float tintAlpha = mix(0.26, 0.46, luma) * (1.0 - 0.25 * lensMix);
+        col = mix(col, float3(0.11, 0.118, 0.138), tintAlpha);
+        col += float3(0.055 + 0.045 * vGrad) * (1.0 - luma * 0.65);
+        col += float3(0.06) * lensMix;
+    } else {
+        float tintAlpha = mix(0.46, 0.22, luma) * (1.0 - 0.30 * lensMix);
+        col = mix(col, float3(0.99, 0.99, 1.0), tintAlpha);
+        col += float3(0.045 * vGrad);
+        col += float3(0.055) * lensMix;
+    }
+
+    col *= (1.0 - lensShadow);
+
+    // 3D directional Fresnel internal bevel glow + subtle light-mode lower thickness.
+    float2 lightDir = float2(-0.48, -0.88);
+    float rimPow = rimU * rimU;
+    float spec1 = max(dot(n, lightDir), 0.0);
+    float spec2 = max(dot(n, -lightDir), 0.0);
+    float fresnel = rimPow * (spec1 * spec1 * 0.85 + spec2 * spec2 * 0.38 + 0.14);
+    col += float3(fresnel * (dark > 0.5 ? 0.26 : 0.34));
+    if (dark <= 0.5) {
+        col -= float3(rimPow * max(n.y, 0.0) * 0.045);
+    }
+    col += float3(lensSpec * (dark > 0.5 ? 0.36 : 0.42));
+
+    return half4(clamp(col, 0.0, 1.0), 1.0);
 }
 """
