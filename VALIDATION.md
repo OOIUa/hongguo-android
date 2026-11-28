@@ -1,3 +1,9 @@
+# 0.8.3 / versionCode 49（2026-11-28）
+
+- 应用与设备测试 APK 构建成功。541 项 JVM 测试全部通过（含新增 `TvModeTest` 6 项）。Android Lint 报告 0 个错误（TV 源码及 Manifest 新增改动 0 项警告）。
+- 发布 APK 为 27,145,410 字节，SHA-256 为 `0a912c1503854d82e8fa39c884cc6b2810de86424083a6bb9580b263e1e06c7b`。`aapt` 核对包名 `com.hongguo.android`、版本名 0.8.3、versionCode 49、minSdk 26，确认同时包含 `MainActivity`（`LAUNCHER`）与 `TvActivity`（`LEANBACK_LAUNCHER` + `tv_banner`），且 `touchscreen` 与 `leanback` 均声明为可选特性。`apksigner` 核验的证书指纹与 `release-signing.sha256` 一致。
+- 合并前已在本地 Android TV 1080p（API 34 arm64）模拟器实测单包安装、`MainActivity` 自动跳转 `TvActivity`、首页第 1 集试看起播、遥控器焦点切换及 TV 在线更新弹窗。
+
 # 0.8.2 / versionCode 48（2026-11-27）
 
 - 应用与设备测试 APK 构建成功。535 项 JVM 测试全部通过。Android Lint 报告 0 个错误、36 个警告和 1 项提示。

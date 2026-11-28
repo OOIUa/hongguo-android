@@ -4,7 +4,7 @@
 
 - GitHub 仓库：[OOIUa/hongguo-android](https://github.com/OOIUa/hongguo-android)。
 - 首个支持在线更新的版本：`0.3.0`，`versionCode=3`，tag 为 `v0.3.0`。
-- 当前源码版本为 `0.8.2`，`versionCode=48`。本版加入演员榜、剧评、横屏分栏与播放器防误触锁定，更新液态玻璃导航，并改善首页首批加载和连续切集体验。
+- 当前源码版本为 `0.8.3`，`versionCode=49`。本版将 Android TV 电视端合入通用安装包，支持自动识别电视环境、手机/电视模式双向切换及电视端遥控器应用内更新。
 - 账号功能仍处于测试阶段。发行说明需简要说明官网验证、固定批次片单及可选进度上报的使用范围，实际登录与同步结果需用本人账号核对。
 - 应用 ID：`com.hongguo.android`；当前最低系统为 API 26。
 - 固定清单地址：`https://github.com/OOIUa/hongguo-android/releases/latest/download/update.json`。

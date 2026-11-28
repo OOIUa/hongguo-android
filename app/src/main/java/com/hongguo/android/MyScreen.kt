@@ -90,6 +90,9 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.hongguo.account.AccountSection
 import com.hongguo.account.AccountState
+import com.hongguo.tv.DisplayMode
+import com.hongguo.tv.TvMode
+import com.hongguo.tv.findActivity
 import kotlinx.coroutines.launch
 
 @Composable
@@ -632,7 +635,7 @@ internal fun SystemSettingsScreen(
             Column {
                 SettingsHubRow(
                     title = "外观设置",
-                    subtitle = "主题样式、外观模式与底栏样式",
+                    subtitle = "主题样式、外观模式、底栏与电视模式",
                     pill = state.themeStyle.label,
                     icon = Icons.Outlined.Palette,
                     iconBg = SoftOrange,
@@ -855,6 +858,15 @@ internal fun ThemeStyleScreen(state: HongguoUiState, model: HongguoViewModel, on
                 .border(1.dp, Line, cardShape),
         ) {
             NavBarStyleSetting(state.navBarStyle, model::setNavBarStyle)
+        }
+        Surface(
+            shape = cardShape,
+            color = CardSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Line, cardShape),
+        ) {
+            DisplayModeSetting()
         }
     }
 }
@@ -1683,6 +1695,61 @@ private fun PreviewNav(p: HongguoPalette) {
                     .background(if (i == 0) p.accent else p.line),
             )
         }
+    }
+}
+
+@Composable
+private fun DisplayModeSetting() {
+    val context = LocalContext.current
+    var mode by remember { mutableStateOf(TvMode.read(context)) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("界面模式", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Cream)
+                .padding(4.dp)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            DisplayMode.entries.forEach { option ->
+                val selected = mode == option
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) CardSurface else Color.Transparent)
+                        .selectable(selected = selected, role = Role.RadioButton) {
+                            mode = option
+                            val activity = context.findActivity()
+                            if (activity != null) TvMode.applySelectionFromPhone(activity, option)
+                            else TvMode.write(context, option)
+                        }
+                        .testTag("settings_display_mode_${option.key}"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = option.label,
+                        color = if (selected) AccentInk else Muted,
+                        fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    )
+                }
+            }
+        }
+        Text(
+            text = "自动识别电视与机顶盒；选择「电视」可立即切换至遥控器大屏界面，在电视版「我的」中可随时切回。",
+            color = Muted,
+            fontSize = 12.sp,
+            lineHeight = 19.sp,
+        )
     }
 }
 

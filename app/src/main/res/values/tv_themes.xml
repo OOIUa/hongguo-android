@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Hongguo.Television" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">#151417</item>
+        <item name="android:colorAccent">#FAA78F</item>
+    </style>
+</resources>

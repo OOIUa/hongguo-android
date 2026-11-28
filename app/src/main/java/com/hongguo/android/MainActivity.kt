@@ -54,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hongguo.account.AccountSessionStatus
 import com.hongguo.account.AccountViewModel
+import com.hongguo.tv.TvMode
 
 private val GlassRailWidth = 60.dp
 private val GlassRailMargin = 8.dp
@@ -61,6 +62,7 @@ private val GlassRailMargin = 8.dp
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (TvMode.redirectFromPhoneIfNeeded(this)) return
         applyThemeWindow(storedThemePalette())
         setContent {
             val model: HongguoViewModel = viewModel()
